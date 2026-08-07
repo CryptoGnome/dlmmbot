@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { resolve } from "node:path";
 import { config, isLive } from "../config.js";
 import { reconcileLive } from "./reconcile.js";
-import { alert } from "../alerts.js";
+import { alert, type AlertKind } from "../alerts.js";
 import { blacklist, getDb, now, recordDecision } from "../db/db.js";
 import type { Executor } from "../executor/executor.js";
 import { PaperExecutor } from "../executor/paper.js";
@@ -46,6 +46,37 @@ function clearRangeTimers(posId: number): void {
   decayStreak.delete(posId);
   rugcheckLastCheck.delete(posId);
   everInRange.delete(posId);
+}
+
+/**
+ * Close a position and send the Telegram PnL report. Every exit path routes
+ * through here so no close goes unreported: net PnL (exit + claimed fees -
+ * entry), percent, and hold time.
+ */
+async function closeAndReport(
+  exec: Executor,
+  pos: Position,
+  reason: Parameters<Executor["close"]>[1],
+  slippageBps: number,
+  kind: AlertKind,
+  headline: string,
+): Promise<{ exitSol: number; txCostSol: number }> {
+  const res = await exec.close(pos, reason, slippageBps);
+  // Re-read fees: the close itself may claim outstanding fees into the total.
+  const row = getDb().prepare("SELECT fees_claimed_sol FROM positions WHERE id = ?")
+    .get(pos.id) as { fees_claimed_sol: number } | undefined;
+  const fees = row?.fees_claimed_sol ?? pos.feesClaimedSol;
+  const pnl = res.exitSol + fees - pos.entrySol;
+  const pct = pos.entrySol > 0 ? (pnl / pos.entrySol) * 100 : 0;
+  const holdH = (now() - pos.entryTs) / 3600;
+  const hold = holdH < 1 ? `${(holdH * 60).toFixed(0)}m` : `${holdH.toFixed(1)}h`;
+  await alert(
+    kind,
+    `${pos.symbol} pos#${pos.id} closed — ${headline}\n` +
+    `PnL: ${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} SOL (${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%)\n` +
+    `entry ${pos.entrySol.toFixed(3)} → exit ${res.exitSol.toFixed(3)} SOL | fees ${fees.toFixed(4)} SOL | held ${hold}`
+  );
+  return res;
 }
 
 /** House-money rule (§5/P3): bank realized profit so it leaves the deployable pool. */
@@ -161,27 +192,25 @@ export async function managePositions(exec: Executor): Promise<void> {
       if (mark.valueSol === 0 || crashed || tvlDrained || rugFlip) {
         const trigger = mark.valueSol === 0 ? "pool_dead" : crashed ? "price_crash" : tvlDrained ? "tvl_drain" : "rugcheck_flip";
         clearRangeTimers(pos.id);
-        await exec.close(pos, "P0_safety", config().exec.safety_exit_slippage_bps);
+        await closeAndReport(exec, pos, "P0_safety", config().exec.safety_exit_slippage_bps, "safety_exit", `P0 safety (${trigger})`);
         blacklist(pos.tokenMint, "token", `P0 safety exit (${trigger})`);
         recordDecision(pos.tokenMint, pos.poolAddress, "exited", `P0_safety_${trigger}`, null, { mark, pos });
-        await alert("safety_exit", `${pos.symbol} pos#${pos.id}: P0 ${trigger} — closed at ${mark.valueSol.toFixed(3)} SOL (entry ${pos.entrySol.toFixed(3)})`);
         continue;
       }
 
       // --- P1 STOP LOSS ---
       if (valueFrac < m.stop_loss_frac) {
         clearRangeTimers(pos.id);
-        await exec.close(pos, "P1_stop", config().exec.exit_slippage_bps);
+        await closeAndReport(exec, pos, "P1_stop", config().exec.exit_slippage_bps, "stop_loss", `stop loss at ${(valueFrac * 100 - 100).toFixed(1)}%`);
         blacklist(pos.tokenMint, "token", "stop loss cooldown", m.loss_reentry_cooldown_h);
         recordDecision(pos.tokenMint, pos.poolAddress, "exited", "P1_stop", null, { valueFrac, mark });
-        await alert("stop_loss", `${pos.symbol} pos#${pos.id}: stop loss at ${(valueFrac * 100 - 100).toFixed(1)}%`);
         continue;
       }
 
       // --- P2 ROTATION: age limit + consecutive fee/volume decay ---
       if (ageH > m.max_age_h) {
         clearRangeTimers(pos.id);
-        await exec.close(pos, "P2_rotation", config().exec.exit_slippage_bps);
+        await closeAndReport(exec, pos, "P2_rotation", config().exec.exit_slippage_bps, "close", `rotation: max age ${m.max_age_h}h reached`);
         recordDecision(pos.tokenMint, pos.poolAddress, "exited", "P2_rotation_age", null, { ageH });
         continue;
       }
@@ -191,7 +220,7 @@ export async function managePositions(exec: Executor): Promise<void> {
       decayStreak.set(pos.id, streak);
       if (streak >= m.rotation_polls) {
         clearRangeTimers(pos.id);
-        const { exitSol } = await exec.close(pos, "P2_rotation", config().exec.exit_slippage_bps);
+        const { exitSol } = await closeAndReport(exec, pos, "P2_rotation", config().exec.exit_slippage_bps, "close", `rotation: fee/volume decay (fee ${feeDaily.toFixed(1)}%/d, vol30m $${mark.vol30mUsd.toFixed(0)})`);
         bankProfit(pos, exitSol, "P2 rotation");
         recordDecision(pos.tokenMint, pos.poolAddress, "exited", "P2_rotation_decay", null, { feeDaily, vol30m: mark.vol30mUsd, streak });
         console.log(`[manager] pos#${pos.id} ${pos.symbol}: rotated out (fee ${feeDaily.toFixed(1)}%/d, vol30m $${mark.vol30mUsd.toFixed(0)})`);
@@ -209,7 +238,10 @@ export async function managePositions(exec: Executor): Promise<void> {
           // missed = price pumped without ever touching us (capital idled).
           const classification = everInRange.has(pos.id) ? "win" : "missed";
           clearRangeTimers(pos.id);
-          const { exitSol } = await exec.close(pos, "P3_above", config().exec.exit_slippage_bps);
+          const { exitSol } = await closeAndReport(
+            exec, pos, "P3_above", config().exec.exit_slippage_bps, "close",
+            classification === "win" ? "take-profit (price traveled through range)" : "missed (price jumped over range)"
+          );
           if (classification === "missed")
             getDb().prepare("UPDATE positions SET state='closed_missed' WHERE id=?").run(pos.id);
           else bankProfit(pos, exitSol, "P3 take-profit");
@@ -227,10 +259,9 @@ export async function managePositions(exec: Executor): Promise<void> {
           console.log(`[manager] pos#${pos.id} ${pos.symbol} below range — grace timer started (${m.below_range_grace_min}m)`);
         } else if (now() - since >= m.below_range_grace_min * 60) {
           clearRangeTimers(pos.id);
-          await exec.close(pos, "P5_below", config().exec.exit_slippage_bps);
+          await closeAndReport(exec, pos, "P5_below", config().exec.exit_slippage_bps, "below_cut", `below-range cut after ${m.below_range_grace_min}m grace`);
           blacklist(pos.tokenMint, "token", "below range cut", m.loss_reentry_cooldown_h);
           recordDecision(pos.tokenMint, pos.poolAddress, "exited", "P5_below", null, { mark, graceS: now() - since });
-          await alert("below_cut", `${pos.symbol} pos#${pos.id}: below-range cut after ${m.below_range_grace_min}m grace, ${((mark.valueSol / pos.entrySol - 1) * 100).toFixed(1)}%`);
         }
         continue; // below range: nothing earns; wait out the grace window
       }
@@ -238,14 +269,16 @@ export async function managePositions(exec: Executor): Promise<void> {
 
       // --- P4 IN RANGE: claim + profit lock ---
       if (mark.unclaimedFeesSol >= m.claim_min_sol) {
-        await exec.claimFees(pos);
+        const { claimedSol } = await exec.claimFees(pos);
+        await alert("claim", `${pos.symbol} pos#${pos.id}: claimed ${claimedSol.toFixed(4)} SOL in fees`);
       }
       if (
         m.profit_lock_enabled &&
         pos.profitLockFires < m.profit_lock_max_fires &&
         valueFrac >= m.profit_lock_at_frac
       ) {
-        await exec.withdraw(pos, m.profit_lock_withdraw_pct * 100); // pct -> bps
+        const { withdrawnSol } = await exec.withdraw(pos, m.profit_lock_withdraw_pct * 100); // pct -> bps
+        await alert("profit_lock", `${pos.symbol} pos#${pos.id}: profit lock at +${((valueFrac - 1) * 100).toFixed(0)}% — withdrew ${withdrawnSol.toFixed(4)} SOL`);
       }
       // TODO(phase 2): escape hatch, hybrid/compound fee destination.
     } catch (e) {
@@ -280,7 +313,7 @@ export async function watchdogCheck(exec: Executor): Promise<void> {
   if (w.rpc_blind_close_all && exec.mode === "live") {
     // TODO(live executor): route close-all through the fallback RPC connection.
     for (const pos of loadOpenPositions()) {
-      try { await exec.close(pos, "manual", config().exec.safety_exit_slippage_bps); } catch { /* keep trying next tick */ }
+      try { await closeAndReport(exec, pos, "manual", config().exec.safety_exit_slippage_bps, "watchdog", "watchdog close-all (RPC blind)"); } catch { /* keep trying next tick */ }
     }
   }
 }
@@ -339,7 +372,8 @@ async function tryDisplacement(exec: Executor, candScore: number, candMint: stri
 
   if (!weakest || candScore < weakest.score + rot.displacement_margin) return false;
 
-  await exec.close(weakest.pos, "P2_rotation", config().exec.exit_slippage_bps);
+  await closeAndReport(exec, weakest.pos, "P2_rotation", config().exec.exit_slippage_bps, "displacement",
+    `displaced (score ${weakest.score.toFixed(0)}) for candidate scoring ${candScore.toFixed(0)}`);
   recordDecision(weakest.pos.tokenMint, weakest.pos.poolAddress, "exited", `displaced_by:${candMint}`, weakest.score, {
     candScore, weakestScore: weakest.score, valueFrac: weakest.valueFrac,
   });
@@ -347,7 +381,6 @@ async function tryDisplacement(exec: Executor, candScore: number, candMint: stri
     `[rotate] displaced ${weakest.pos.symbol} (score ${weakest.score.toFixed(1)}, pos#${weakest.pos.id}) ` +
     `for candidate scoring ${candScore.toFixed(1)}`
   );
-  await alert("displacement", `${weakest.pos.symbol} pos#${weakest.pos.id} (score ${weakest.score.toFixed(0)}) displaced for candidate scoring ${candScore.toFixed(0)}`);
   return true;
 }
 
@@ -465,6 +498,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       entryPrice: cand.pool.price,
     });
     recordDecision(cand.tokenMint, cand.pool.address, "entered", null, score, { size, range, vet: vet.facts, pool: cand.pool, kelly, isAlpha });
+    await alert("entry", `${cand.symbol} pos#${pos.id}: entered ${size.toFixed(2)} SOL @ ${cand.pool.price.toPrecision(4)} (score ${score.toFixed(0)}${isAlpha ? ", alpha" : ""}, range depth ${range.bottomPricePct.toFixed(0)}%)`);
     console.log(
       `[enter] ${cand.symbol} score=${score.toFixed(1)} size=${size.toFixed(2)} SOL ` +
       `(kelly:${kelly.regime}@${(kelly.appliedFraction * 100).toFixed(1)}%) ` +
@@ -493,7 +527,7 @@ export async function runLoop(): Promise<void> {
   for (;;) {
     if (haltRequested()) {
       console.log("[farmer] HALT file present — closing all positions and stopping");
-      for (const pos of loadOpenPositions()) await exec.close(pos, "manual", config().exec.exit_slippage_bps);
+      for (const pos of loadOpenPositions()) await closeAndReport(exec, pos, "manual", config().exec.exit_slippage_bps, "close", "manual HALT");
       return;
     }
     try {

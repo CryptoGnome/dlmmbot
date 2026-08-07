@@ -5,11 +5,13 @@
 
 export type AlertKind =
   | "safety_exit" | "stop_loss" | "below_cut" | "circuit_breaker"
-  | "watchdog" | "displacement" | "entry" | "info";
+  | "watchdog" | "displacement" | "entry" | "close" | "claim"
+  | "profit_lock" | "info";
 
 const EMOJI: Record<AlertKind, string> = {
   safety_exit: "🚨", stop_loss: "🛑", below_cut: "📉", circuit_breaker: "⛔",
-  watchdog: "🕶️", displacement: "🔄", entry: "🟢", info: "ℹ️",
+  watchdog: "🕶️", displacement: "🔄", entry: "🟢", close: "🏁", claim: "💰",
+  profit_lock: "🔒", info: "ℹ️",
 };
 
 let lastSend = 0;
