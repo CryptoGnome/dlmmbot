@@ -169,11 +169,19 @@ export class LiveExecutor implements Executor {
         `range sanity: planned top bin ${params.range.maxBinId} is ${gap} bins from on-chain active ${activeBin.binId} — refusing to open`
       );
     }
-    // One-sided below price: clamp top to the CURRENT on-chain active bin so a
-    // stale datapi price can never place us above the market.
-    const maxBin = Math.min(params.range.maxBinId, activeBin.binId);
-    const minBin = Math.min(params.range.minBinId, maxBin - 1);
+    // Re-anchor to the LIVE active bin (§3: top = current price). Planner
+    // ranges are computed at scan time and vetting takes up to minutes; on a
+    // fast riser the market moves 10%+ above the planned top, stranding the
+    // ladder below (chrome pos#5 incident). Price rose: shift the whole range
+    // up, preserving planned width/depth. Price fell: top clamps to active,
+    // fib-anchored bottom stays (never place liquidity above the market).
+    const width = params.range.maxBinId - params.range.minBinId;
+    const maxBin = activeBin.binId;
+    const minBin = activeBin.binId > params.range.maxBinId
+      ? maxBin - width
+      : Math.min(params.range.minBinId, maxBin - 1);
     const totalBins = maxBin - minBin + 1;
+    const liveEntryPrice = Number(pool.fromPricePerLamport(Number(activeBin.price)));
     const lamports = Math.floor(params.sizeSol * 1e9);
 
     // Split into <=69-bin chunks, SOL per chunk proportional to linear bid-ask
@@ -215,7 +223,7 @@ export class LiveExecutor implements Executor {
        VALUES ('live', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)`
     ).run(
       params.poolAddress, params.tokenMint, params.symbol, params.trancheOf ?? null,
-      now(), params.entryPrice, params.sizeSol, minBin, maxBin, params.range.estBinRentSol, openCostSol
+      now(), liveEntryPrice, params.sizeSol, minBin, maxBin, params.range.estBinRentSol, openCostSol
     );
     const id = Number(res.lastInsertRowid);
     for (const a of accountRows)
@@ -225,7 +233,7 @@ export class LiveExecutor implements Executor {
     return {
       id, mode: "live", poolAddress: params.poolAddress, tokenMint: params.tokenMint,
       symbol: params.symbol, trancheOf: params.trancheOf ?? null, entryTs: now(),
-      entryPrice: params.entryPrice, entrySol: params.sizeSol, minBinId: minBin,
+      entryPrice: liveEntryPrice, entrySol: params.sizeSol, minBinId: minBin,
       maxBinId: maxBin, state: "open", feesClaimedSol: 0,
       rentPaidSol: params.range.estBinRentSol, profitLockFires: 0,
       exitTs: null, exitSol: null, exitReason: null,
