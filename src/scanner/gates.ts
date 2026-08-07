@@ -28,14 +28,14 @@ export function poolGates(p: PoolInfo & { extras: RawPoolExtras }): GateFailure[
     ageMs !== null && ageMs < DAY_MS && ageMs > 0
       ? p.feeTvl24hPct * (DAY_MS / ageMs)
       : p.feeTvl24hPct;
-  // Recently-awakened path: a sleepy 24h average is forgiven when the 30m, 1h
-  // AND 4h rates all clear the same bar — hot right now and sustained for
-  // hours, not a lone blip and not lingering heat that already died.
+  // Recently-awakened path: a sleepy 24h average is forgiven when the 30m AND
+  // 1h rates both clear the bar — hot now, sustained for at least an hour.
+  // (Not 4h: fee events run hours, and entering at hour four is the tail.
+  // Flash-pump downside is bounded by the timing filter, stop, and P5 grace.)
   const feeTvl30mDaily = p.feeTvl30mPct * 48;
   const feeTvl1hDaily = p.feeTvl1hPct * 24;
   const feeTvl4hDaily = p.feeTvl4hPct * 6;
-  const recentlyHot = feeTvl30mDaily >= g.fee_tvl_24h_min_pct &&
-    feeTvl1hDaily >= g.fee_tvl_24h_min_pct && feeTvl4hDaily >= g.fee_tvl_24h_min_pct;
+  const recentlyHot = feeTvl30mDaily >= g.fee_tvl_24h_min_pct && feeTvl1hDaily >= g.fee_tvl_24h_min_pct;
   if (feeTvl24h < g.fee_tvl_24h_min_pct && !recentlyHot)
     fail("fee_tvl_24h", `${feeTvl24h.toFixed(1)} (30m ${feeTvl30mDaily.toFixed(1)}/1h ${feeTvl1hDaily.toFixed(1)}/4h ${feeTvl4hDaily.toFixed(1)})`, g.fee_tvl_24h_min_pct);
 
