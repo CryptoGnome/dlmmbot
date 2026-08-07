@@ -54,6 +54,10 @@ export interface VetResult {
     rugcheckRisks: Array<{ name: string; score: number; level: string }>;
     launchpad: string | null;
     tokenAgeMinutes: number | null;
+    gmgnSellTaxPct?: number | null;       // GMGN security cross-check
+    gmgnHoneypot?: boolean | null;
+    traderRiskShare?: number | null;      // share of top traders tagged bundler/rat_trader/sniper
+    traderSmartCount?: number | null;     // smart_degen-tagged wallets among top traders
   };
 }
 

@@ -3,6 +3,7 @@ import { blacklist, getDb, isBlacklisted, now } from "../db/db.js";
 import type { GateFailure, VetResult } from "../types.js";
 import { fetchTokenFacts } from "./onchain.js";
 import { creatorRugCount, fetchReport, insiderNetworkPct } from "./rugcheck.js";
+import { tokenSecurity, tokenTraderTags } from "../scanner/gmgn.js";
 
 // STRATEGY.md §2.2 — token hard gates. Fresh RPC facts are authoritative;
 // RugCheck is a veto layer (cached, but sees insider networks & creator
@@ -92,6 +93,21 @@ export async function vetToken(mint: string, tokenCreatedAtMs: number | null): P
   // creator history from our creators table. Until then a missing report means
   // weaker vetting — reflected in softScore below.
 
+  // --- GMGN cross-check layer (degrades silently on API failure) ---
+  // Hard veto ONLY for near-certain-loss signals; trader tags stay soft (§ no
+  // over-conservatism: sketchy tokens pay a score penalty, not a ban).
+  const [gmgnSec, traderTags] = await Promise.all([tokenSecurity(mint), tokenTraderTags(mint)]);
+  if (gmgnSec) {
+    facts.gmgnHoneypot = gmgnSec.honeypot;
+    facts.gmgnSellTaxPct = gmgnSec.sellTaxPct;
+    if (gmgnSec.honeypot) fail("gmgn_honeypot", "true", "false");
+    if (gmgnSec.sellTaxPct > 0) fail("gmgn_sell_tax", `${gmgnSec.sellTaxPct}%`, "0%");
+  }
+  if (traderTags) {
+    facts.traderRiskShare = traderTags.riskShare;
+    facts.traderSmartCount = traderTags.smartCount;
+  }
+
   // --- age gates ---
   if (tokenCreatedAtMs) {
     const ageMin = (Date.now() - tokenCreatedAtMs) / 60_000;
@@ -108,6 +124,13 @@ export async function vetToken(mint: string, tokenCreatedAtMs: number | null): P
     if (facts.singleHolderPct !== null) soft -= clamp01(facts.singleHolderPct / v.single_holder_max_pct) * 30;
     soft -= clamp01(report.score_normalised / v.rugcheck_veto_normalised) * 25;
     if ((facts.holderCount ?? 0) > 1000) soft += 5;
+    soft = Math.max(0, Math.min(100, soft));
+  }
+  // Trader-tag adjustments (graduated, never a veto): 50%+ risk-tagged top
+  // traders = max -20; each smart_degen wallet in the sample +2 (cap +10).
+  if (traderTags && traderTags.sampled >= 10) {
+    soft -= clamp01(traderTags.riskShare / 0.5) * 20;
+    soft += Math.min(traderTags.smartCount, 5) * 2;
     soft = Math.max(0, Math.min(100, soft));
   }
 

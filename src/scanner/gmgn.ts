@@ -34,15 +34,36 @@ export interface GmgnPresence {
 let cache: { at: number; byMint: Map<string, GmgnPresence> } | null = null;
 const CACHE_MS = 55_000; // one scan cycle
 
+// GMGN rate limits are tight (429s escalate to IP bans that extend on repeat).
+// All calls are paced through a min-gap, and any 429 parks GMGN entirely for a
+// cooldown — every consumer already degrades gracefully to Meteora-only data.
+const CALL_GAP_MS = 1_500;
+const BAN_COOLDOWN_MS = 120_000;
+let nextCallAt = 0;
+let bannedUntil = 0;
+
 async function cli(args: string[]): Promise<string> {
-  // npx resolves the cached gmgn-cli; shell needed for the .cmd shim on Windows.
-  const { stdout } = await execFileP("npx", ["-y", "gmgn-cli", ...args], {
-    shell: true,
-    timeout: 30_000,
-    maxBuffer: 8 * 1024 * 1024,
-    env: { ...process.env },
-  });
-  return stdout;
+  if (Date.now() < bannedUntil) throw new Error("gmgn cooling down after 429");
+  const wait = Math.max(0, nextCallAt - Date.now());
+  nextCallAt = Math.max(Date.now(), nextCallAt) + CALL_GAP_MS;
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  try {
+    // npx resolves the cached gmgn-cli; shell needed for the .cmd shim on Windows.
+    const { stdout } = await execFileP("npx", ["-y", "gmgn-cli", ...args], {
+      shell: true,
+      timeout: 30_000,
+      maxBuffer: 8 * 1024 * 1024,
+      env: { ...process.env },
+    });
+    if (stdout.includes("RATE_LIMIT") || stdout.includes("HTTP 429")) {
+      bannedUntil = Date.now() + BAN_COOLDOWN_MS;
+      throw new Error("gmgn 429");
+    }
+    return stdout;
+  } catch (e) {
+    if (String(e).includes("429") || String(e).includes("RATE_LIMIT")) bannedUntil = Date.now() + BAN_COOLDOWN_MS;
+    throw e;
+  }
 }
 
 async function fetchInterval(interval: string, minLiquidity: number): Promise<GmgnTrendingToken[]> {
@@ -111,4 +132,56 @@ export async function trendingByMint(): Promise<Map<string, GmgnPresence>> {
   }
   cache = { at: Date.now(), byMint };
   return byMint;
+}
+
+// --- Vetting enrichment (phase 1 of GMGN adoption, 2026-08-07) ---
+
+export interface GmgnSecurity {
+  honeypot: boolean;
+  sellTaxPct: number;
+  buyTaxPct: number;
+}
+
+/** Token security cross-check. null = unavailable (no key / API failure) — never blocks vetting. */
+export async function tokenSecurity(mint: string): Promise<GmgnSecurity | null> {
+  if (!env().gmgnApiKey) return null;
+  try {
+    const raw = await cli(["token", "security", "--chain", "sol", "--address", mint]);
+    const j = JSON.parse(raw) as Record<string, unknown>;
+    return {
+      honeypot: Number(j.honeypot ?? 0) === 1 || Number(j.can_not_sell ?? 0) === 1,
+      sellTaxPct: Number(j.sell_tax ?? 0) * 100,
+      buyTaxPct: Number(j.buy_tax ?? 0) * 100,
+    };
+  } catch {
+    return null;
+  }
+}
+
+const RISK_TAGS = ["bundler", "rat_trader", "sniper", "dev_team"];
+
+export interface TraderTagStats {
+  sampled: number;
+  riskShare: number;   // 0-1: fraction of sampled top traders with any risk tag
+  smartCount: number;  // smart_degen-tagged wallets in the sample
+}
+
+/** Behavioral tags on a token's top traders. null = unavailable — degrades silently. */
+export async function tokenTraderTags(mint: string): Promise<TraderTagStats | null> {
+  if (!env().gmgnApiKey) return null;
+  try {
+    const raw = await cli(["token", "traders", "--chain", "sol", "--address", mint, "--limit", "20", "--raw"]);
+    const j = JSON.parse(raw) as Record<string, unknown>;
+    const list = (Array.isArray(j) ? j : (j.list ?? (j.data as Record<string, unknown> | undefined)?.list ?? [])) as Array<Record<string, unknown>>;
+    if (!list.length) return null;
+    let risk = 0, smart = 0;
+    for (const t of list) {
+      const tags = [...(t.tags as string[] ?? []), ...(t.maker_token_tags as string[] ?? [])];
+      if (tags.some((x) => RISK_TAGS.includes(x))) risk++;
+      if (tags.includes("smart_degen")) smart++;
+    }
+    return { sampled: list.length, riskShare: risk / list.length, smartCount: smart };
+  } catch {
+    return null;
+  }
 }
