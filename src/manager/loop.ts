@@ -538,37 +538,43 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     }
 
     // Re-blend score with real vetting softness (§2.4).
-    let score = cand.score - 0.5 * config().score.w_vetting_soft + (vet.softScore / 100) * config().score.w_vetting_soft;
+    const blended = cand.score - 0.5 * config().score.w_vetting_soft + (vet.softScore / 100) * config().score.w_vetting_soft;
 
-    // Smart-money/KOL flow adjustment — free lookup into the rolling window
-    // built from GMGN's global feeds (no per-token API calls).
+    // Bonus discipline (live-experiment guardrail): trending + flow bonuses
+    // share one cap, and risk TIERS (alpha, micro bar) are decided on the
+    // fundamentals-only base score — bonuses can raise sizing/priority but
+    // can never promote a candidate across a risk threshold.
+    const trendingBonus = cand.scoreParts["gmgn_trending"] ?? 0;
     const flow = flowFor(cand.tokenMint);
+    let flowBonus = 0, flowPenalty = 0;
     let flowNote = "";
     if (flow && !flow.stale) {
       const sf = config().smartflow;
-      let bonus = 0;
-      if (flow.smartWallets >= sf.min_wallets) bonus += sf.bonus_wallets;
-      if (flow.newJoiners >= sf.min_joiners) bonus += sf.bonus_joiners;
-      if (flow.kolNames.length > 0) bonus += sf.bonus_kol;
-      if (flow.netUsd <= -sf.net_sell_penalty_usd) bonus -= sf.penalty_net_sell;
-      score = Math.max(0, Math.min(100, score + bonus));
+      if (flow.smartWallets >= sf.min_wallets) flowBonus += sf.bonus_wallets;
+      if (flow.newJoiners >= sf.min_joiners) flowBonus += sf.bonus_joiners;
+      if (flow.kolNames.length > 0) flowBonus += sf.bonus_kol;
+      if (flow.netUsd <= -sf.net_sell_penalty_usd) flowPenalty = sf.penalty_net_sell;
       if (flow.smartWallets > 0 || flow.kolNames.length > 0) {
         flowNote = `\nsmart money 30m: ${flow.smartWallets} wallets (+${flow.newJoiners} joining), net $${flow.netUsd.toFixed(0)}` +
           (flow.kolNames.length ? ` | KOL: ${flow.kolNames.slice(0, 3).join(", ")}` : "");
       }
     }
+    flowBonus = Math.min(flowBonus, Math.max(0, config().score_caps.bonus_cap_total - trendingBonus));
+    const baseScore = Math.max(0, blended - trendingBonus - flowPenalty); // fundamentals only
+    let score = Math.max(0, Math.min(100, blended + flowBonus - flowPenalty));
 
-    // Microcap band: $100-200k tokens are riskier — require a higher final
-    // score than the normal 60 sizing floor before they may enter.
+    // Microcap band: $100-200k tokens are riskier — the higher bar must be
+    // met on FUNDAMENTALS (base score), not reachable via bonuses.
     const g = config().gates;
-    if (cand.pool.marketCapUsd < g.mcap_micro_max_usd && score < g.mcap_micro_score_min) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "micro_score", score, { mcapUsd: cand.pool.marketCapUsd, required: g.mcap_micro_score_min });
+    const isMicro = cand.pool.marketCapUsd < g.mcap_micro_max_usd;
+    if (isMicro && baseScore < g.mcap_micro_score_min) {
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "micro_score", baseScore, { mcapUsd: cand.pool.marketCapUsd, required: g.mcap_micro_score_min, score });
       continue;
     }
 
     // Slot admission (§5): normal slots for everyone, alpha slots only for
-    // exceptional scores; full book -> displacement attempt for alpha only.
-    const isAlpha = score >= rot.alpha_score_min;
+    // exceptional FUNDAMENTALS; full book -> displacement attempt for alpha only.
+    const isAlpha = baseScore >= rot.alpha_score_min;
     let admitted = opened < normalCap || (isAlpha && opened < bankroll.effectiveSlots);
     if (!admitted && isAlpha) admitted = await tryDisplacement(exec, score, cand.tokenMint);
     if (!admitted) {
@@ -631,9 +637,15 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       range,
       entryPrice: cand.pool.price,
     });
-    recordDecision(cand.tokenMint, cand.pool.address, "entered", null, score, { size, range, vet: vet.facts, pool: cand.pool, kelly, isAlpha, flow });
+    // Live-experiment cohort tags (2026-08-07): fee-gate path, mcap band, and
+    // bonus composition — evaluated against outcomes after ~5 closes each.
+    const feePath = cand.pool.feeTvl24hPct >= g.fee_tvl_24h_min_pct ? "24h" : "recent_hot";
+    recordDecision(cand.tokenMint, cand.pool.address, "entered", null, score, {
+      size, range, vet: vet.facts, pool: cand.pool, kelly, isAlpha, flow,
+      experiment: { feePath, isMicro, baseScore, trendingBonus, flowBonus, flowPenalty },
+    });
     await alert("entry",
-      `${cand.symbol} pos#${pos.id}: entered ${size.toFixed(2)} SOL @ ${cand.pool.price.toPrecision(4)} (score ${score.toFixed(0)}${isAlpha ? ", alpha" : ""}, range depth ${range.bottomPricePct.toFixed(0)}%)${flowNote}\n` +
+      `${cand.symbol} pos#${pos.id}: entered ${size.toFixed(2)} SOL @ ${cand.pool.price.toPrecision(4)} (score ${score.toFixed(0)}/base ${baseScore.toFixed(0)}${isAlpha ? ", alpha" : ""}${isMicro ? ", micro" : ""}${feePath === "recent_hot" ? ", recent-hot" : ""}, range depth ${range.bottomPricePct.toFixed(0)}%)${flowNote}\n` +
       `chart: https://gmgn.ai/sol/token/${cand.tokenMint}`);
     console.log(
       `[enter] ${cand.symbol} score=${score.toFixed(1)} size=${size.toFixed(2)} SOL ` +

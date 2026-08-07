@@ -46,6 +46,9 @@ ath_proximity_pct = 3
 vol_spike_ratio = 3        # last 5m candle >= 3x trailing-hour average = ignition
 vol_spike_bonus = 0.25
 
+[score_caps]
+bonus_cap_total = 10       # trending + smart-flow bonuses combined can never exceed this
+
 [smartflow]                # GMGN smart-money/KOL global feeds -> rolling window
 window_min = 30
 min_wallets = 3            # distinct smart wallets buying in window for bonus

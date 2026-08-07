@@ -23,6 +23,7 @@ export interface Config {
     allow_token2022_extensions: string[];
   };
   timing: { freefall_15m_max_pct: number; ath_proximity_pct: number; vol_spike_ratio: number; vol_spike_bonus: number };
+  score_caps: { bonus_cap_total: number };
   smartflow: {
     window_min: number;
     min_wallets: number; bonus_wallets: number;
