@@ -157,6 +157,7 @@ export class LiveExecutor implements Executor {
   }
 
   async open(params: OpenParams): Promise<Position> {
+    const balBefore = await this.connection.getBalance(this.wallet.publicKey);
     const pool = await this.pool(params.poolAddress);
     const activeBin = await pool.getActiveBin();
     // Sanity: the planned top must be near the on-chain active bin. A large gap
@@ -202,14 +203,19 @@ export class LiveExecutor implements Executor {
       console.log(`[live] opened position account ${positionKp.publicKey.toBase58()} bins [${chunk.min},${chunk.max}] tx ${sig}`);
     }
 
+    // Actual wallet debit for this open (size + all rents + tx fees) — the
+    // truth for per-position PnL, unlike the estBinRentSol estimate.
+    const balAfter = await this.connection.getBalance(this.wallet.publicKey);
+    const openCostSol = (balBefore - balAfter) / 1e9;
+
     const db = getDb();
     const res = db.prepare(
       `INSERT INTO positions (mode, pool, token_mint, symbol, tranche_of, entry_ts, entry_price, entry_sol,
-        min_bin_id, max_bin_id, state, rent_paid_sol)
-       VALUES ('live', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)`
+        min_bin_id, max_bin_id, state, rent_paid_sol, open_cost_sol)
+       VALUES ('live', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)`
     ).run(
       params.poolAddress, params.tokenMint, params.symbol, params.trancheOf ?? null,
-      now(), params.entryPrice, params.sizeSol, minBin, maxBin, params.range.estBinRentSol
+      now(), params.entryPrice, params.sizeSol, minBin, maxBin, params.range.estBinRentSol, openCostSol
     );
     const id = Number(res.lastInsertRowid);
     for (const a of accountRows)
@@ -298,6 +304,7 @@ export class LiveExecutor implements Executor {
   }
 
   async close(position: Position, reason: ExitReason, slippageBps: number): Promise<{ exitSol: number; txCostSol: number }> {
+    const balBefore = await this.connection.getBalance(this.wallet.publicKey);
     const pool = await this.pool(position.poolAddress);
     const { priceYperX, positions } = await this.ourLbPositions(position);
     const xDecimals = pool.tokenX.mint.decimals;
@@ -327,9 +334,13 @@ export class LiveExecutor implements Executor {
       P0_safety: "closed_safety", P1_stop: "closed_stop", P2_rotation: "closed_rotation",
       P3_above: "closed_win", P5_below: "closed_below", manual: "closed_manual",
     };
+    // Actual wallet credit for this close (exit value + rent refunds - tx fees).
+    const balAfter = await this.connection.getBalance(this.wallet.publicKey);
+    const closeReturnSol = (balAfter - balBefore) / 1e9;
+
     const db = getDb();
-    db.prepare("UPDATE positions SET state = ?, exit_ts = ?, exit_sol = ?, exit_reason = ? WHERE id = ?")
-      .run(stateByReason[reason], now(), before.valueSol, reason, position.id);
+    db.prepare("UPDATE positions SET state = ?, exit_ts = ?, exit_sol = ?, exit_reason = ?, close_return_sol = ? WHERE id = ?")
+      .run(stateByReason[reason], now(), before.valueSol, reason, closeReturnSol, position.id);
     db.prepare("INSERT INTO events (position_id, ts, type, sol_delta, tx_cost_sol) VALUES (?, ?, ?, ?, ?)")
       .run(position.id, now(), reason === "P0_safety" ? "safety_exit" : "withdraw", before.valueSol, 0.001);
     return { exitSol: before.valueSol, txCostSol: 0.001 };

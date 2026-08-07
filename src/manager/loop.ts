@@ -62,19 +62,29 @@ async function closeAndReport(
   headline: string,
 ): Promise<{ exitSol: number; txCostSol: number }> {
   const res = await exec.close(pos, reason, slippageBps);
-  // Re-read fees: the close itself may claim outstanding fees into the total.
-  const row = getDb().prepare("SELECT fees_claimed_sol FROM positions WHERE id = ?")
-    .get(pos.id) as { fees_claimed_sol: number } | undefined;
+  // Re-read fees and actual wallet deltas: the close itself may claim
+  // outstanding fees, and open_cost/close_return carry the real rent+tx costs.
+  const row = getDb().prepare(
+    "SELECT fees_claimed_sol, open_cost_sol, close_return_sol FROM positions WHERE id = ?"
+  ).get(pos.id) as { fees_claimed_sol: number; open_cost_sol: number | null; close_return_sol: number | null } | undefined;
   const fees = row?.fees_claimed_sol ?? pos.feesClaimedSol;
   const pnl = res.exitSol + fees - pos.entrySol;
   const pct = pos.entrySol > 0 ? (pnl / pos.entrySol) * 100 : 0;
   const holdH = (now() - pos.entryTs) / 3600;
   const hold = holdH < 1 ? `${(holdH * 60).toFixed(0)}m` : `${holdH.toFixed(1)}h`;
+  // True PnL: measured wallet flows. costs = rent burn + every tx fee.
+  let trueLine = "";
+  if (row?.open_cost_sol != null && row?.close_return_sol != null) {
+    const costs = (row.open_cost_sol - pos.entrySol) - (row.close_return_sol - res.exitSol);
+    const truePnl = pnl - costs;
+    trueLine = `\ntrue PnL incl rent+tx: ${truePnl >= 0 ? "+" : ""}${truePnl.toFixed(4)} SOL (costs ${costs.toFixed(4)})`;
+  }
   await alert(
     kind,
     `${pos.symbol} pos#${pos.id} closed — ${headline}\n` +
     `PnL: ${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} SOL (${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%)\n` +
-    `entry ${pos.entrySol.toFixed(3)} → exit ${res.exitSol.toFixed(3)} SOL | fees ${fees.toFixed(4)} SOL | held ${hold}`
+    `entry ${pos.entrySol.toFixed(3)} → exit ${res.exitSol.toFixed(3)} SOL | fees ${fees.toFixed(4)} SOL | held ${hold}` +
+    trueLine
   );
   await accountPnlAlert(exec).catch((e) =>
     console.error("[alert] account summary failed:", (e as Error).message));

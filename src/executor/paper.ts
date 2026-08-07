@@ -40,12 +40,13 @@ export class PaperExecutor implements Executor {
     const db = getDb();
     const res = db.prepare(
       `INSERT INTO positions (mode, pool, token_mint, symbol, tranche_of, entry_ts, entry_price, entry_sol,
-        min_bin_id, max_bin_id, state, rent_paid_sol)
-       VALUES ('paper', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)`
+        min_bin_id, max_bin_id, state, rent_paid_sol, open_cost_sol)
+       VALUES ('paper', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)`
     ).run(
       params.poolAddress, params.tokenMint, params.symbol, params.trancheOf ?? null,
       now(), params.entryPrice, params.sizeSol,
-      params.range.minBinId, params.range.maxBinId, params.range.estBinRentSol
+      params.range.minBinId, params.range.maxBinId, params.range.estBinRentSol,
+      params.sizeSol + PAPER_TX_COST_SOL
     );
     return {
       id: Number(res.lastInsertRowid),
@@ -194,8 +195,8 @@ export class PaperExecutor implements Executor {
       P3_above: "closed_win", P5_below: "closed_below", manual: "closed_manual",
     };
     getDb().prepare(
-      `UPDATE positions SET state = ?, exit_ts = ?, exit_sol = ?, exit_reason = ? WHERE id = ?`
-    ).run(stateByReason[reason], now(), mark.valueSol, reason, position.id);
+      `UPDATE positions SET state = ?, exit_ts = ?, exit_sol = ?, exit_reason = ?, close_return_sol = ? WHERE id = ?`
+    ).run(stateByReason[reason], now(), mark.valueSol, reason, mark.valueSol - PAPER_TX_COST_SOL, position.id);
     getDb().prepare(
       `INSERT INTO events (position_id, ts, type, sol_delta, tx_cost_sol) VALUES (?, ?, ?, ?, ?)`
     ).run(position.id, now(), reason === "P0_safety" ? "safety_exit" : "withdraw", mark.valueSol, PAPER_TX_COST_SOL);
