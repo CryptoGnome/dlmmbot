@@ -1,0 +1,159 @@
+# meteora-farmer configuration.
+# Every value here maps to a [bracketed] default in STRATEGY.md. Hot-reloaded on change.
+
+[scanner]
+interval_s = 60
+pages = 3                  # datapi pages per sweep (100 pools/page)
+copycat_ignore_h = 24      # losers of symbol dedupe ignored this long
+
+[gates]                    # STRATEGY.md §2.1 — pool hard gates
+tvl_min_usd = 5000
+tvl_max_usd = 2000000
+fee_tvl_24h_min_pct = 20         # %/day
+fee_tvl_30m_daily_min_pct = 10   # 30m ratio annualized to daily, %/day
+vol_30m_min_usd = 25000
+vol_trend_min = 0.8              # vol_1h / (vol_24h/24)
+base_fee_min_pct = 0.2
+base_fee_max_pct = 5.0
+bin_step_min_new = 80            # for tokens < 7 days old
+# Fee collection preference. DLMM collect_fee_mode verified 2026-08-07:
+#   0 = fees paid in both tokens, 1 = fees auto-converted to quote (SOL) only.
+# "prefer_quote": quote-only pools get a score bonus, both-token pools stay
+#   eligible (fees still banked to SOL at claim via swap).
+# "quote_only": hard gate — only quote-only pools (~13% of pools).
+# "both_only": hard gate — only both-token pools (the video's two-green-dots rule).
+# "any": no gate, no bonus.
+fee_collection = "prefer_quote"
+quote_mints = ["So11111111111111111111111111111111111111112"]  # SOL only (meme mode)
+price_divergence_max_pct = 2.0   # pool price vs Jupiter quote
+max_pool_share_pct = 20          # skip if our position would exceed this % of pool TVL
+
+[vetting]                  # STRATEGY.md §2.2 — token hard gates
+single_holder_max_pct = 15
+top10_max_pct = 40
+insider_cluster_max_pct = 10
+rugcheck_veto_normalised = 41
+age_min_minutes = 45
+age_max_days = 14
+allow_token2022_extensions = ["metadata"]
+
+[timing]                   # STRATEGY.md §2.3 — soft, feeds score
+freefall_15m_max_pct = -20
+ath_proximity_pct = 3
+
+[score]                    # STRATEGY.md §2.4 — weights must sum to 100
+w_fee_momentum = 30
+w_turnover = 20
+w_vetting_soft = 25
+w_timing = 15
+w_pool_structure = 10
+
+[entry]                    # STRATEGY.md §3
+fib_bottom = 0.786
+max_down_pct = 65
+min_down_pct = 40
+max_position_accounts = 2
+bin_rent_budget_sol = 0.05
+liquidity_slippage_pct = 1.0
+tranche_enabled = false
+tranche_score_min = 85
+tranche_size_pct = 50
+
+[manage]                   # STRATEGY.md §4
+poll_s = 15
+# P0 safety
+safety_tvl_drop_pct = 40         # in 10 min
+safety_wallet_dump_pct = 3       # single tx, % of supply
+safety_new_whale_pct = 10
+safety_price_crash_pct = -60     # from entry in <15 min
+# P1 stop loss
+stop_loss_frac = 0.75            # position SOL value vs entry
+loss_reentry_cooldown_h = 24
+# P2 rotation
+rotation_fee_daily_min_pct = 5
+rotation_polls = 3
+rotation_vol_30m_min_usd = 5000
+max_age_h = 48
+# P3 above range / take profit
+above_range_pct = 5
+above_range_sustain_min = 10
+rebalance_max_per_6h = 2
+rebalance_cost_max_pct_of_fees = 25
+reentry_ladder_mult = 0.75
+reentry_max_per_24h = 2
+house_money_rule = true
+# P4 in range
+claim_min_sol = 0.05
+claim_min_txcost_mult = 20
+claim_interval_h = 4
+fee_destination = "bank"         # bank | compound | hybrid
+compound_score_min = 70
+escape_hatch_depth_pct = 60
+escape_hatch_recovery_pct = 25
+profit_lock_enabled = true
+profit_lock_at_frac = 1.30
+profit_lock_withdraw_pct = 30
+profit_lock_max_fires = 1
+# P5 below range
+below_range_grace_min = 15
+
+[sizing]                   # STRATEGY.md §5
+max_positions = 7
+min_position_sol = 0.5
+# --- Kelly criterion sizing (learns from our own closed-position ledger) ---
+kelly_enabled = true
+kelly_fraction = 0.5           # half-Kelly: ~75% of optimal growth, far smaller drawdowns
+kelly_lookback = 50            # closed positions in the rolling estimate
+kelly_min_samples = 10         # below this: cold-start sizing applies
+kelly_cold_start_frac = 0.03   # 3% of wallet per position until enough samples
+kelly_max_position_frac = 0.10 # hard cap: no position exceeds 10% of wallet
+kelly_block_negative = true    # estimated edge <= 0 -> no new entries (evidence-based brake)
+reserve_sol = 1.0
+reserve_pct = 10
+per_token_max_pct = 40
+score_mult_low = 0.5             # score 60-70
+score_mult_mid = 1.0             # 70-85
+score_mult_high = 1.5            # 85+
+circuit_daily_loss_pct = 10
+circuit_pause_h = 12
+circuit_weekly_triggers_halt = 2
+regime_filter = true
+regime_sol_24h_halve_pct = -8
+regime_sol_24h_pause_pct = -15
+
+[rotation]                 # capital agility: room for spectacular newcomers (§5)
+alpha_slots = 1                  # slots reserved for score >= alpha_score_min only
+alpha_score_min = 85
+displacement_enabled = true      # full book + exceptional candidate -> close weakest
+displacement_margin = 15         # candidate must beat weakest's CURRENT score by this
+displacement_min_hold_min = 30   # positions younger than this are not displaceable
+displacement_value_frac_min = 0.97  # never displace a position more than 3% underwater
+displacement_max_per_6h = 2
+
+[exec]                     # STRATEGY.md §3.6/§8
+mode = "paper"                   # paper | live (live also requires FARMER_MODE=live env)
+use_zap = true
+exit_slippage_bps = 50
+safety_exit_slippage_bps = 1000
+tx_retries = 3
+paper_promotion_days = 7
+
+[watchdog]
+rpc_blind_close_all = true
+rpc_blind_after_min = 5
+
+[gmgn]                     # discovery enrichment via official gmgn-cli (query tier only)
+enabled = true             # auto-off when GMGN_API_KEY is empty
+intervals = ["5m", "1h"]   # trending windows checked each scan (1m is noise below our entry horizon)
+min_liquidity_usd = 10000
+# Tiered score bonus by which windows the token trends in (clamped at 100):
+bonus_sustained = 8        # 5m AND 1h — momentum confirmed and holding
+bonus_emerging = 4         # 5m only — catching fire now, not yet proven
+bonus_fading = 3           # 1h only — was hot, current momentum decaying
+require_renounced = true   # trending entry says mint/freeze not renounced -> pre-vet skip
+
+[apis]
+meteora_datapi = "https://dlmm.datapi.meteora.ag"
+rugcheck = "https://api.rugcheck.xyz"
+jupiter_quote = "https://lite-api.jup.ag/swap/v1"
+jupiter_price = "https://lite-api.jup.ag/price/v3"

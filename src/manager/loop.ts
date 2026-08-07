@@ -1,0 +1,511 @@
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { config, isLive } from "../config.js";
+import { reconcileLive } from "./reconcile.js";
+import { alert } from "../alerts.js";
+import { blacklist, getDb, now, recordDecision } from "../db/db.js";
+import type { Executor } from "../executor/executor.js";
+import { PaperExecutor } from "../executor/paper.js";
+import { rollupDaily } from "../pnl/rollup.js";
+import { fetchSummary } from "../vetting/rugcheck.js";
+import { planRange } from "../ranges/planner.js";
+import { fetchCandles, fetchPool } from "../scanner/meteora.js";
+import { trendingByMint } from "../scanner/gmgn.js";
+import { feeMomentumPart, opportunityScore, structurePart, turnoverPart } from "../scanner/score.js";
+import { scan } from "../scanner/scan.js";
+import { sol24hChangePct } from "../market.js";
+import { circuitBreakerTripped, computeBankroll, kellyStats, openPositionCount, positionSize, regimeFactor, tokenExposureSol } from "../risk/limits.js";
+import type { Position } from "../types.js";
+import { vetToken } from "../vetting/vet.js";
+
+// STRATEGY.md §4 — the P0-P5 state machine, strict priority order.
+// Scaffold status: entry pipeline + P1/P2/P3(basic)/P4-claim/P5 are functional
+// in paper mode. P0 safety triggers, escape hatch, tranches, re-entry ladder,
+// and the regime filter are TODO(phase 2) — marked inline.
+
+const HALT_FILE = resolve(process.cwd(), "HALT");
+const LOCK_FILE = resolve(process.cwd(), "data", "farmer.lock");
+
+// Per-position manager state (all in-memory; rebuilt after restart).
+const aboveRangeSince = new Map<number, number>();   // P3 sustain timer
+const belowRangeSince = new Map<number, number>();   // P5 grace timer
+const tvlHistory = new Map<number, Array<{ ts: number; tvl: number }>>(); // P0 TVL-drop window
+const decayStreak = new Map<number, number>();        // P2 consecutive decay polls
+const rugcheckLastCheck = new Map<number, number>();  // P0 rugcheck-flip throttle
+const everInRange = new Set<number>();                // P3 win-vs-missed classification
+
+// Watchdog / breaker state.
+let lastHealthyTick = Date.now();
+let watchdogAlerted = false;
+let breakerAlerted = false;
+
+function clearRangeTimers(posId: number): void {
+  aboveRangeSince.delete(posId);
+  belowRangeSince.delete(posId);
+  tvlHistory.delete(posId);
+  decayStreak.delete(posId);
+  rugcheckLastCheck.delete(posId);
+  everInRange.delete(posId);
+}
+
+/** House-money rule (§5/P3): bank realized profit so it leaves the deployable pool. */
+function bankProfit(pos: Position, exitSol: number, context: string): void {
+  if (!config().manage.house_money_rule) return;
+  const profit = exitSol + pos.feesClaimedSol - pos.entrySol;
+  if (profit <= 0) return;
+  getDb().prepare("INSERT INTO ledger (ts, kind, sol, note) VALUES (?, 'bank', ?, ?)")
+    .run(now(), profit, `${context} ${pos.symbol} pos#${pos.id}`);
+  console.log(`[bank] +${profit.toFixed(4)} SOL banked (${context} ${pos.symbol}) — release via ledger when desired`);
+}
+
+/** P0 TVL-drop check (§4): true if pool TVL fell >= threshold within the window. */
+function tvlDropTriggered(posId: number, tvlNow: number): boolean {
+  const m = config().manage;
+  const windowS = 600; // 10 min per spec
+  const hist = tvlHistory.get(posId) ?? [];
+  hist.push({ ts: now(), tvl: tvlNow });
+  while (hist.length && hist[0]!.ts < now() - windowS) hist.shift();
+  tvlHistory.set(posId, hist);
+  const peak = Math.max(...hist.map((h) => h.tvl));
+  return peak > 0 && ((peak - tvlNow) / peak) * 100 >= m.safety_tvl_drop_pct && hist.length >= 3;
+}
+
+/** P0 RugCheck-flip check, throttled to one call per position per 5 min. */
+async function rugcheckFlipped(posId: number, mint: string): Promise<boolean> {
+  const last = rugcheckLastCheck.get(posId) ?? 0;
+  if (now() - last < 300) return false;
+  rugcheckLastCheck.set(posId, now());
+  const summary = await fetchSummary(mint);
+  return summary !== null && summary.score_normalised >= config().vetting.rugcheck_veto_normalised;
+}
+
+export function haltRequested(): boolean {
+  return existsSync(HALT_FILE);
+}
+
+/**
+ * Single-instance lock. Incident 2026-08-07: four orphaned loops (Windows
+ * process-tree kills only reach the npm wrapper) shared one DB and corrupted
+ * each other's positions. Refuses to start while another live PID holds the
+ * lock; stale locks (dead PID) are reclaimed.
+ */
+function acquireInstanceLock(): void {
+  mkdirSync(resolve(process.cwd(), "data"), { recursive: true });
+  if (existsSync(LOCK_FILE)) {
+    const oldPid = Number(readFileSync(LOCK_FILE, "utf8").trim());
+    let alive = false;
+    try {
+      process.kill(oldPid, 0); // signal 0 = existence check
+      alive = true;
+    } catch {
+      alive = false;
+    }
+    if (alive && oldPid !== process.pid) {
+      throw new Error(
+        `another farmer instance is already running (pid ${oldPid}). ` +
+        `Stop it first — two instances on one DB corrupt each other's positions.`
+      );
+    }
+    console.log(`[farmer] reclaiming stale lock from dead pid ${oldPid}`);
+  }
+  writeFileSync(LOCK_FILE, String(process.pid));
+  const release = () => { try { rmSync(LOCK_FILE, { force: true }); } catch { /* best effort */ } };
+  process.on("exit", release);
+  process.on("SIGINT", () => { release(); process.exit(130); });
+  process.on("SIGTERM", () => { release(); process.exit(143); });
+}
+
+function loadOpenPositions(): Position[] {
+  const rows = getDb().prepare(
+    `SELECT id, mode, pool, token_mint, symbol, tranche_of, entry_ts, entry_price, entry_sol,
+            min_bin_id, max_bin_id, state, fees_claimed_sol, rent_paid_sol, profit_lock_fires,
+            exit_ts, exit_sol, exit_reason
+     FROM positions WHERE state IN ('open','pending')`
+  ).all() as Array<Record<string, unknown>>;
+  return rows.map((r) => ({
+    id: r.id as number, mode: r.mode as "paper" | "live",
+    poolAddress: r.pool as string, tokenMint: r.token_mint as string,
+    symbol: (r.symbol as string) ?? "?", trancheOf: r.tranche_of as number | null,
+    entryTs: r.entry_ts as number, entryPrice: r.entry_price as number,
+    entrySol: r.entry_sol as number, minBinId: r.min_bin_id as number,
+    maxBinId: r.max_bin_id as number, state: r.state as Position["state"],
+    feesClaimedSol: r.fees_claimed_sol as number, rentPaidSol: r.rent_paid_sol as number,
+    profitLockFires: r.profit_lock_fires as number,
+    exitTs: r.exit_ts as number | null, exitSol: r.exit_sol as number | null,
+    exitReason: r.exit_reason as Position["exitReason"],
+  }));
+}
+
+/** One manager tick over all open positions. */
+export async function managePositions(exec: Executor): Promise<void> {
+  const m = config().manage;
+  const positions = loadOpenPositions();
+  let marksOk = 0, marksFailed = 0, unrealizedSol = 0;
+
+  for (const pos of positions) {
+    try {
+      if (exec instanceof PaperExecutor) await exec.accrueFees(pos, m.poll_s);
+      const mark = await exec.mark(pos);
+      marksOk++;
+      unrealizedSol += mark.valueSol - pos.entrySol;
+      const ageH = (now() - pos.entryTs) / 3600;
+      const valueFrac = pos.entrySol > 0 ? mark.valueSol / pos.entrySol : 1;
+      if (mark.inRange) everInRange.add(pos.id);
+
+      // --- P0 SAFETY: pool death, price crash, TVL drain, rugcheck flip ---
+      // TODO(phase 2, live): wallet-dump / new-whale via tx stream.
+      const crashed = mark.price > 0 && pos.entryPrice > 0 &&
+        ((mark.price - pos.entryPrice) / pos.entryPrice) * 100 <= m.safety_price_crash_pct;
+      const tvlDrained = mark.tvlUsd > 0 && tvlDropTriggered(pos.id, mark.tvlUsd);
+      const rugFlip = !crashed && !tvlDrained && mark.valueSol > 0 && await rugcheckFlipped(pos.id, pos.tokenMint);
+      if (mark.valueSol === 0 || crashed || tvlDrained || rugFlip) {
+        const trigger = mark.valueSol === 0 ? "pool_dead" : crashed ? "price_crash" : tvlDrained ? "tvl_drain" : "rugcheck_flip";
+        clearRangeTimers(pos.id);
+        await exec.close(pos, "P0_safety", config().exec.safety_exit_slippage_bps);
+        blacklist(pos.tokenMint, "token", `P0 safety exit (${trigger})`);
+        recordDecision(pos.tokenMint, pos.poolAddress, "exited", `P0_safety_${trigger}`, null, { mark, pos });
+        await alert("safety_exit", `${pos.symbol} pos#${pos.id}: P0 ${trigger} — closed at ${mark.valueSol.toFixed(3)} SOL (entry ${pos.entrySol.toFixed(3)})`);
+        continue;
+      }
+
+      // --- P1 STOP LOSS ---
+      if (valueFrac < m.stop_loss_frac) {
+        clearRangeTimers(pos.id);
+        await exec.close(pos, "P1_stop", config().exec.exit_slippage_bps);
+        blacklist(pos.tokenMint, "token", "stop loss cooldown", m.loss_reentry_cooldown_h);
+        recordDecision(pos.tokenMint, pos.poolAddress, "exited", "P1_stop", null, { valueFrac, mark });
+        await alert("stop_loss", `${pos.symbol} pos#${pos.id}: stop loss at ${(valueFrac * 100 - 100).toFixed(1)}%`);
+        continue;
+      }
+
+      // --- P2 ROTATION: age limit + consecutive fee/volume decay ---
+      if (ageH > m.max_age_h) {
+        clearRangeTimers(pos.id);
+        await exec.close(pos, "P2_rotation", config().exec.exit_slippage_bps);
+        recordDecision(pos.tokenMint, pos.poolAddress, "exited", "P2_rotation_age", null, { ageH });
+        continue;
+      }
+      const feeDaily = mark.feeTvl30mPct * 48;
+      const decayed = feeDaily < m.rotation_fee_daily_min_pct || mark.vol30mUsd < m.rotation_vol_30m_min_usd;
+      const streak = decayed ? (decayStreak.get(pos.id) ?? 0) + 1 : 0;
+      decayStreak.set(pos.id, streak);
+      if (streak >= m.rotation_polls) {
+        clearRangeTimers(pos.id);
+        const { exitSol } = await exec.close(pos, "P2_rotation", config().exec.exit_slippage_bps);
+        bankProfit(pos, exitSol, "P2 rotation");
+        recordDecision(pos.tokenMint, pos.poolAddress, "exited", "P2_rotation_decay", null, { feeDaily, vol30m: mark.vol30mUsd, streak });
+        console.log(`[manager] pos#${pos.id} ${pos.symbol}: rotated out (fee ${feeDaily.toFixed(1)}%/d, vol30m $${mark.vol30mUsd.toFixed(0)})`);
+        continue;
+      }
+
+      // --- P3 ABOVE RANGE -> TAKE PROFIT (with sustain timer, §4 P3) ---
+      // TODO(phase 2): win-vs-missed classification, house-money banking.
+      if (mark.aboveRange) {
+        const since = aboveRangeSince.get(pos.id);
+        if (since === undefined) {
+          aboveRangeSince.set(pos.id, now());
+        } else if (now() - since >= m.above_range_sustain_min * 60) {
+          // Win = price traveled through our range (fees + round-trip profit);
+          // missed = price pumped without ever touching us (capital idled).
+          const classification = everInRange.has(pos.id) ? "win" : "missed";
+          clearRangeTimers(pos.id);
+          const { exitSol } = await exec.close(pos, "P3_above", config().exec.exit_slippage_bps);
+          if (classification === "missed")
+            getDb().prepare("UPDATE positions SET state='closed_missed' WHERE id=?").run(pos.id);
+          else bankProfit(pos, exitSol, "P3 take-profit");
+          recordDecision(pos.tokenMint, pos.poolAddress, "exited", `P3_above_${classification}`, null, { mark, sustainedS: now() - since, exitSol });
+        }
+        continue; // above range: nothing earns; wait out the sustain window
+      }
+      aboveRangeSince.delete(pos.id); // back in (or below) range — reset timer
+
+      // --- P5 BELOW RANGE (grace timer, §4 P5: wick tolerance) ---
+      if (mark.belowRange) {
+        const since = belowRangeSince.get(pos.id);
+        if (since === undefined) {
+          belowRangeSince.set(pos.id, now());
+          console.log(`[manager] pos#${pos.id} ${pos.symbol} below range — grace timer started (${m.below_range_grace_min}m)`);
+        } else if (now() - since >= m.below_range_grace_min * 60) {
+          clearRangeTimers(pos.id);
+          await exec.close(pos, "P5_below", config().exec.exit_slippage_bps);
+          blacklist(pos.tokenMint, "token", "below range cut", m.loss_reentry_cooldown_h);
+          recordDecision(pos.tokenMint, pos.poolAddress, "exited", "P5_below", null, { mark, graceS: now() - since });
+          await alert("below_cut", `${pos.symbol} pos#${pos.id}: below-range cut after ${m.below_range_grace_min}m grace, ${((mark.valueSol / pos.entrySol - 1) * 100).toFixed(1)}%`);
+        }
+        continue; // below range: nothing earns; wait out the grace window
+      }
+      belowRangeSince.delete(pos.id); // back in range — wick survived, reset
+
+      // --- P4 IN RANGE: claim + profit lock ---
+      if (mark.unclaimedFeesSol >= m.claim_min_sol) {
+        await exec.claimFees(pos);
+      }
+      if (
+        m.profit_lock_enabled &&
+        pos.profitLockFires < m.profit_lock_max_fires &&
+        valueFrac >= m.profit_lock_at_frac
+      ) {
+        await exec.withdraw(pos, m.profit_lock_withdraw_pct * 100); // pct -> bps
+      }
+      // TODO(phase 2): escape hatch, hybrid/compound fee destination.
+    } catch (e) {
+      marksFailed++;
+      console.error(`[manager] position ${pos.id} (${pos.symbol}):`, (e as Error).message);
+    }
+  }
+
+  // Watchdog health: blind = positions exist but every mark failed.
+  if (positions.length === 0 || marksOk > 0) {
+    lastHealthyTick = Date.now();
+    watchdogAlerted = false;
+  }
+
+  // Daily PnL rollup (§7) — keeps today's row current for promotion tracking.
+  try {
+    await rollupDaily(exec.mode, unrealizedSol);
+  } catch (e) {
+    console.error("[pnl] rollup failed:", (e as Error).message);
+  }
+}
+
+/** Watchdog (§9): alert (and optionally close all) when marking is blind too long. */
+export async function watchdogCheck(exec: Executor): Promise<void> {
+  const w = config().watchdog;
+  const blindMs = Date.now() - lastHealthyTick;
+  if (blindMs < w.rpc_blind_after_min * 60_000) return;
+  if (!watchdogAlerted) {
+    watchdogAlerted = true;
+    await alert("watchdog", `marking blind for ${(blindMs / 60000).toFixed(0)}m — ${w.rpc_blind_close_all ? "attempting close-all" : "manual intervention needed"}`);
+  }
+  if (w.rpc_blind_close_all && exec.mode === "live") {
+    // TODO(live executor): route close-all through the fallback RPC connection.
+    for (const pos of loadOpenPositions()) {
+      try { await exec.close(pos, "manual", config().exec.safety_exit_slippage_bps); } catch { /* keep trying next tick */ }
+    }
+  }
+}
+
+/**
+ * Current opportunity score of an OPEN position's pool (neutral vetting/timing
+ * parts — we're comparing pool heat, not re-vetting). Used by displacement.
+ */
+async function currentPositionScore(pos: Position): Promise<number | null> {
+  const pool = await fetchPool(pos.poolAddress).catch(() => null);
+  if (!pool) return null;
+  const { score } = opportunityScore({
+    feeMomentum: feeMomentumPart(pool),
+    turnover: turnoverPart(pool),
+    vettingSoft: 0.5,
+    timing: 0.5,
+    structure: structurePart(pool),
+  });
+  const gm = (await trendingByMint()).get(pos.tokenMint);
+  const g = config().gmgn;
+  const bonus = !gm ? 0
+    : gm.intervals.has("5m") && gm.intervals.has("1h") ? g.bonus_sustained
+    : gm.intervals.has("5m") ? g.bonus_emerging
+    : gm.intervals.has("1h") ? g.bonus_fading : 0;
+  return Math.min(100, score + bonus);
+}
+
+/**
+ * Displacement (§5): full book + exceptional candidate -> close the weakest
+ * open position IF the candidate beats its current score by a margin, it's old
+ * enough, and it isn't underwater (never realize losses to chase). Returns
+ * true if a slot was freed.
+ */
+async function tryDisplacement(exec: Executor, candScore: number, candMint: string): Promise<boolean> {
+  const rot = config().rotation;
+  if (!rot.displacement_enabled) return false;
+
+  const recent = (getDb().prepare(
+    "SELECT COUNT(*) AS c FROM decisions WHERE failed_gate LIKE 'displaced_by%' AND ts > ?"
+  ).get(now() - 21_600) as { c: number }).c;
+  if (recent >= rot.displacement_max_per_6h) return false;
+
+  let weakest: { pos: Position; score: number; valueFrac: number } | null = null;
+  for (const pos of loadOpenPositions()) {
+    if (now() - pos.entryTs < rot.displacement_min_hold_min * 60) continue;
+    let valueFrac: number;
+    try {
+      const mark = await exec.mark(pos);
+      valueFrac = pos.entrySol > 0 ? mark.valueSol / pos.entrySol : 1;
+    } catch { continue; }
+    if (valueFrac < rot.displacement_value_frac_min) continue;
+    const score = await currentPositionScore(pos);
+    if (score === null) continue;
+    if (!weakest || score < weakest.score) weakest = { pos, score, valueFrac };
+  }
+
+  if (!weakest || candScore < weakest.score + rot.displacement_margin) return false;
+
+  await exec.close(weakest.pos, "P2_rotation", config().exec.exit_slippage_bps);
+  recordDecision(weakest.pos.tokenMint, weakest.pos.poolAddress, "exited", `displaced_by:${candMint}`, weakest.score, {
+    candScore, weakestScore: weakest.score, valueFrac: weakest.valueFrac,
+  });
+  console.log(
+    `[rotate] displaced ${weakest.pos.symbol} (score ${weakest.score.toFixed(1)}, pos#${weakest.pos.id}) ` +
+    `for candidate scoring ${candScore.toFixed(1)}`
+  );
+  await alert("displacement", `${weakest.pos.symbol} pos#${weakest.pos.id} (score ${weakest.score.toFixed(0)}) displaced for candidate scoring ${candScore.toFixed(0)}`);
+  return true;
+}
+
+/** Entry pipeline: scan -> vet -> size -> open, respecting portfolio limits. */
+export async function enterNewPositions(exec: Executor): Promise<void> {
+  const walletSol = await exec.walletSol();
+  if (circuitBreakerTripped(walletSol)) {
+    console.log("[risk] circuit breaker tripped — no new entries");
+    if (!breakerAlerted) {
+      breakerAlerted = true;
+      await alert("circuit_breaker", "daily loss limit hit — new entries paused (open positions still managed)");
+    }
+    return;
+  }
+  breakerAlerted = false;
+
+  // Regime filter (§5): SOL crashing -> halve or pause new-entry sizing.
+  const solChange = await sol24hChangePct();
+  const regime = solChange === null ? 1 : regimeFactor(solChange);
+  if (regime === 0) {
+    console.log(`[risk] regime filter: SOL ${solChange?.toFixed(1)}% in 24h — new entries paused`);
+    return;
+  }
+
+  const bankroll = computeBankroll(walletSol);
+  const rot = config().rotation;
+  const normalCap = Math.max(0, bankroll.effectiveSlots - rot.alpha_slots);
+
+  const { candidates } = await scan();
+  for (const cand of candidates) {
+    const opened = openPositionCount();
+    // Cheap admission pre-check before spending vetting calls: when the normal
+    // book is full, only candidates that could plausibly reach alpha (pre-vet
+    // score + max vetting uplift) are worth vetting.
+    const maxVetUplift = 0.5 * config().score.w_vetting_soft;
+    if (opened >= normalCap && cand.score + maxVetUplift < rot.alpha_score_min) {
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "slots_full", cand.score, {});
+      continue;
+    }
+    if (opened >= bankroll.effectiveSlots && !rot.displacement_enabled) break;
+
+    const createdAtMs = cand.pool.createdAt ? Date.parse(cand.pool.createdAt) : null;
+    const vet = await vetToken(cand.tokenMint, createdAtMs);
+    if (vet.verdict !== "pass") {
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", vet.hardFailures[0]?.gate ?? "vet", cand.score, { vet, cand });
+      continue;
+    }
+
+    // Re-blend score with real vetting softness (§2.4).
+    const score = cand.score - 0.5 * config().score.w_vetting_soft + (vet.softScore / 100) * config().score.w_vetting_soft;
+
+    // Slot admission (§5): normal slots for everyone, alpha slots only for
+    // exceptional scores; full book -> displacement attempt for alpha only.
+    const isAlpha = score >= rot.alpha_score_min;
+    let admitted = opened < normalCap || (isAlpha && opened < bankroll.effectiveSlots);
+    if (!admitted && isAlpha) admitted = await tryDisplacement(exec, score, cand.tokenMint);
+    if (!admitted) {
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", isAlpha ? "displacement_declined" : "alpha_reserved", score, { opened, normalCap });
+      continue;
+    }
+
+    const kelly = kellyStats();
+    let size = positionSize(bankroll, score);
+    if (size <= 0) {
+      const gate = kelly.regime === "negative_edge" ? "kelly_negative_edge" : "size_zero";
+      if (kelly.regime === "negative_edge")
+        console.log(`[risk] Kelly estimates negative edge (f*=${kelly.fullKelly?.toFixed(3)}, n=${kelly.samples}) — entries blocked`);
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", gate, score, { bankroll, kelly });
+      continue;
+    }
+    // Re-entry ladder (§4 P3): each same-token entry within 24h shrinks by
+    // reentry_ladder_mult; hard stop after reentry_max_per_24h re-entries.
+    const m = config().manage;
+    const priorEntries24h = (getDb().prepare(
+      "SELECT COUNT(*) AS c FROM positions WHERE token_mint = ? AND entry_ts > ?"
+    ).get(cand.tokenMint, now() - 86_400) as { c: number }).c;
+    if (priorEntries24h > m.reentry_max_per_24h) {
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "reentry_limit", score, { priorEntries24h });
+      continue;
+    }
+    size *= Math.pow(m.reentry_ladder_mult, priorEntries24h);
+    size *= regime; // regime filter halves sizing in a SOL downdraft
+    if (size < config().sizing.min_position_sol) {
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "ladder_below_min", score, { priorEntries24h, size });
+      continue;
+    }
+    // One primary position per token (§5) — tranches are the only sanctioned
+    // second position and they're opened by the manager, not the entry pipeline.
+    if (tokenExposureSol(cand.tokenMint) > 0) {
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "already_positioned", score, {});
+      continue;
+    }
+    // Per-token cap (§5).
+    const exposure = tokenExposureSol(cand.tokenMint);
+    const cap = (bankroll.deployableSol + bankroll.deployedSol) * (config().sizing.per_token_max_pct / 100);
+    if (exposure + size > cap) {
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "per_token_cap", score, { exposure, cap });
+      continue;
+    }
+
+    const candles = await fetchCandles(cand.pool.address, "5m").catch(() => []);
+    const range = planRange(cand.pool.price, cand.pool.binStep, candles);
+    if (range.estBinRentSol > config().entry.bin_rent_budget_sol * 3) {
+      // Rent budget is a soft-cap in paper mode; TODO(phase 2): shrink range instead.
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "bin_rent", score, { range });
+      continue;
+    }
+
+    const pos = await exec.open({
+      poolAddress: cand.pool.address,
+      tokenMint: cand.tokenMint,
+      symbol: cand.symbol,
+      sizeSol: size,
+      range,
+      entryPrice: cand.pool.price,
+    });
+    recordDecision(cand.tokenMint, cand.pool.address, "entered", null, score, { size, range, vet: vet.facts, pool: cand.pool, kelly, isAlpha });
+    console.log(
+      `[enter] ${cand.symbol} score=${score.toFixed(1)} size=${size.toFixed(2)} SOL ` +
+      `(kelly:${kelly.regime}@${(kelly.appliedFraction * 100).toFixed(1)}%) ` +
+      `range=[${range.minBinId},${range.maxBinId}] (${range.bottomPricePct.toFixed(0)}% depth) pos#${pos.id}`
+    );
+  }
+}
+
+/** Main loop: manage every poll_s, enter every interval_s. */
+export async function runLoop(): Promise<void> {
+  acquireInstanceLock();
+  let exec: Executor;
+  if (isLive()) {
+    const { LiveExecutor } = await import("../executor/live.js");
+    const live = new LiveExecutor();
+    // Chain is truth: reconcile before the manager touches anything (§7).
+    const rec = await reconcileLive(live.connection, live.wallet.publicKey);
+    console.log(`[farmer] reconcile: ${rec.dbOpen} db-open, ${rec.chainPositions} on-chain, ${rec.orphanedInDb.length} orphaned, ${rec.adopted.length} adopted`);
+    exec = live;
+  } else {
+    exec = new PaperExecutor();
+  }
+  console.log(`[farmer] starting in ${exec.mode} mode (pid ${process.pid})`);
+  let lastScan = 0;
+
+  for (;;) {
+    if (haltRequested()) {
+      console.log("[farmer] HALT file present — closing all positions and stopping");
+      for (const pos of loadOpenPositions()) await exec.close(pos, "manual", config().exec.exit_slippage_bps);
+      return;
+    }
+    try {
+      await managePositions(exec);
+      await watchdogCheck(exec);
+      if (Date.now() - lastScan > config().scanner.interval_s * 1000) {
+        lastScan = Date.now();
+        await enterNewPositions(exec);
+      }
+    } catch (e) {
+      console.error("[farmer] tick error:", (e as Error).message);
+    }
+    await new Promise((r) => setTimeout(r, config().manage.poll_s * 1000));
+  }
+}

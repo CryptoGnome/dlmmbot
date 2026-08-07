@@ -1,0 +1,41 @@
+import type { ExitReason, Position, RangePlan } from "../types.js";
+
+// Executor interface — one implementation per mode. The manager only talks to
+// this interface; it never knows whether fills are simulated or on-chain.
+
+export interface OpenParams {
+  poolAddress: string;
+  tokenMint: string;
+  symbol: string;
+  sizeSol: number;
+  range: RangePlan;
+  entryPrice: number;
+  trancheOf?: number;
+}
+
+export interface PositionMark {
+  /** Mark-to-market value of the position in SOL (both sides + unclaimed fees). */
+  valueSol: number;
+  unclaimedFeesSol: number;
+  activeBinId: number;
+  price: number;
+  inRange: boolean;
+  aboveRange: boolean; // price above our top (win/missed case)
+  belowRange: boolean;
+  // Pool health at mark time — feeds P0 (TVL drop) and P2 (fee decay).
+  tvlUsd: number;
+  feeTvl30mPct: number;
+  vol30mUsd: number;
+}
+
+export interface Executor {
+  readonly mode: "paper" | "live";
+  open(params: OpenParams): Promise<Position>;
+  mark(position: Position): Promise<PositionMark>;
+  claimFees(position: Position): Promise<{ claimedSol: number; txCostSol: number }>;
+  /** Partial withdraw without closing (profit lock). bps of liquidity. */
+  withdraw(position: Position, bps: number): Promise<{ withdrawnSol: number; txCostSol: number }>;
+  /** Full exit: withdraw 100%, zap token side to SOL, close accounts. */
+  close(position: Position, reason: ExitReason, slippageBps: number): Promise<{ exitSol: number; txCostSol: number }>;
+  walletSol(): Promise<number>;
+}
