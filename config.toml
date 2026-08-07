@@ -135,7 +135,7 @@ displacement_value_frac_min = 0.97  # never displace a position more than 3% und
 displacement_max_per_6h = 2
 
 [exec]                     # STRATEGY.md §3.6/§8
-mode = "live"                    # paper | live (live also requires FARMER_MODE=live env)
+mode = "paper"                   # paper | live (live also requires FARMER_MODE=live env)
 use_zap = true
 exit_slippage_bps = 50
 safety_exit_slippage_bps = 1000
