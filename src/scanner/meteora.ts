@@ -61,6 +61,7 @@ function normalize(p: RawPool): PoolInfo & { extras: RawPoolExtras } {
     tvlUsd: p.tvl,
     price: p.current_price,
     decimalsX: p.token_x.decimals,
+    marketCapUsd: p.token_x.market_cap ?? 0,
     vol30mUsd: p.volume?.["30m"] ?? 0,
     vol1hUsd: p.volume?.["1h"] ?? 0,
     vol24hUsd: p.volume?.["24h"] ?? 0,

@@ -558,6 +558,14 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       }
     }
 
+    // Microcap band: $100-200k tokens are riskier — require a higher final
+    // score than the normal 60 sizing floor before they may enter.
+    const g = config().gates;
+    if (cand.pool.marketCapUsd < g.mcap_micro_max_usd && score < g.mcap_micro_score_min) {
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "micro_score", score, { mcapUsd: cand.pool.marketCapUsd, required: g.mcap_micro_score_min });
+      continue;
+    }
+
     // Slot admission (§5): normal slots for everyone, alpha slots only for
     // exceptional scores; full book -> displacement attempt for alpha only.
     const isAlpha = score >= rot.alpha_score_min;

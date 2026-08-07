@@ -12,6 +12,7 @@ export interface PoolInfo {
   tvlUsd: number;
   price: number;            // pool price (Y per X)
   decimalsX: number;        // base token decimals — bin math needs the raw-unit price
+  marketCapUsd: number;     // base token market cap (0 when datapi omits it)
   vol30mUsd: number;
   vol1hUsd: number;
   vol24hUsd: number;
