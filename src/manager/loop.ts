@@ -571,7 +571,9 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       entryPrice: cand.pool.price,
     });
     recordDecision(cand.tokenMint, cand.pool.address, "entered", null, score, { size, range, vet: vet.facts, pool: cand.pool, kelly, isAlpha });
-    await alert("entry", `${cand.symbol} pos#${pos.id}: entered ${size.toFixed(2)} SOL @ ${cand.pool.price.toPrecision(4)} (score ${score.toFixed(0)}${isAlpha ? ", alpha" : ""}, range depth ${range.bottomPricePct.toFixed(0)}%)`);
+    await alert("entry",
+      `${cand.symbol} pos#${pos.id}: entered ${size.toFixed(2)} SOL @ ${cand.pool.price.toPrecision(4)} (score ${score.toFixed(0)}${isAlpha ? ", alpha" : ""}, range depth ${range.bottomPricePct.toFixed(0)}%)\n` +
+      `chart: https://gmgn.ai/sol/token/${cand.tokenMint}`);
     console.log(
       `[enter] ${cand.symbol} score=${score.toFixed(1)} size=${size.toFixed(2)} SOL ` +
       `(kelly:${kelly.regime}@${(kelly.appliedFraction * 100).toFixed(1)}%) ` +
