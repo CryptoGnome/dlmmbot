@@ -28,8 +28,13 @@ export function poolGates(p: PoolInfo & { extras: RawPoolExtras }): GateFailure[
     ageMs !== null && ageMs < DAY_MS && ageMs > 0
       ? p.feeTvl24hPct * (DAY_MS / ageMs)
       : p.feeTvl24hPct;
-  if (feeTvl24h < g.fee_tvl_24h_min_pct)
-    fail("fee_tvl_24h", feeTvl24h.toFixed(1), g.fee_tvl_24h_min_pct);
+  // Recently-awakened path: a sleepy 24h average is forgiven when BOTH the 1h
+  // and 4h rates clear the same bar — hot for hours, not a 30m blip.
+  const feeTvl1hDaily = p.feeTvl1hPct * 24;
+  const feeTvl4hDaily = p.feeTvl4hPct * 6;
+  const recentlyHot = feeTvl1hDaily >= g.fee_tvl_24h_min_pct && feeTvl4hDaily >= g.fee_tvl_24h_min_pct;
+  if (feeTvl24h < g.fee_tvl_24h_min_pct && !recentlyHot)
+    fail("fee_tvl_24h", `${feeTvl24h.toFixed(1)} (1h ${feeTvl1hDaily.toFixed(1)}/4h ${feeTvl4hDaily.toFixed(1)})`, g.fee_tvl_24h_min_pct);
 
   const feeTvl30mDaily = p.feeTvl30mPct * 48; // 48 half-hours/day
   if (feeTvl30mDaily < g.fee_tvl_30m_daily_min_pct)

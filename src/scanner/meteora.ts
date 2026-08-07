@@ -66,6 +66,8 @@ function normalize(p: RawPool): PoolInfo & { extras: RawPoolExtras } {
     vol1hUsd: p.volume?.["1h"] ?? 0,
     vol24hUsd: p.volume?.["24h"] ?? 0,
     feeTvl30mPct: p.fee_tvl_ratio?.["30m"] ?? 0,
+    feeTvl1hPct: p.fee_tvl_ratio?.["1h"] ?? 0,
+    feeTvl4hPct: p.fee_tvl_ratio?.["4h"] ?? 0,
     feeTvl24hPct: p.fee_tvl_ratio?.["24h"] ?? 0,
     // collect_fee_mode semantics verified 2026-08-07 against the flagship
     // SOL-USDC pool (mode 0, pays both tokens): 0 = both tokens, 1 = quote only.

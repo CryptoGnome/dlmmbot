@@ -17,6 +17,8 @@ export interface PoolInfo {
   vol1hUsd: number;
   vol24hUsd: number;
   feeTvl30mPct: number;     // ratio for the window, in %
+  feeTvl1hPct: number;
+  feeTvl4hPct: number;
   feeTvl24hPct: number;
   feesBothTokens: boolean;
   createdAt: string | null;
