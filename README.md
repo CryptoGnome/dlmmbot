@@ -51,9 +51,11 @@ src/
 - `paper` (default): simulates positions against live pool data; nothing
   touches a wallet. Promotion rule: ≥7 days of positive paper PnL (§8).
 - `live`: requires **both** `[exec].mode = "live"` in config.toml **and**
-  `FARMER_MODE=live` in the environment. Wallet keypair path comes from
-  `WALLET_KEYPAIR_PATH`; only the live executor reads it. Use a dedicated
-  burner wallet funded with an amount you can lose entirely.
+  `FARMER_MODE=live` in the environment. Wallet secret comes from
+  `WALLET_PRIVATE_KEY` (base58, as exported by Phantom) or
+  `WALLET_KEYPAIR_PATH` (solana-keygen JSON); only the live executor reads
+  them. Use a dedicated burner wallet funded with an amount you can lose
+  entirely.
 
 ## Phase 2 (not in scaffold)
 

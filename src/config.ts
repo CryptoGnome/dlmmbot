@@ -85,6 +85,7 @@ export interface Env {
   rpcUrlFallback: string | undefined;
   jupiterApiKey: string | undefined;
   gmgnApiKey: string | undefined;
+  walletPrivateKey: string | undefined;
   walletKeypairPath: string | undefined;
   farmerMode: string;
 }
@@ -141,6 +142,7 @@ export function env(): Env {
     rpcUrlFallback: process.env.RPC_URL_FALLBACK || undefined,
     jupiterApiKey: process.env.JUPITER_API_KEY || undefined,
     gmgnApiKey: process.env.GMGN_API_KEY || undefined,
+    walletPrivateKey: process.env.WALLET_PRIVATE_KEY || undefined,
     walletKeypairPath: process.env.WALLET_KEYPAIR_PATH || undefined,
     farmerMode: process.env.FARMER_MODE ?? "paper",
   };

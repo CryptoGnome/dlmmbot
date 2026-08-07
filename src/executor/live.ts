@@ -80,7 +80,7 @@ export class LiveExecutor implements Executor {
         'live mode requires BOTH [exec].mode="live" in config.toml AND FARMER_MODE=live in the environment'
       );
     }
-    this.wallet = loadKeypair(env().walletKeypairPath);
+    this.wallet = loadKeypair(env().walletPrivateKey, env().walletKeypairPath);
     this.connection = new Connection(env().rpcUrl, "confirmed");
     console.log(`[live] executor armed — wallet ${this.wallet.publicKey.toBase58()}`);
   }
