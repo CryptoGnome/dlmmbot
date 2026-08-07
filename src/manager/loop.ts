@@ -181,7 +181,12 @@ export async function managePositions(exec: Executor): Promise<void> {
       unrealizedSol += mark.valueSol - pos.entrySol;
       const ageH = (now() - pos.entryTs) / 3600;
       const valueFrac = pos.entrySol > 0 ? mark.valueSol / pos.entrySol : 1;
-      if (mark.inRange) everInRange.add(pos.id);
+      // Persisted (not just in-memory): restarts must not forget a position
+      // was in range, or P3 exits misclassify win as missed (pos#2 incident).
+      if (mark.inRange && !everInRange.has(pos.id)) {
+        everInRange.add(pos.id);
+        getDb().prepare("UPDATE positions SET ever_in_range = 1 WHERE id = ?").run(pos.id);
+      }
 
       // --- P0 SAFETY: pool death, price crash, TVL drain, rugcheck flip ---
       // TODO(phase 2, live): wallet-dump / new-whale via tx stream.
@@ -236,7 +241,9 @@ export async function managePositions(exec: Executor): Promise<void> {
         } else if (now() - since >= m.above_range_sustain_min * 60) {
           // Win = price traveled through our range (fees + round-trip profit);
           // missed = price pumped without ever touching us (capital idled).
-          const classification = everInRange.has(pos.id) ? "win" : "missed";
+          const dbFlag = (getDb().prepare("SELECT ever_in_range AS e FROM positions WHERE id = ?")
+            .get(pos.id) as { e: number } | undefined)?.e === 1;
+          const classification = everInRange.has(pos.id) || dbFlag ? "win" : "missed";
           clearRangeTimers(pos.id);
           const { exitSol } = await closeAndReport(
             exec, pos, "P3_above", config().exec.exit_slippage_bps, "close",

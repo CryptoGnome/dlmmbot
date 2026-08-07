@@ -141,6 +141,10 @@ export function getDb(): Database.Database {
     db = new Database(resolve(dir, "farmer.db"));
     db.pragma("journal_mode = WAL");
     db.exec(SCHEMA);
+    // Idempotent migrations for columns added after the initial schema.
+    try {
+      db.exec("ALTER TABLE positions ADD COLUMN ever_in_range INTEGER NOT NULL DEFAULT 0");
+    } catch { /* column already exists */ }
   }
   return db;
 }
