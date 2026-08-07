@@ -76,7 +76,43 @@ async function closeAndReport(
     `PnL: ${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} SOL (${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%)\n` +
     `entry ${pos.entrySol.toFixed(3)} → exit ${res.exitSol.toFixed(3)} SOL | fees ${fees.toFixed(4)} SOL | held ${hold}`
   );
+  await accountPnlAlert(exec).catch((e) =>
+    console.error("[alert] account summary failed:", (e as Error).message));
   return res;
+}
+
+/**
+ * Account-level PnL since the mode's baseline, sent after every close. The
+ * baseline (wallet + capital already in positions) is captured once, on the
+ * first close after this feature ships, and persisted in meta.
+ */
+async function accountPnlAlert(exec: Executor): Promise<void> {
+  const db = getDb();
+  const wallet = await exec.walletSol();
+  const openSol = (db.prepare(
+    "SELECT COALESCE(SUM(entry_sol), 0) AS s FROM positions WHERE state IN ('open','pending') AND mode = ?"
+  ).get(exec.mode) as { s: number }).s;
+  const key = `baseline_sol_${exec.mode}`;
+  let baseline: number;
+  const row = db.prepare("SELECT value FROM meta WHERE key = ?").get(key) as { value: string } | undefined;
+  if (row) {
+    baseline = Number(row.value);
+  } else {
+    baseline = wallet + openSol;
+    db.prepare("INSERT INTO meta (key, value) VALUES (?, ?)").run(key, String(baseline));
+  }
+  const closed = db.prepare(
+    `SELECT COUNT(*) AS c, COALESCE(SUM(exit_sol + fees_claimed_sol - entry_sol), 0) AS r
+     FROM positions WHERE exit_ts IS NOT NULL AND mode = ?`
+  ).get(exec.mode) as { c: number; r: number };
+  const acct = wallet + openSol - baseline; // open positions counted at entry value
+  const pct = baseline > 0 ? (acct / baseline) * 100 : 0;
+  await alert(
+    "account",
+    `account since start: ${acct >= 0 ? "+" : ""}${acct.toFixed(4)} SOL (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)\n` +
+    `wallet ${wallet.toFixed(3)} + in positions ${openSol.toFixed(3)} vs start ${baseline.toFixed(3)}\n` +
+    `closed ${closed.c} | realized on positions ${closed.r >= 0 ? "+" : ""}${closed.r.toFixed(4)} SOL`
+  );
 }
 
 /** House-money rule (§5/P3): bank realized profit so it leaves the deployable pool. */
