@@ -56,6 +56,7 @@ export interface Config {
     profit_lock_enabled: boolean; profit_lock_at_frac: number;
     profit_lock_withdraw_pct: number; profit_lock_max_fires: number;
     below_range_grace_min: number;
+    holder_poll_s: number;
   };
   sizing: {
     max_positions: number; min_position_sol: number;

@@ -14,6 +14,7 @@ import { trendingByMint } from "../scanner/gmgn.js";
 import { feeMomentumPart, opportunityScore, structurePart, turnoverPart } from "../scanner/score.js";
 import { scan } from "../scanner/scan.js";
 import { flowFor, startSmartFlow } from "../scanner/smartflow.js";
+import { clearHolderWatch, holderCheck } from "./holderwatch.js";
 import { sol24hChangePct } from "../market.js";
 import { circuitBreakerTripped, computeBankroll, kellyStats, openPositionCount, positionSize, regimeFactor, tokenExposureSol } from "../risk/limits.js";
 import type { Position } from "../types.js";
@@ -49,6 +50,7 @@ function clearRangeTimers(posId: number): void {
   rugcheckLastCheck.delete(posId);
   everInRange.delete(posId);
   fellDeep.delete(posId);
+  clearHolderWatch(posId);
 }
 
 /**
@@ -252,8 +254,11 @@ export async function managePositions(exec: Executor): Promise<void> {
         ((mark.price - pos.entryPrice) / pos.entryPrice) * 100 <= m.safety_price_crash_pct;
       const tvlDrained = mark.tvlUsd > 0 && tvlDropTriggered(pos.id, mark.tvlUsd);
       const rugFlip = !crashed && !tvlDrained && mark.valueSol > 0 && await rugcheckFlipped(pos.id, pos.tokenMint);
-      if (mark.valueSol === 0 || crashed || tvlDrained || rugFlip) {
-        const trigger = mark.valueSol === 0 ? "pool_dead" : crashed ? "price_crash" : tvlDrained ? "tvl_drain" : "rugcheck_flip";
+      // Holder watch (live only): wallet-dump / new-whale via GMGN snapshots.
+      const holderTrig = exec.mode === "live" && !crashed && !tvlDrained && !rugFlip
+        ? await holderCheck(pos.id, pos.tokenMint) : null;
+      if (mark.valueSol === 0 || crashed || tvlDrained || rugFlip || holderTrig) {
+        const trigger = mark.valueSol === 0 ? "pool_dead" : crashed ? "price_crash" : tvlDrained ? "tvl_drain" : rugFlip ? "rugcheck_flip" : `${holderTrig!.kind} (${holderTrig!.detail})`;
         clearRangeTimers(pos.id);
         await closeAndReport(exec, pos, "P0_safety", config().exec.safety_exit_slippage_bps, "safety_exit", `P0 safety (${trigger})`);
         blacklist(pos.tokenMint, "token", `P0 safety exit (${trigger})`);

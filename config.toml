@@ -76,8 +76,9 @@ tranche_size_pct = 50
 poll_s = 15
 # P0 safety
 safety_tvl_drop_pct = 40         # in 10 min
-safety_wallet_dump_pct = 3       # single tx, % of supply
+safety_wallet_dump_pct = 3       # single holder's supply-% drop between polls
 safety_new_whale_pct = 10
+holder_poll_s = 90               # GMGN holder-snapshot interval per open position
 safety_price_crash_pct = -60     # from entry in <15 min
 # P1 stop loss
 stop_loss_frac = 0.75            # position SOL value vs entry
