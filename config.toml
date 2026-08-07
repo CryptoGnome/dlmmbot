@@ -9,6 +9,7 @@ copycat_ignore_h = 24      # losers of symbol dedupe ignored this long
 [gates]                    # STRATEGY.md §2.1 — pool hard gates
 tvl_min_usd = 5000
 tvl_max_usd = 2000000
+mcap_min_usd = 200000      # practitioner floor: sub-$200k micros die or are topped out
 fee_tvl_24h_min_pct = 20         # %/day
 fee_tvl_30m_daily_min_pct = 10   # 30m ratio annualized to daily, %/day
 vol_30m_min_usd = 25000
@@ -40,6 +41,8 @@ allow_token2022_extensions = ["metadata"]
 [timing]                   # STRATEGY.md §2.3 — soft, feeds score
 freefall_15m_max_pct = -20
 ath_proximity_pct = 3
+vol_spike_ratio = 3        # last 5m candle >= 3x trailing-hour average = ignition
+vol_spike_bonus = 0.25
 
 [score]                    # STRATEGY.md §2.4 — weights must sum to 100
 w_fee_momentum = 30

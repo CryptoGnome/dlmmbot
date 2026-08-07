@@ -192,7 +192,7 @@ export class PaperExecutor implements Executor {
     const mark = await this.mark(position);
     const stateByReason: Record<ExitReason, string> = {
       P0_safety: "closed_safety", P1_stop: "closed_stop", P2_rotation: "closed_rotation",
-      P3_above: "closed_win", P5_below: "closed_below", manual: "closed_manual",
+      P3_above: "closed_win", P5_below: "closed_below", escape: "closed_escape", manual: "closed_manual",
     };
     getDb().prepare(
       `UPDATE positions SET state = ?, exit_ts = ?, exit_sol = ?, exit_reason = ?, close_return_sol = ? WHERE id = ?`

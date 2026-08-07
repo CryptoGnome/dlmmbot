@@ -41,6 +41,13 @@ export function timingPart(candles: Candle[], currentPrice: number): number {
   const redVol = lastHour.reduce((s, c) => s + (c.close < c.open ? c.volume : 0), 0);
   if (vol > 0 && redVol / vol > 0.65) score -= 0.3;
 
+  // Volume-spike bonus (Void-style ignition): latest 5m candle vs the trailing
+  // hour's average. Offsets mild penalties; capped by the clamp below.
+  const prior = candles.slice(-13, -1);
+  const avgVol = prior.reduce((s, c) => s + c.volume, 0) / Math.max(prior.length, 1);
+  const lastVol = candles[candles.length - 1]!.volume;
+  if (avgVol > 0 && lastVol / avgVol >= t.vol_spike_ratio) score += t.vol_spike_bonus;
+
   return clamp01(score);
 }
 

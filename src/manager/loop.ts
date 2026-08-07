@@ -33,6 +33,7 @@ const tvlHistory = new Map<number, Array<{ ts: number; tvl: number }>>(); // P0 
 const decayStreak = new Map<number, number>();        // P2 consecutive decay polls
 const rugcheckLastCheck = new Map<number, number>();  // P0 rugcheck-flip throttle
 const everInRange = new Set<number>();                // P3 win-vs-missed classification
+const fellDeep = new Set<number>();                   // escape hatch armed (also persisted)
 
 // Watchdog / breaker state.
 let lastHealthyTick = Date.now();
@@ -46,6 +47,7 @@ function clearRangeTimers(posId: number): void {
   decayStreak.delete(posId);
   rugcheckLastCheck.delete(posId);
   everInRange.delete(posId);
+  fellDeep.delete(posId);
 }
 
 /**
@@ -339,6 +341,33 @@ export async function managePositions(exec: Executor): Promise<void> {
         continue; // below range: nothing earns; wait out the grace window
       }
       belowRangeSince.delete(pos.id); // back in range — wick survived, reset
+
+      // --- ESCAPE HATCH (§4, Gmet's reshape simplified): price fell through
+      // the deep part of our range, then recovered to the top slice — close
+      // now, selling the accumulated token side near/above average acquisition
+      // and realizing fees, instead of waiting to round-trip back down.
+      {
+        const depth = pos.maxBinId - pos.minBinId;
+        const frac = depth > 0 ? (pos.maxBinId - mark.activeBinId) / depth : 0; // 0 = top, 1 = bottom
+        if (frac >= m.escape_hatch_depth_pct / 100) {
+          if (!fellDeep.has(pos.id)) {
+            fellDeep.add(pos.id);
+            getDb().prepare("UPDATE positions SET fell_deep = 1 WHERE id = ?").run(pos.id);
+            console.log(`[manager] pos#${pos.id} ${pos.symbol}: fell through ${(frac * 100).toFixed(0)}% of range — escape hatch armed`);
+          }
+        } else if (frac <= m.escape_hatch_recovery_pct / 100) {
+          const armed = fellDeep.has(pos.id) ||
+            (getDb().prepare("SELECT fell_deep AS f FROM positions WHERE id = ?").get(pos.id) as { f: number } | undefined)?.f === 1;
+          if (armed) {
+            clearRangeTimers(pos.id);
+            const { exitSol } = await closeAndReport(exec, pos, "escape", config().exec.exit_slippage_bps, "close",
+              "escape hatch: deep dip recovered to range top — reset");
+            bankProfit(pos, exitSol, "escape hatch");
+            recordDecision(pos.tokenMint, pos.poolAddress, "exited", "escape_hatch", null, { frac, mark });
+            continue;
+          }
+        }
+      }
 
       // --- P4 IN RANGE: claim + profit lock ---
       if (mark.unclaimedFeesSol >= m.claim_min_sol) {

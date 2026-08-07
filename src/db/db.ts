@@ -151,6 +151,9 @@ export function getDb(): Database.Database {
     try {
       db.exec("ALTER TABLE positions ADD COLUMN close_return_sol REAL"); // actual wallet credit at close (exit + rent refund - tx)
     } catch { /* column already exists */ }
+    try {
+      db.exec("ALTER TABLE positions ADD COLUMN fell_deep INTEGER NOT NULL DEFAULT 0"); // escape hatch armed (survives restarts)
+    } catch { /* column already exists */ }
     db.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
   }
   return db;

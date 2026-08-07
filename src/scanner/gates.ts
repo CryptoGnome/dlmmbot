@@ -16,6 +16,11 @@ export function poolGates(p: PoolInfo & { extras: RawPoolExtras }): GateFailure[
   if (p.tvlUsd < g.tvl_min_usd) fail("tvl_min", p.tvlUsd.toFixed(0), g.tvl_min_usd);
   if (p.tvlUsd > g.tvl_max_usd) fail("tvl_max", p.tvlUsd.toFixed(0), g.tvl_max_usd);
 
+  // Practitioner consensus: sub-$200k micros die easily or are fully topped
+  // out. Missing MC data fails conservatively.
+  if (!(p.extras.marketCapUsd >= g.mcap_min_usd))
+    fail("mcap_min", (p.extras.marketCapUsd ?? 0).toFixed(0), g.mcap_min_usd);
+
   // Pool younger than 24h: 24h window under-measures — use lifetime-scaled ratio.
   const ageMs = p.createdAt ? Date.now() - Date.parse(p.createdAt) : null;
   const feeTvl24h =

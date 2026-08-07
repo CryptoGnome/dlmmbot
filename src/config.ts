@@ -6,7 +6,7 @@ import { parse } from "smol-toml";
 export interface Config {
   scanner: { interval_s: number; pages: number; copycat_ignore_h: number };
   gates: {
-    tvl_min_usd: number; tvl_max_usd: number;
+    tvl_min_usd: number; tvl_max_usd: number; mcap_min_usd: number;
     fee_tvl_24h_min_pct: number; fee_tvl_30m_daily_min_pct: number;
     vol_30m_min_usd: number; vol_trend_min: number;
     base_fee_min_pct: number; base_fee_max_pct: number;
@@ -21,7 +21,7 @@ export interface Config {
     age_min_minutes: number; age_max_days: number;
     allow_token2022_extensions: string[];
   };
-  timing: { freefall_15m_max_pct: number; ath_proximity_pct: number };
+  timing: { freefall_15m_max_pct: number; ath_proximity_pct: number; vol_spike_ratio: number; vol_spike_bonus: number };
   score: {
     w_fee_momentum: number; w_turnover: number; w_vetting_soft: number;
     w_timing: number; w_pool_structure: number;
