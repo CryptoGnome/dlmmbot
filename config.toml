@@ -117,7 +117,7 @@ below_range_grace_min = 15
 
 [sizing]                   # STRATEGY.md §5
 max_positions = 7
-min_position_sol = 0.5
+min_position_sol = 0.3   # 0.5 made the 0.75x re-entry ladder unreachable at ~6.5 SOL bankroll (10% cap * 0.75 < 0.5)
 # --- Kelly criterion sizing (learns from our own closed-position ledger) ---
 kelly_enabled = true
 kelly_fraction = 0.5           # half-Kelly: ~75% of optimal growth, far smaller drawdowns
