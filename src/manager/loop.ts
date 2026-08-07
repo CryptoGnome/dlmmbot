@@ -15,7 +15,7 @@ import { feeMomentumPart, opportunityScore, structurePart, turnoverPart } from "
 import { scan } from "../scanner/scan.js";
 import { flowFor, startSmartFlow } from "../scanner/smartflow.js";
 import { clearHolderWatch, holderCheck } from "./holderwatch.js";
-import { sol24hChangePct } from "../market.js";
+import { sol24hChangePct, solUsdPrice } from "../market.js";
 import { circuitBreakerTripped, computeBankroll, kellyStats, openPositionCount, positionSize, regimeFactor, tokenExposureSol } from "../risk/limits.js";
 import type { Position } from "../types.js";
 import { vetToken } from "../vetting/vet.js";
@@ -619,6 +619,22 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     if (exposure + size > cap) {
       recordDecision(cand.tokenMint, cand.pool.address, "skipped", "per_token_cap", score, { exposure, cap });
       continue;
+    }
+    // Pool-share cap (§6): never become a dominant share of the pool — the
+    // binding size limit as the bankroll grows. Clamp rather than skip; skip
+    // only when the clamped size falls under the minimum. Fail-open if the
+    // SOL price feed is down (TVL gates still bound the absolute risk).
+    const solUsd = await solUsdPrice();
+    if (solUsd !== null && solUsd > 0) {
+      const shareCapSol = (cand.pool.tvlUsd * (g.max_pool_share_pct / 100)) / solUsd;
+      if (size > shareCapSol) {
+        if (shareCapSol < config().sizing.min_position_sol) {
+          recordDecision(cand.tokenMint, cand.pool.address, "skipped", "pool_share", score, { shareCapSol, size, tvlUsd: cand.pool.tvlUsd });
+          continue;
+        }
+        console.log(`[risk] ${cand.symbol}: size ${size.toFixed(2)} -> ${shareCapSol.toFixed(2)} SOL (pool-share cap ${g.max_pool_share_pct}% of $${cand.pool.tvlUsd.toFixed(0)} TVL)`);
+        size = shareCapSol;
+      }
     }
 
     const candles = await fetchCandles(cand.pool.address, "5m").catch(() => []);
