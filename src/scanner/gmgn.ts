@@ -34,10 +34,11 @@ export interface GmgnPresence {
 let cache: { at: number; byMint: Map<string, GmgnPresence> } | null = null;
 const CACHE_MS = 55_000; // one scan cycle
 
-// GMGN rate limits are tight (429s escalate to IP bans that extend on repeat).
-// All calls are paced through a min-gap, and any 429 parks GMGN entirely for a
-// cooldown — every consumer already degrades gracefully to Meteora-only data.
-const CALL_GAP_MS = 1_500;
+// GMGN documents 1 request/second (docs.gmgn.ai), enforced by IP blocks that
+// extend on repeated violations. All calls pace through a min-gap (1s + jitter
+// margin), and any 429 parks GMGN entirely for a cooldown — every consumer
+// already degrades gracefully to Meteora-only data.
+const CALL_GAP_MS = 1_100;
 const BAN_COOLDOWN_MS = 120_000;
 let nextCallAt = 0;
 let bannedUntil = 0;
