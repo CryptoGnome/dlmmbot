@@ -94,6 +94,20 @@ export class LiveExecutor implements Executor {
     return p;
   }
 
+  /**
+   * Balance re-read that tolerates RPC lag after a confirmed tx: retries until
+   * the value moves off `previous`. null = never moved (chrome pos#5: a read
+   * raced the RPC and logged a false 0 delta) — callers record unknown, not 0.
+   */
+  private async balanceAfter(previous: number): Promise<number | null> {
+    for (let i = 0; i < 6; i++) {
+      const bal = await this.connection.getBalance(this.wallet.publicKey);
+      if (bal !== previous) return bal;
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    return null;
+  }
+
   private async priorityFeeIx() {
     const fees = await this.connection.getRecentPrioritizationFees().catch(() => []);
     const nonzero = fees.map((f) => f.prioritizationFee).filter((f) => f > 0).sort((a, b) => a - b);
@@ -213,8 +227,8 @@ export class LiveExecutor implements Executor {
 
     // Actual wallet debit for this open (size + all rents + tx fees) — the
     // truth for per-position PnL, unlike the estBinRentSol estimate.
-    const balAfter = await this.connection.getBalance(this.wallet.publicKey);
-    const openCostSol = (balBefore - balAfter) / 1e9;
+    const balAfter = await this.balanceAfter(balBefore);
+    const openCostSol = balAfter === null ? null : (balBefore - balAfter) / 1e9;
 
     const db = getDb();
     const res = db.prepare(
@@ -343,8 +357,8 @@ export class LiveExecutor implements Executor {
       P3_above: "closed_win", P5_below: "closed_below", escape: "closed_escape", manual: "closed_manual",
     };
     // Actual wallet credit for this close (exit value + rent refunds - tx fees).
-    const balAfter = await this.connection.getBalance(this.wallet.publicKey);
-    const closeReturnSol = (balAfter - balBefore) / 1e9;
+    const balAfter = await this.balanceAfter(balBefore);
+    const closeReturnSol = balAfter === null ? null : (balAfter - balBefore) / 1e9;
 
     const db = getDb();
     db.prepare("UPDATE positions SET state = ?, exit_ts = ?, exit_sol = ?, exit_reason = ?, close_return_sol = ? WHERE id = ?")
