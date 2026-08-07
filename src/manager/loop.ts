@@ -89,7 +89,13 @@ function bankProfit(pos: Position, exitSol: number, context: string): void {
   console.log(`[bank] +${profit.toFixed(4)} SOL banked (${context} ${pos.symbol}) — release via ledger when desired`);
 }
 
-/** P0 TVL-drop check (§4): true if pool TVL fell >= threshold within the window. */
+/**
+ * P0 TVL-drop check (§4): true if pool TVL fell >= threshold within the window.
+ * Measured against the window MEDIAN, not the peak — a violent pump inflates
+ * peak readings and made the goon exit (2026-08-07) fire on a healthy pool.
+ * Requires the last TWO readings to confirm so one glitchy datapi value can't
+ * trigger a safety exit; a real drain persists across consecutive 15s polls.
+ */
 function tvlDropTriggered(posId: number, tvlNow: number): boolean {
   const m = config().manage;
   const windowS = 600; // 10 min per spec
@@ -97,8 +103,11 @@ function tvlDropTriggered(posId: number, tvlNow: number): boolean {
   hist.push({ ts: now(), tvl: tvlNow });
   while (hist.length && hist[0]!.ts < now() - windowS) hist.shift();
   tvlHistory.set(posId, hist);
-  const peak = Math.max(...hist.map((h) => h.tvl));
-  return peak > 0 && ((peak - tvlNow) / peak) * 100 >= m.safety_tvl_drop_pct && hist.length >= 3;
+  if (hist.length < 4) return false;
+  const sorted = hist.map((h) => h.tvl).sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)]!;
+  const dropped = (t: number) => median > 0 && ((median - t) / median) * 100 >= m.safety_tvl_drop_pct;
+  return dropped(tvlNow) && dropped(hist[hist.length - 2]!.tvl);
 }
 
 /** P0 RugCheck-flip check, throttled to one call per position per 5 min. */
