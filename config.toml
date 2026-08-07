@@ -44,6 +44,16 @@ ath_proximity_pct = 3
 vol_spike_ratio = 3        # last 5m candle >= 3x trailing-hour average = ignition
 vol_spike_bonus = 0.25
 
+[smartflow]                # GMGN smart-money/KOL global feeds -> rolling window
+window_min = 30
+min_wallets = 3            # distinct smart wallets buying in window for bonus
+bonus_wallets = 4
+min_joiners = 2            # newly-joining wallets (first buy in newest 1/3 of window)
+bonus_joiners = 4
+bonus_kol = 4              # any KOL buy in window
+net_sell_penalty_usd = 5000  # net smart-money SELLING beyond this -> penalty
+penalty_net_sell = 8
+
 [score]                    # STRATEGY.md §2.4 — weights must sum to 100
 w_fee_momentum = 30
 w_turnover = 20

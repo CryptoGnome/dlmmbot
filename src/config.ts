@@ -22,6 +22,13 @@ export interface Config {
     allow_token2022_extensions: string[];
   };
   timing: { freefall_15m_max_pct: number; ath_proximity_pct: number; vol_spike_ratio: number; vol_spike_bonus: number };
+  smartflow: {
+    window_min: number;
+    min_wallets: number; bonus_wallets: number;
+    min_joiners: number; bonus_joiners: number;
+    bonus_kol: number;
+    net_sell_penalty_usd: number; penalty_net_sell: number;
+  };
   score: {
     w_fee_momentum: number; w_turnover: number; w_vetting_soft: number;
     w_timing: number; w_pool_structure: number;

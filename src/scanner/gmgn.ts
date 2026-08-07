@@ -43,6 +43,11 @@ const BAN_COOLDOWN_MS = 120_000;
 let nextCallAt = 0;
 let bannedUntil = 0;
 
+/** Paced, 429-aware GMGN CLI call — the only path any module may use. */
+export async function gmgnCli(args: string[]): Promise<string> {
+  return cli(args);
+}
+
 async function cli(args: string[]): Promise<string> {
   if (Date.now() < bannedUntil) throw new Error("gmgn cooling down after 429");
   const wait = Math.max(0, nextCallAt - Date.now());

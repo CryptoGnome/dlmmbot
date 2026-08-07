@@ -13,6 +13,7 @@ import { fetchCandles, fetchPool } from "../scanner/meteora.js";
 import { trendingByMint } from "../scanner/gmgn.js";
 import { feeMomentumPart, opportunityScore, structurePart, turnoverPart } from "../scanner/score.js";
 import { scan } from "../scanner/scan.js";
+import { flowFor, startSmartFlow } from "../scanner/smartflow.js";
 import { sol24hChangePct } from "../market.js";
 import { circuitBreakerTripped, computeBankroll, kellyStats, openPositionCount, positionSize, regimeFactor, tokenExposureSol } from "../risk/limits.js";
 import type { Position } from "../types.js";
@@ -532,7 +533,25 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     }
 
     // Re-blend score with real vetting softness (§2.4).
-    const score = cand.score - 0.5 * config().score.w_vetting_soft + (vet.softScore / 100) * config().score.w_vetting_soft;
+    let score = cand.score - 0.5 * config().score.w_vetting_soft + (vet.softScore / 100) * config().score.w_vetting_soft;
+
+    // Smart-money/KOL flow adjustment — free lookup into the rolling window
+    // built from GMGN's global feeds (no per-token API calls).
+    const flow = flowFor(cand.tokenMint);
+    let flowNote = "";
+    if (flow && !flow.stale) {
+      const sf = config().smartflow;
+      let bonus = 0;
+      if (flow.smartWallets >= sf.min_wallets) bonus += sf.bonus_wallets;
+      if (flow.newJoiners >= sf.min_joiners) bonus += sf.bonus_joiners;
+      if (flow.kolNames.length > 0) bonus += sf.bonus_kol;
+      if (flow.netUsd <= -sf.net_sell_penalty_usd) bonus -= sf.penalty_net_sell;
+      score = Math.max(0, Math.min(100, score + bonus));
+      if (flow.smartWallets > 0 || flow.kolNames.length > 0) {
+        flowNote = `\nsmart money 30m: ${flow.smartWallets} wallets (+${flow.newJoiners} joining), net $${flow.netUsd.toFixed(0)}` +
+          (flow.kolNames.length ? ` | KOL: ${flow.kolNames.slice(0, 3).join(", ")}` : "");
+      }
+    }
 
     // Slot admission (§5): normal slots for everyone, alpha slots only for
     // exceptional scores; full book -> displacement attempt for alpha only.
@@ -599,9 +618,9 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       range,
       entryPrice: cand.pool.price,
     });
-    recordDecision(cand.tokenMint, cand.pool.address, "entered", null, score, { size, range, vet: vet.facts, pool: cand.pool, kelly, isAlpha });
+    recordDecision(cand.tokenMint, cand.pool.address, "entered", null, score, { size, range, vet: vet.facts, pool: cand.pool, kelly, isAlpha, flow });
     await alert("entry",
-      `${cand.symbol} pos#${pos.id}: entered ${size.toFixed(2)} SOL @ ${cand.pool.price.toPrecision(4)} (score ${score.toFixed(0)}${isAlpha ? ", alpha" : ""}, range depth ${range.bottomPricePct.toFixed(0)}%)\n` +
+      `${cand.symbol} pos#${pos.id}: entered ${size.toFixed(2)} SOL @ ${cand.pool.price.toPrecision(4)} (score ${score.toFixed(0)}${isAlpha ? ", alpha" : ""}, range depth ${range.bottomPricePct.toFixed(0)}%)${flowNote}\n` +
       `chart: https://gmgn.ai/sol/token/${cand.tokenMint}`);
     console.log(
       `[enter] ${cand.symbol} score=${score.toFixed(1)} size=${size.toFixed(2)} SOL ` +
@@ -626,6 +645,7 @@ export async function runLoop(): Promise<void> {
     exec = new PaperExecutor();
   }
   console.log(`[farmer] starting in ${exec.mode} mode (pid ${process.pid})`);
+  startSmartFlow();
   let lastScan = 0;
 
   for (;;) {
