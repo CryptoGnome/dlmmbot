@@ -482,7 +482,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     }
 
     const candles = await fetchCandles(cand.pool.address, "5m").catch(() => []);
-    const range = planRange(cand.pool.price, cand.pool.binStep, candles);
+    const range = planRange(cand.pool.price, cand.pool.binStep, candles, cand.pool.decimalsX);
     if (range.estBinRentSol > config().entry.bin_rent_budget_sol * 3) {
       // Rent budget is a soft-cap in paper mode; TODO(phase 2): shrink range instead.
       recordDecision(cand.tokenMint, cand.pool.address, "skipped", "bin_rent", score, { range });

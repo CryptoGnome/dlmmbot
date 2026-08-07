@@ -159,6 +159,15 @@ export class LiveExecutor implements Executor {
   async open(params: OpenParams): Promise<Position> {
     const pool = await this.pool(params.poolAddress);
     const activeBin = await pool.getActiveBin();
+    // Sanity: the planned top must be near the on-chain active bin. A large gap
+    // means the plan is in the wrong domain (e.g. UI-vs-raw price decimals,
+    // incident 2026-08-07) or wildly stale — refuse rather than strand capital.
+    const gap = Math.abs(activeBin.binId - params.range.maxBinId);
+    if (gap > 150) {
+      throw new Error(
+        `range sanity: planned top bin ${params.range.maxBinId} is ${gap} bins from on-chain active ${activeBin.binId} — refusing to open`
+      );
+    }
     // One-sided below price: clamp top to the CURRENT on-chain active bin so a
     // stale datapi price can never place us above the market.
     const maxBin = Math.min(params.range.maxBinId, activeBin.binId);

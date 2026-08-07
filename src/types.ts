@@ -11,6 +11,7 @@ export interface PoolInfo {
   dynamicFeePct: number | null;
   tvlUsd: number;
   price: number;            // pool price (Y per X)
+  decimalsX: number;        // base token decimals — bin math needs the raw-unit price
   vol30mUsd: number;
   vol1hUsd: number;
   vol24hUsd: number;

@@ -18,6 +18,7 @@ interface PoolLive {
   feeTvl30mPct: number;
   vol30mUsd: number;
   binStep: number;
+  decimalsX: number;
 }
 
 // A pool is considered DEAD (rug-level) only below this TVL. Anything else —
@@ -28,7 +29,7 @@ const POOL_DEAD_TVL_USD = 250;
 async function livePool(address: string): Promise<PoolLive | null> {
   const p = await fetchPool(address); // throws on transient errors (caller skips tick)
   if (!p || p.tvlUsd < POOL_DEAD_TVL_USD) return null; // null = genuinely dead
-  return { price: p.price, tvlUsd: p.tvlUsd, feeTvl30mPct: p.feeTvl30mPct, vol30mUsd: p.vol30mUsd, binStep: p.binStep };
+  return { price: p.price, tvlUsd: p.tvlUsd, feeTvl30mPct: p.feeTvl30mPct, vol30mUsd: p.vol30mUsd, binStep: p.binStep, decimalsX: p.decimalsX };
 }
 
 export class PaperExecutor implements Executor {
@@ -77,13 +78,13 @@ export class PaperExecutor implements Executor {
       };
     }
     this.binStepByPool.set(position.poolAddress, pool.binStep);
-    const activeBinId = priceToBinId(pool.price, pool.binStep);
+    const activeBinId = priceToBinId(pool.price, pool.binStep, pool.decimalsX);
     const aboveRange = activeBinId > position.maxBinId;
     const belowRange = activeBinId < position.minBinId;
 
     // Simulated value: SOL still in untouched bins + token accumulated in
     // touched bins valued at current price. Simplified linear bid-ask model.
-    const value = this.simulateValue(position, pool.price, pool.binStep);
+    const value = this.simulateValue(position, pool.price, pool.binStep, pool.decimalsX);
     const fees = await this.simulateFees(position, pool);
     return {
       valueSol: value + fees,
@@ -105,11 +106,11 @@ export class PaperExecutor implements Executor {
    * tokens at their bin price (value moves with current price); bins below are
    * untouched SOL.
    */
-  private simulateValue(position: Position, price: number, binStep: number): number {
+  private simulateValue(position: Position, price: number, binStep: number, decimalsX: number): number {
     const { minBinId, maxBinId, entrySol } = position;
     const n = maxBinId - minBinId + 1;
     if (n <= 0) return entrySol;
-    const activeBinId = priceToBinId(price, binStep);
+    const activeBinId = priceToBinId(price, binStep, decimalsX);
 
     // Weight of bin i (0 = top): bid-ask puts more depth lower. w_i ∝ (i+1).
     const totalW = (n * (n + 1)) / 2;
@@ -120,7 +121,7 @@ export class PaperExecutor implements Executor {
       const solInBin = entrySol * w;
       if (binId > activeBinId) {
         // Price fell through this bin: SOL became tokens at binPrice.
-        const binPrice = binIdToPrice(binId, binStep);
+        const binPrice = binIdToPrice(binId, binStep, decimalsX);
         const tokens = solInBin / binPrice;
         value += tokens * price;
       } else {
@@ -148,7 +149,7 @@ export class PaperExecutor implements Executor {
   async accrueFees(position: Position, pollSeconds: number): Promise<void> {
     const pool = await livePool(position.poolAddress);
     if (!pool) return;
-    const activeBinId = priceToBinId(pool.price, pool.binStep);
+    const activeBinId = priceToBinId(pool.price, pool.binStep, pool.decimalsX);
     if (activeBinId > position.maxBinId || activeBinId < position.minBinId) return; // out of range earns nothing
     // Pool-average accrual: fee_tvl_30m% of our deployed value per 30 min.
     const ratePerSec = pool.feeTvl30mPct / 100 / 1800;
