@@ -88,7 +88,7 @@ export interface Config {
     bonus_sustained: number; bonus_emerging: number; bonus_fading: number;
   };
   watchdog: { rpc_blind_close_all: boolean; rpc_blind_after_min: number };
-  apis: { meteora_datapi: string; rugcheck: string; jupiter_quote: string; jupiter_price: string };
+  apis: { meteora_datapi: string; rugcheck: string; jupiter_quote: string; jupiter_price: string; jup_datapi: string };
 }
 
 export interface Env {

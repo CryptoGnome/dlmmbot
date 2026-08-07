@@ -180,3 +180,4 @@ meteora_datapi = "https://dlmm.datapi.meteora.ag"
 rugcheck = "https://api.rugcheck.xyz"
 jupiter_quote = "https://lite-api.jup.ag/swap/v1"
 jupiter_price = "https://lite-api.jup.ag/price/v3"
+jup_datapi = "https://datapi.jup.ag"       # undocumented (jup.ag UI backend) — soft signals only

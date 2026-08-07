@@ -61,6 +61,11 @@ export interface VetResult {
     gmgnHoneypot?: boolean | null;
     traderRiskShare?: number | null;      // share of top traders tagged bundler/rat_trader/sniper
     traderSmartCount?: number | null;     // smart_degen-tagged wallets among top traders
+    jupOrganicScore?: number | null;      // Jupiter datapi enrichment (null = source degraded/unavailable)
+    jupBotHoldersPct?: number | null;
+    jupDevMints?: number | null;
+    jupTopHoldersPct?: number | null;
+    jupOrganicVolShare24h?: number | null; // organic / total 24h volume, 0-1
   };
 }
 

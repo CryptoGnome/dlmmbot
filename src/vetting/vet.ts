@@ -3,6 +3,7 @@ import { blacklist, getDb, isBlacklisted, now } from "../db/db.js";
 import type { GateFailure, VetResult } from "../types.js";
 import { fetchTokenFacts } from "./onchain.js";
 import { creatorRugCount, fetchReport, insiderNetworkPct } from "./rugcheck.js";
+import { jupAsset } from "./jupdata.js";
 import { tokenSecurity, tokenTraderTags } from "../scanner/gmgn.js";
 
 // STRATEGY.md §2.2 — token hard gates. Fresh RPC facts are authoritative;
@@ -96,7 +97,9 @@ export async function vetToken(mint: string, tokenCreatedAtMs: number | null): P
   // --- GMGN cross-check layer (degrades silently on API failure) ---
   // Hard veto ONLY for near-certain-loss signals; trader tags stay soft (§ no
   // over-conservatism: sketchy tokens pay a score penalty, not a ban).
-  const [gmgnSec, traderTags] = await Promise.all([tokenSecurity(mint), tokenTraderTags(mint)]);
+  const [gmgnSec, traderTags, jup] = await Promise.all([
+    tokenSecurity(mint), tokenTraderTags(mint), jupAsset(mint),
+  ]);
   if (gmgnSec) {
     facts.gmgnHoneypot = gmgnSec.honeypot;
     facts.gmgnSellTaxPct = gmgnSec.sellTaxPct;
@@ -106,6 +109,21 @@ export async function vetToken(mint: string, tokenCreatedAtMs: number | null): P
   if (traderTags) {
     facts.traderRiskShare = traderTags.riskShare;
     facts.traderSmartCount = traderTags.smartCount;
+  }
+
+  // --- Jupiter datapi enrichment layer (soft only, never a gate — see jupdata.ts) ---
+  // Facts stay null when the source is down so cohort analysis can tell
+  // "entered with full data" from "entered blind".
+  facts.jupOrganicScore = jup ? jup.organicScore : null;
+  facts.jupBotHoldersPct = jup?.botHoldersPct ?? null;
+  facts.jupDevMints = jup?.devMints ?? null;
+  facts.jupTopHoldersPct = jup?.topHoldersPct ?? null;
+  facts.jupOrganicVolShare24h = null;
+  if (jup) {
+    const totalVol = (jup.buyVol24h ?? 0) + (jup.sellVol24h ?? 0);
+    const organicVol = (jup.organicBuyVol24h ?? 0) + (jup.organicSellVol24h ?? 0);
+    if (totalVol > 0) facts.jupOrganicVolShare24h = organicVol / totalVol;
+    if (facts.holderCount === null) facts.holderCount = jup.holderCount;
   }
 
   // --- age gates ---
@@ -125,12 +143,33 @@ export async function vetToken(mint: string, tokenCreatedAtMs: number | null): P
     soft -= clamp01(report.score_normalised / v.rugcheck_veto_normalised) * 25;
     if ((facts.holderCount ?? 0) > 1000) soft += 5;
     soft = Math.max(0, Math.min(100, soft));
+  } else if (jup) {
+    // RugCheck blind but Jupiter sees the token: weaker fallback base (75, not
+    // 100 — no insider/creator visibility) using Jup's holder concentration so
+    // a missing report doesn't flatten vetting to a flat 50. Soft only; the
+    // phase-2 TODO above (RPC-derived concentration) still stands for gates.
+    soft = 75;
+    if (jup.topHoldersPct !== null) soft -= clamp01(jup.topHoldersPct / v.top10_max_pct) * 30;
+    if ((jup.holderCount ?? 0) > 1000) soft += 5;
+    soft = Math.max(0, Math.min(100, soft));
   }
   // Trader-tag adjustments (graduated, never a veto): 50%+ risk-tagged top
   // traders = max -20; each smart_degen wallet in the sample +2 (cap +10).
   if (traderTags && traderTags.sampled >= 10) {
     soft -= clamp01(traderTags.riskShare / 0.5) * 20;
     soft += Math.min(traderTags.smartCount, 5) * 2;
+    soft = Math.max(0, Math.min(100, soft));
+  }
+  // Jupiter adjustments (graduated, never a veto): organic score below 50 =
+  // wash/bot-driven flow (max -15, "high" label +5); bot-held supply share
+  // scaled to 50% (max -10); serial-deployer history scaled to 500 mints
+  // (max -10). Thresholds are first guesses — tune from features_json once
+  // live distributions accumulate.
+  if (jup) {
+    soft -= clamp01((50 - jup.organicScore) / 50) * 15;
+    if (jup.organicScoreLabel === "high") soft += 5;
+    if (jup.botHoldersPct !== null) soft -= clamp01(jup.botHoldersPct / 50) * 10;
+    if (jup.devMints !== null) soft -= clamp01(jup.devMints / 500) * 10;
     soft = Math.max(0, Math.min(100, soft));
   }
 
