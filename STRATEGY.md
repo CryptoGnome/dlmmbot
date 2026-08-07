@@ -179,7 +179,10 @@ Tables:
 
 ## 10. Deferred / future features
 
-- Majors mode (JTO/tokenized-stock style: 1%/day target, spot/curve shapes, stoch-RSI entries, week-long holds).
+- **Majors mode / core fallback** (JTO/tokenized-stock/HYPE-SOL style, per both source authors' "safer plays" tier): `[~1%]`/day fee target, spot/curve shapes, stoch-RSI-style entries, week-scale holds, compound-into-position fee policy, curated whitelist of blue-chip pairs. Deployed as a **fallback allocation**: capital the meme scanner isn't using parks here instead of idling. Sizing design (agreed 2026-08-07):
+  - **Separate Kelly ledger per mode** — meme and majors return distributions are incompatible; pooling samples corrupts both estimators.
+  - Majors uses **continuous Kelly (f\* = μ/σ² on daily mark-to-market returns of the majors book)** rather than discrete win/loss — week-scale holds produce too few closed-trade samples, daily marks activate the estimator in ~2 weeks. Half-Kelly and hard caps as in meme mode.
+  - **Bucket cap** `[~40–50%]` of deployable + **headroom guarantee**: always keep ≥ `[2]` meme slots' worth of capital uncommitted so the parking lot never blocks a spectacular meme opportunity (recalling majors capital costs exit fees and minutes).
 - USDC-quote mode. Auto-compounding schedules. Multi-wallet sharding.
 - Weight auto-tuning from the `decisions` outcome dataset (simple grid search first, nothing fancy).
 - GMGN API enrichment; RugCheck paid WebSocket firehose (`$12/mo`) if scanner latency matters.
