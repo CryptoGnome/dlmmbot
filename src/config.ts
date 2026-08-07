@@ -43,6 +43,7 @@ export interface Config {
     rebalance_max_per_6h: number; rebalance_cost_max_pct_of_fees: number;
     reentry_ladder_mult: number; reentry_max_per_24h: number; house_money_rule: boolean;
     claim_min_sol: number; claim_min_txcost_mult: number; claim_interval_h: number;
+    grace_claim_min_sol: number;
     fee_destination: "bank" | "compound" | "hybrid"; compound_score_min: number;
     escape_hatch_depth_pct: number; escape_hatch_recovery_pct: number;
     profit_lock_enabled: boolean; profit_lock_at_frac: number;

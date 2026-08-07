@@ -257,6 +257,17 @@ export async function managePositions(exec: Executor): Promise<void> {
         if (since === undefined) {
           belowRangeSince.set(pos.id, now());
           console.log(`[manager] pos#${pos.id} ${pos.symbol} below range — grace timer started (${m.below_range_grace_min}m)`);
+          // Bank fees at the top of the drop: claim converts token-side fees
+          // to SOL now instead of letting them ride a dump through the grace
+          // window. Failure is non-fatal — the grace timer still runs.
+          if (mark.unclaimedFeesSol >= m.grace_claim_min_sol) {
+            try {
+              const { claimedSol } = await exec.claimFees(pos);
+              await alert("claim", `${pos.symbol} pos#${pos.id}: grace-start claim — banked ${claimedSol.toFixed(4)} SOL before below-range wait`);
+            } catch (e) {
+              console.error(`[manager] pos#${pos.id} grace-start claim failed:`, (e as Error).message);
+            }
+          }
         } else if (now() - since >= m.below_range_grace_min * 60) {
           clearRangeTimers(pos.id);
           await closeAndReport(exec, pos, "P5_below", config().exec.exit_slippage_bps, "below_cut", `below-range cut after ${m.below_range_grace_min}m grace`);

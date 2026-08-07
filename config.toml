@@ -86,6 +86,10 @@ house_money_rule = true
 claim_min_sol = 0.05
 claim_min_txcost_mult = 20
 claim_interval_h = 4
+# P5 grace-start claim: bank fees the moment price drops below range, so
+# token-side fees convert to SOL at the top of a dump instead of the bottom.
+# Floor keeps dust claims from wasting tx fees (~10x a claim's cost).
+grace_claim_min_sol = 0.005
 fee_destination = "bank"         # bank | compound | hybrid
 compound_score_min = 70
 escape_hatch_depth_pct = 60
@@ -131,7 +135,7 @@ displacement_value_frac_min = 0.97  # never displace a position more than 3% und
 displacement_max_per_6h = 2
 
 [exec]                     # STRATEGY.md §3.6/§8
-mode = "paper"                   # paper | live (live also requires FARMER_MODE=live env)
+mode = "live"                    # paper | live (live also requires FARMER_MODE=live env)
 use_zap = true
 exit_slippage_bps = 50
 safety_exit_slippage_bps = 1000
