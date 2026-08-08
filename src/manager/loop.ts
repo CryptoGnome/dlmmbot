@@ -74,19 +74,24 @@ async function closeAndReport(
   // Re-read fees and actual wallet deltas: the close itself may claim
   // outstanding fees, and open_cost/close_return carry the real rent+tx costs.
   const row = getDb().prepare(
-    "SELECT fees_claimed_sol, open_cost_sol, close_return_sol FROM positions WHERE id = ?"
-  ).get(pos.id) as { fees_claimed_sol: number; open_cost_sol: number | null; close_return_sol: number | null } | undefined;
+    "SELECT fees_claimed_sol, fees_measured_sol, recovered_sol, open_cost_sol, close_return_sol FROM positions WHERE id = ?"
+  ).get(pos.id) as {
+    fees_claimed_sol: number; fees_measured_sol: number; recovered_sol: number;
+    open_cost_sol: number | null; close_return_sol: number | null;
+  } | undefined;
   const fees = row?.fees_claimed_sol ?? pos.feesClaimedSol;
   const pnl = res.exitSol + fees - pos.entrySol;
   const pct = pos.entrySol > 0 ? (pnl / pos.entrySol) * 100 : 0;
   const holdH = (now() - pos.entryTs) / 3600;
   const hold = holdH < 1 ? `${(holdH * 60).toFixed(0)}m` : `${holdH.toFixed(1)}h`;
-  // True PnL: measured wallet flows. costs = rent burn + every tx fee.
+  // True PnL: measured wallet flows only — what the wallet actually gained,
+  // never a pool-mid mark. `pnl` above stays marked so the headline number
+  // matches what Kelly reads.
   let trueLine = "";
   if (row?.open_cost_sol != null && row?.close_return_sol != null) {
-    const costs = (row.open_cost_sol - pos.entrySol) - (row.close_return_sol - res.exitSol);
-    const truePnl = pnl - costs;
-    trueLine = `\ntrue PnL incl rent+tx: ${truePnl >= 0 ? "+" : ""}${truePnl.toFixed(4)} SOL (costs ${costs.toFixed(4)})`;
+    const truePnl = row.close_return_sol + row.fees_measured_sol + row.recovered_sol - row.open_cost_sol;
+    trueLine = `\ntrue PnL (measured): ${truePnl >= 0 ? "+" : ""}${truePnl.toFixed(4)} SOL` +
+      ` [in ${row.open_cost_sol.toFixed(4)} → out ${(row.close_return_sol + row.fees_measured_sol + row.recovered_sol).toFixed(4)}]`;
   }
   await alert(
     kind,
@@ -710,9 +715,22 @@ export async function runLoop(): Promise<void> {
       if (exec.sweepResiduals && Date.now() - lastSweep > RESIDUAL_SWEEP_INTERVAL_MS) {
         lastSweep = Date.now();
         for (const r of await exec.sweepResiduals(RESIDUAL_SWEEP_MIN_SOL)) {
+          const tag = r.positionId ? ` pos#${r.positionId}` : "";
           getDb().prepare("INSERT INTO ledger (ts, kind, sol, note) VALUES (?, 'bank', ?, ?)")
-            .run(now(), r.soldSol, `residual sweep ${r.symbol}`);
-          await alert("claim", `🧹 [sweep] sold stranded ${r.symbol} residue for ${r.soldSol.toFixed(4)} SOL`);
+            .run(now(), r.soldSol, `residual sweep ${r.symbol}${tag}`);
+          // A sweep lands after the close alert, so that alert's true PnL was
+          // short by exactly this. Restate it rather than leave the wrong
+          // number as the last word on the position.
+          let restated = "";
+          if (r.positionId) {
+            const p = getDb().prepare(
+              "SELECT open_cost_sol o, close_return_sol c, fees_measured_sol f, recovered_sol v FROM positions WHERE id = ?"
+            ).get(r.positionId) as { o: number | null; c: number | null; f: number; v: number } | undefined;
+            if (p?.o != null && p.c != null) {
+              restated = `\n${r.symbol} pos#${r.positionId} true PnL now ${(p.c + p.f + p.v - p.o >= 0 ? "+" : "")}${(p.c + p.f + p.v - p.o).toFixed(4)} SOL`;
+            }
+          }
+          await alert("claim", `🧹 [sweep] sold stranded ${r.symbol}${tag} residue for ${r.soldSol.toFixed(4)} SOL${restated}`);
         }
       }
     } catch (e) {

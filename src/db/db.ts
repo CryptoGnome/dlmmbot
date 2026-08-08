@@ -154,6 +154,18 @@ export function getDb(): Database.Database {
     try {
       db.exec("ALTER TABLE positions ADD COLUMN fell_deep INTEGER NOT NULL DEFAULT 0"); // escape hatch armed (survives restarts)
     } catch { /* column already exists */ }
+    // fees_claimed_sol is a pool-mid MARK and stays that way — the Kelly
+    // estimator reads it and changing it silently would move position sizing.
+    // These two carry the measured truth alongside it: what the claim txs
+    // actually credited, and what the residual sweep later recovered for a
+    // claim/close swap that failed (real income that used to land only in
+    // `ledger`, attributed to no position at all).
+    try {
+      db.exec("ALTER TABLE positions ADD COLUMN fees_measured_sol REAL NOT NULL DEFAULT 0");
+    } catch { /* column already exists */ }
+    try {
+      db.exec("ALTER TABLE positions ADD COLUMN recovered_sol REAL NOT NULL DEFAULT 0");
+    } catch { /* column already exists */ }
     db.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
   }
   return db;

@@ -322,19 +322,36 @@ export class LiveExecutor implements Executor {
     const xDecimals = pool.tokenX.mint.decimals;
     const { feesSol, feeXRaw } = this.valueOf(positions, priceYperX, xDecimals);
 
+    const sigs: string[] = [];
     const txs = await pool.claimAllSwapFee({ owner: this.wallet.publicKey, positions });
-    for (const tx of txs) await this.send(tx);
+    for (const tx of txs) sigs.push(await this.send(tx));
 
     // Bank policy: token-side fees -> SOL immediately (§4 P4).
     if (feeXRaw > 0n) {
-      await swapToSolEscalating(this.connection, this.wallet, position.tokenMint, feeXRaw, config().exec.exit_slippage_bps)
-        .catch((e) => console.error("[live] fee swap failed (residual sweep will retry):", (e as Error).message));
+      const swap = await swapToSolEscalating(
+        this.connection, this.wallet, position.tokenMint, feeXRaw, config().exec.exit_slippage_bps
+      ).catch((e) => {
+        console.error("[live] fee swap failed (residual sweep will retry):", (e as Error).message);
+        return null;
+      });
+      if (swap) sigs.push(swap.signature);
     }
 
+    // `feesSol` values the token side at pool mid; the swap fills below that,
+    // or fails and strands it (measured ran 32% under marked across the first
+    // four claims). Record both: the mark for continuity, the measured credit
+    // for anything that wants the truth.
+    const measured = await this.walletDelta(sigs);
     const db = getDb();
-    db.prepare("INSERT INTO events (position_id, ts, type, sol_delta, tx_cost_sol) VALUES (?, ?, 'claim', ?, ?)")
-      .run(position.id, now(), feesSol, 0.0005 * txs.length);
-    db.prepare("UPDATE positions SET fees_claimed_sol = fees_claimed_sol + ? WHERE id = ?").run(feesSol, position.id);
+    db.prepare(
+      "INSERT INTO events (position_id, ts, type, tx_sig, sol_delta, tx_cost_sol, detail_json) VALUES (?, ?, 'claim', ?, ?, ?, ?)"
+    ).run(
+      position.id, now(), sigs[0] ?? null, feesSol, 0.0005 * txs.length,
+      JSON.stringify({ sigs, markedSol: feesSol, measuredSol: measured })
+    );
+    db.prepare(
+      "UPDATE positions SET fees_claimed_sol = fees_claimed_sol + ?, fees_measured_sol = fees_measured_sol + ? WHERE id = ?"
+    ).run(feesSol, measured ?? 0, position.id);
     return { claimedSol: feesSol, txCostSol: 0.0005 * txs.length };
   }
 
@@ -434,13 +451,13 @@ export class LiveExecutor implements Executor {
    * Unknown mints (airdrop spam) are never touched; dust below `minSol` is
    * left alone so tx fees don't eat the proceeds.
    */
-  async sweepResiduals(minSol: number): Promise<Array<{ mint: string; symbol: string; soldSol: number }>> {
+  async sweepResiduals(minSol: number): Promise<Array<{ mint: string; symbol: string; soldSol: number; positionId: number | null }>> {
     const db = getDb();
     const known = new Set(
       (db.prepare("SELECT DISTINCT token_mint FROM positions").all() as Array<{ token_mint: string }>)
         .map((r) => r.token_mint)
     );
-    const recovered: Array<{ mint: string; symbol: string; soldSol: number }> = [];
+    const recovered: Array<{ mint: string; symbol: string; soldSol: number; positionId: number | null }> = [];
     const TOKEN_PROGRAMS = [
       new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
       new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"),
@@ -453,13 +470,26 @@ export class LiveExecutor implements Executor {
         const raw = BigInt(info.tokenAmount.amount);
         const quoted = await quoteToSolLamports(info.mint, raw);
         if (quoted === null || quoted < minSol * 1e9) continue;
-        const symbol = (db.prepare("SELECT symbol FROM positions WHERE token_mint = ? ORDER BY id DESC LIMIT 1")
-          .get(info.mint) as { symbol: string } | undefined)?.symbol ?? info.mint.slice(0, 8);
+        const owner = db.prepare(
+          "SELECT id, symbol FROM positions WHERE token_mint = ? ORDER BY id DESC LIMIT 1"
+        ).get(info.mint) as { id: number; symbol: string } | undefined;
+        const symbol = owner?.symbol ?? info.mint.slice(0, 8);
         try {
           const res = await swapToSolEscalating(
             this.connection, this.wallet, info.mint, raw, config().exec.exit_slippage_bps
           );
-          if (res) recovered.push({ mint: info.mint, symbol, soldSol: res.outLamports / 1e9 });
+          if (!res) continue;
+          // Credit it back to the position that stranded it. A sweep is a
+          // failed claim/close zap-out arriving late, not found money: BUTTHOLE
+          // pos#10's failed exit swap came back as 0.0254 SOL, 7% of that
+          // position's entire return, and used to land in `ledger` attributed
+          // to nothing. Measured, not quoted — the quote is what we asked for.
+          const soldSol = (await this.walletDelta([res.signature])) ?? res.outLamports / 1e9;
+          if (owner) {
+            db.prepare("UPDATE positions SET recovered_sol = recovered_sol + ? WHERE id = ?")
+              .run(soldSol, owner.id);
+          }
+          recovered.push({ mint: info.mint, symbol, soldSol, positionId: owner?.id ?? null });
         } catch (e) {
           console.error(`[live] residual sweep ${symbol} failed:`, (e as Error).message.split("\n")[0]);
         }

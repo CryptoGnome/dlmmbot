@@ -39,5 +39,5 @@ export interface Executor {
   close(position: Position, reason: ExitReason, slippageBps: number): Promise<{ exitSol: number; txCostSol: number }>;
   walletSol(): Promise<number>;
   /** Live only: sell stranded token balances left by failed zap-out swaps. */
-  sweepResiduals?(minSol: number): Promise<Array<{ mint: string; symbol: string; soldSol: number }>>;
+  sweepResiduals?(minSol: number): Promise<Array<{ mint: string; symbol: string; soldSol: number; positionId: number | null }>>;
 }
