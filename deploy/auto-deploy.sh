@@ -35,6 +35,10 @@ note_skip() {
   last_skip="$1"
 }
 
+# Origin head whose build failed. Held so a broken push is retried when a fix
+# lands on top of it, not re-typechecked every poll forever.
+last_failed=""
+
 while true; do
   if ! git fetch origin "$BRANCH" --quiet 2>/dev/null; then
     note_skip "fetch failed (offline?) — will retry"
@@ -66,6 +70,11 @@ while true; do
     sleep "$POLL_SECONDS"; continue
   fi
 
+  if [ "$REMOTE" = "$last_failed" ]; then
+    note_skip "origin/$BRANCH head $(git rev-parse --short "$REMOTE") failed to build — $APP_NAME held on $(git rev-parse --short "$LOCAL"); push a fix on top of it"
+    sleep "$POLL_SECONDS"; continue
+  fi
+
   last_skip=""
   echo "[deploy] origin/$BRANCH advanced ($(git rev-parse --short "$LOCAL") -> $(git rev-parse --short "$REMOTE")), pulling..."
   if ! git pull --ff-only origin "$BRANCH"; then
@@ -73,17 +82,39 @@ while true; do
     sleep "$POLL_SECONDS"; continue
   fi
 
-  if git diff --name-only "$LOCAL" HEAD | grep -qE '^package(-lock)?\.json$'; then
+  DEPS_CHANGED=0
+  git diff --name-only "$LOCAL" HEAD | grep -qE '^package(-lock)?\.json$' && DEPS_CHANGED=1
+
+  FAILURE=""
+  if [ "$DEPS_CHANGED" = 1 ]; then
     echo "[deploy] dependency manifests changed — npm ci"
-    npm ci || { echo "[deploy] npm ci FAILED — not restarting"; sleep "$POLL_SECONDS"; continue; }
+    npm ci || FAILURE="npm ci"
+  fi
+  if [ -z "$FAILURE" ] && ! npx tsc --noEmit; then
+    FAILURE="typecheck"
   fi
 
-  if npx tsc --noEmit; then
+  if [ -z "$FAILURE" ]; then
     echo "[deploy] typecheck passed — restarting $APP_NAME"
     pm2 restart "$APP_NAME" --update-env
     echo "[deploy] deployed $(git rev-parse --short HEAD): $(git log -1 --pretty=%s)"
+    last_failed=""
   else
-    echo "[deploy] TYPECHECK FAILED — keeping the running (old) build, will retry on next push"
+    # `pm2 restart` runs the WORKING TREE, and the pull above already moved it
+    # onto the bad commit. Leaving it there means the next restart from ANY
+    # cause — a later deploy, a reboot, `pm2 resurrect`, a human — silently
+    # boots the broken build. Put the tree back so "keeping the running (old)
+    # build" is true of the code on disk and not just of the live process.
+    echo "[deploy] $FAILURE FAILED at $(git rev-parse --short HEAD) — rolling the checkout back to $(git rev-parse --short "$LOCAL")"
+    if git reset --hard --quiet "$LOCAL"; then
+      if [ "$DEPS_CHANGED" = 1 ]; then
+        npm ci || echo "[deploy] npm ci during rollback FAILED — node_modules may not match the restored code"
+      fi
+      echo "[deploy] checkout restored to $(git rev-parse --short HEAD) — $APP_NAME still on the last good build"
+    else
+      echo "[deploy] ROLLBACK FAILED — checkout is on broken code, do NOT restart $APP_NAME until it is fixed"
+    fi
+    last_failed="$REMOTE"
   fi
 
   sleep "$POLL_SECONDS"
