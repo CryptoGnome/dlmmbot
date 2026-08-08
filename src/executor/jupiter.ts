@@ -59,3 +59,47 @@ export async function swapToSol(
   await connection.confirmTransaction(signature, "confirmed");
   return { outLamports: Number(quote.outAmount), signature };
 }
+
+/** Quote-only: lamports of SOL `amountRaw` of `inputMint` would fetch, or null if unquotable. */
+export async function quoteToSolLamports(inputMint: string, amountRaw: bigint): Promise<number | null> {
+  if (amountRaw <= 0n || inputMint === SOL_MINT) return null;
+  const base = config().apis.jupiter_quote;
+  try {
+    const res = await fetch(
+      `${base}/quote?inputMint=${inputMint}&outputMint=${SOL_MINT}&amount=${amountRaw}&slippageBps=300`,
+      { headers: headers(), signal: AbortSignal.timeout(15_000) }
+    );
+    if (!res.ok) return null;
+    const quote = (await res.json()) as QuoteResponse;
+    return Number(quote.outAmount);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * swapToSol with escalating slippage. Exit quotes race a moving price — a
+ * tight-slippage failure (0x1771) at close time strands the token side in the
+ * wallet, so retry looser before giving up (claudius pos#9, 2026-08-08).
+ */
+export async function swapToSolEscalating(
+  connection: Connection,
+  wallet: Keypair,
+  inputMint: string,
+  amountRaw: bigint,
+  baseSlippageBps: number
+): Promise<{ outLamports: number; signature: string } | null> {
+  if (amountRaw <= 0n || inputMint === SOL_MINT) return null;
+  const tiers = [...new Set([baseSlippageBps, Math.min(Math.max(baseSlippageBps * 3, 300), 1500), 1500])]
+    .sort((a, b) => a - b);
+  let lastErr: unknown;
+  for (const bps of tiers) {
+    try {
+      return await swapToSol(connection, wallet, inputMint, amountRaw, bps);
+    } catch (e) {
+      lastErr = e;
+      console.error(`[live] swap @${bps}bps failed: ${(e as Error).message.split("\n")[0]}`);
+    }
+  }
+  throw lastErr;
+}

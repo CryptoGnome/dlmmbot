@@ -38,4 +38,6 @@ export interface Executor {
   /** Full exit: withdraw 100%, zap token side to SOL, close accounts. */
   close(position: Position, reason: ExitReason, slippageBps: number): Promise<{ exitSol: number; txCostSol: number }>;
   walletSol(): Promise<number>;
+  /** Live only: sell stranded token balances left by failed zap-out swaps. */
+  sweepResiduals?(minSol: number): Promise<Array<{ mint: string; symbol: string; soldSol: number }>>;
 }

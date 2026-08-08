@@ -11,7 +11,7 @@ import { getDb, now } from "../db/db.js";
 import { fetchPool } from "../scanner/meteora.js";
 import type { ExitReason, Position } from "../types.js";
 import type { Executor, OpenParams, PositionMark } from "./executor.js";
-import { swapToSol } from "./jupiter.js";
+import { quoteToSolLamports, swapToSolEscalating } from "./jupiter.js";
 import { loadKeypair } from "./wallet.js";
 
 // CJS require (see reconcile.ts): the SDK's ESM build crashes on anchor's
@@ -288,8 +288,8 @@ export class LiveExecutor implements Executor {
 
     // Bank policy: token-side fees -> SOL immediately (§4 P4).
     if (feeXRaw > 0n) {
-      await swapToSol(this.connection, this.wallet, position.tokenMint, feeXRaw, config().exec.exit_slippage_bps)
-        .catch((e) => console.error("[live] fee swap failed (tokens remain in wallet):", (e as Error).message));
+      await swapToSolEscalating(this.connection, this.wallet, position.tokenMint, feeXRaw, config().exec.exit_slippage_bps)
+        .catch((e) => console.error("[live] fee swap failed (residual sweep will retry):", (e as Error).message));
     }
 
     const db = getDb();
@@ -348,8 +348,8 @@ export class LiveExecutor implements Executor {
 
     // Manual zap-out: swap all withdrawn token-side to SOL.
     if (xToSwap > 0n) {
-      await swapToSol(this.connection, this.wallet, position.tokenMint, xToSwap, slippageBps)
-        .catch((e) => console.error("[live] close swap failed — tokens remain in wallet, swap manually:", (e as Error).message));
+      await swapToSolEscalating(this.connection, this.wallet, position.tokenMint, xToSwap, slippageBps)
+        .catch((e) => console.error("[live] close swap failed — residual sweep will retry:", (e as Error).message));
     }
 
     const stateByReason: Record<ExitReason, string> = {
@@ -370,5 +370,47 @@ export class LiveExecutor implements Executor {
 
   async walletSol(): Promise<number> {
     return (await this.connection.getBalance(this.wallet.publicKey)) / 1e9;
+  }
+
+  /**
+   * Sell any wallet balance of a mint the bot has ever traded. Close/claim
+   * zap-outs are best-effort — a failed swap strands tokens in the wallet with
+   * nothing else ever looking at them again. Runs from the manager loop (same
+   * single-threaded tick as closes, so it cannot race an in-flight exit).
+   * Unknown mints (airdrop spam) are never touched; dust below `minSol` is
+   * left alone so tx fees don't eat the proceeds.
+   */
+  async sweepResiduals(minSol: number): Promise<Array<{ mint: string; symbol: string; soldSol: number }>> {
+    const db = getDb();
+    const known = new Set(
+      (db.prepare("SELECT DISTINCT token_mint FROM positions").all() as Array<{ token_mint: string }>)
+        .map((r) => r.token_mint)
+    );
+    const recovered: Array<{ mint: string; symbol: string; soldSol: number }> = [];
+    const TOKEN_PROGRAMS = [
+      new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
+      new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"),
+    ];
+    for (const programId of TOKEN_PROGRAMS) {
+      const accs = await this.connection.getParsedTokenAccountsByOwner(this.wallet.publicKey, { programId });
+      for (const acc of accs.value) {
+        const info = acc.account.data.parsed.info as { mint: string; tokenAmount: { amount: string } };
+        if (!known.has(info.mint) || info.tokenAmount.amount === "0") continue;
+        const raw = BigInt(info.tokenAmount.amount);
+        const quoted = await quoteToSolLamports(info.mint, raw);
+        if (quoted === null || quoted < minSol * 1e9) continue;
+        const symbol = (db.prepare("SELECT symbol FROM positions WHERE token_mint = ? ORDER BY id DESC LIMIT 1")
+          .get(info.mint) as { symbol: string } | undefined)?.symbol ?? info.mint.slice(0, 8);
+        try {
+          const res = await swapToSolEscalating(
+            this.connection, this.wallet, info.mint, raw, config().exec.exit_slippage_bps
+          );
+          if (res) recovered.push({ mint: info.mint, symbol, soldSol: res.outLamports / 1e9 });
+        } catch (e) {
+          console.error(`[live] residual sweep ${symbol} failed:`, (e as Error).message.split("\n")[0]);
+        }
+      }
+    }
+    return recovered;
   }
 }

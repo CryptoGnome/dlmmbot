@@ -28,6 +28,10 @@ import { vetToken } from "../vetting/vet.js";
 const HALT_FILE = resolve(process.cwd(), "HALT");
 const LOCK_FILE = resolve(process.cwd(), "data", "farmer.lock");
 
+// Residual sweep: retry-sell tokens stranded by failed zap-out swaps.
+const RESIDUAL_SWEEP_INTERVAL_MS = 10 * 60 * 1000;
+const RESIDUAL_SWEEP_MIN_SOL = 0.002; // below this, tx fees eat the proceeds
+
 // Per-position manager state (all in-memory; rebuilt after restart).
 const aboveRangeSince = new Map<number, number>();   // P3 sustain timer
 const belowRangeSince = new Map<number, number>();   // P5 grace timer
@@ -688,6 +692,7 @@ export async function runLoop(): Promise<void> {
   console.log(`[farmer] starting in ${exec.mode} mode (pid ${process.pid})`);
   startSmartFlow();
   let lastScan = 0;
+  let lastSweep = 0;
 
   for (;;) {
     if (haltRequested()) {
@@ -701,6 +706,14 @@ export async function runLoop(): Promise<void> {
       if (Date.now() - lastScan > config().scanner.interval_s * 1000) {
         lastScan = Date.now();
         await enterNewPositions(exec);
+      }
+      if (exec.sweepResiduals && Date.now() - lastSweep > RESIDUAL_SWEEP_INTERVAL_MS) {
+        lastSweep = Date.now();
+        for (const r of await exec.sweepResiduals(RESIDUAL_SWEEP_MIN_SOL)) {
+          getDb().prepare("INSERT INTO ledger (ts, kind, sol, note) VALUES (?, 'bank', ?, ?)")
+            .run(now(), r.soldSol, `residual sweep ${r.symbol}`);
+          await alert("claim", `🧹 [sweep] sold stranded ${r.symbol} residue for ${r.soldSol.toFixed(4)} SOL`);
+        }
       }
     } catch (e) {
       console.error("[farmer] tick error:", (e as Error).message);
