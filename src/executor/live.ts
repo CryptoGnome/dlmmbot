@@ -2,6 +2,7 @@ import {
   ComputeBudgetProgram, Connection, Keypair, PublicKey, Transaction,
   sendAndConfirmTransaction,
 } from "@solana/web3.js";
+import type { ParsedTransactionWithMeta } from "@solana/web3.js";
 import BN from "bn.js";
 import { createRequire } from "node:module";
 import type * as DLMMTypes from "@meteora-ag/dlmm";
@@ -95,17 +96,51 @@ export class LiveExecutor implements Executor {
   }
 
   /**
-   * Balance re-read that tolerates RPC lag after a confirmed tx: retries until
-   * the value moves off `previous`. null = never moved (chrome pos#5: a read
-   * raced the RPC and logged a false 0 delta) — callers record unknown, not 0.
+   * Net SOL the wallet actually gained (+) or spent (-) across a set of txs we
+   * sent, summed from each confirmed tx's own pre/post balances — fees and
+   * rent included, since those move the fee payer's balance too.
+   *
+   * Supersedes polling getBalance until it "moved off" a pre-read baseline:
+   * that returns on the FIRST leg of a multi-tx operation. A close sends the
+   * remove-liquidity tx and then the Jupiter zap-out, so the poll returned on
+   * the rent refund ~1s before the swap credited, and the entire exit value
+   * was dropped (Apu pos#11, LOUIE pos#12: +0.2253/+0.2385 SOL swaps missed,
+   * reported as a 0.26 SOL loss each against a real ~0.03). Attributing to
+   * exact signatures also makes the measurement immune to unrelated wallet
+   * activity landing mid-operation.
+   *
+   * null = a tx never became fetchable, so callers record unknown, not a wrong
+   * number (chrome pos#5: an RPC race once logged a false 0 delta).
    */
-  private async balanceAfter(previous: number): Promise<number | null> {
-    for (let i = 0; i < 6; i++) {
-      const bal = await this.connection.getBalance(this.wallet.publicKey);
-      if (bal !== previous) return bal;
-      await new Promise((r) => setTimeout(r, 1000));
+  private async walletDelta(signatures: string[]): Promise<number | null> {
+    if (signatures.length === 0) return 0;
+    let lamports = 0;
+    for (const sig of signatures) {
+      let tx: ParsedTransactionWithMeta | null = null;
+      for (let i = 0; i < 6 && tx === null; i++) {
+        if (i > 0) await new Promise((r) => setTimeout(r, 1000));
+        tx = await this.connection
+          .getParsedTransaction(sig, { commitment: "confirmed", maxSupportedTransactionVersion: 0 })
+          .catch(() => null);
+      }
+      if (!tx?.meta) {
+        console.error(`[live] walletDelta: tx ${sig} not retrievable — recording unknown`);
+        return null;
+      }
+      // accountKeys carries address-lookup entries appended in the same order
+      // as pre/postBalances, so Jupiter's versioned txs index correctly.
+      const idx = tx.transaction.message.accountKeys.findIndex((k) =>
+        k.pubkey.equals(this.wallet.publicKey)
+      );
+      const pre = tx.meta.preBalances[idx];
+      const post = tx.meta.postBalances[idx];
+      if (idx < 0 || pre === undefined || post === undefined) {
+        console.error(`[live] walletDelta: wallet absent from tx ${sig} — recording unknown`);
+        return null;
+      }
+      lamports += post - pre;
     }
-    return null;
+    return lamports / 1e9;
   }
 
   private async priorityFeeIx() {
@@ -171,7 +206,6 @@ export class LiveExecutor implements Executor {
   }
 
   async open(params: OpenParams): Promise<Position> {
-    const balBefore = await this.connection.getBalance(this.wallet.publicKey);
     const pool = await this.pool(params.poolAddress);
     const activeBin = await pool.getActiveBin();
     // Sanity: the planned top must be near the on-chain active bin. A large gap
@@ -210,6 +244,7 @@ export class LiveExecutor implements Executor {
     }
 
     const accountRows: Array<{ pubkey: string; min: number; max: number }> = [];
+    const sigs: string[] = [];
     for (const chunk of chunks) {
       const positionKp = Keypair.generate();
       const tx = await pool.initializePositionAndAddLiquidityByStrategy({
@@ -221,14 +256,18 @@ export class LiveExecutor implements Executor {
         slippage: config().entry.liquidity_slippage_pct,
       });
       const sig = await this.send(tx, [positionKp]);
+      sigs.push(sig);
       accountRows.push({ pubkey: positionKp.publicKey.toBase58(), min: chunk.min, max: chunk.max });
       console.log(`[live] opened position account ${positionKp.publicKey.toBase58()} bins [${chunk.min},${chunk.max}] tx ${sig}`);
     }
 
     // Actual wallet debit for this open (size + all rents + tx fees) — the
-    // truth for per-position PnL, unlike the estBinRentSol estimate.
-    const balAfter = await this.balanceAfter(balBefore);
-    const openCostSol = balAfter === null ? null : (balBefore - balAfter) / 1e9;
+    // truth for per-position PnL, unlike the estBinRentSol estimate. Summed
+    // per-tx: a multi-chunk open sends one tx per position account, and a
+    // baseline poll settles after the first (RUBY pos#8 recorded 0.3029 for a
+    // 0.45 SOL entry that way).
+    const delta = await this.walletDelta(sigs);
+    const openCostSol = delta === null ? null : -delta;
 
     const db = getDb();
     const res = db.prepare(
@@ -326,12 +365,13 @@ export class LiveExecutor implements Executor {
   }
 
   async close(position: Position, reason: ExitReason, slippageBps: number): Promise<{ exitSol: number; txCostSol: number }> {
-    const balBefore = await this.connection.getBalance(this.wallet.publicKey);
     const pool = await this.pool(position.poolAddress);
     const { priceYperX, positions } = await this.ourLbPositions(position);
     const xDecimals = pool.tokenX.mint.decimals;
     const before = this.valueOf(positions, priceYperX, xDecimals);
 
+    // Every tx this close sends, so the wallet delta below covers all of them.
+    const sigs: string[] = [];
     let xToSwap = 0n;
     for (const p of positions) {
       xToSwap += BigInt(Math.floor(Number(p.positionData.totalXAmount))) + BigInt(p.positionData.feeX.toString());
@@ -343,13 +383,21 @@ export class LiveExecutor implements Executor {
         bps: new BN(10_000),
         shouldClaimAndClose: true,
       });
-      for (const tx of txs) await this.send(tx);
+      for (const tx of txs) sigs.push(await this.send(tx));
     }
 
-    // Manual zap-out: swap all withdrawn token-side to SOL.
+    // Manual zap-out: swap all withdrawn token-side to SOL. On a below-range
+    // exit this leg IS the exit value — the remove-liquidity tx returns only
+    // rent — so its signature must reach the delta or the close reads as a
+    // total loss.
     if (xToSwap > 0n) {
-      await swapToSolEscalating(this.connection, this.wallet, position.tokenMint, xToSwap, slippageBps)
-        .catch((e) => console.error("[live] close swap failed — residual sweep will retry:", (e as Error).message));
+      const swap = await swapToSolEscalating(
+        this.connection, this.wallet, position.tokenMint, xToSwap, slippageBps
+      ).catch((e) => {
+        console.error("[live] close swap failed — residual sweep will retry:", (e as Error).message);
+        return null;
+      });
+      if (swap) sigs.push(swap.signature);
     }
 
     const stateByReason: Record<ExitReason, string> = {
@@ -357,14 +405,20 @@ export class LiveExecutor implements Executor {
       P3_above: "closed_win", P5_below: "closed_below", escape: "closed_escape", manual: "closed_manual",
     };
     // Actual wallet credit for this close (exit value + rent refunds - tx fees).
-    const balAfter = await this.balanceAfter(balBefore);
-    const closeReturnSol = balAfter === null ? null : (balAfter - balBefore) / 1e9;
+    const closeReturnSol = await this.walletDelta(sigs);
 
     const db = getDb();
     db.prepare("UPDATE positions SET state = ?, exit_ts = ?, exit_sol = ?, exit_reason = ?, close_return_sol = ? WHERE id = ?")
       .run(stateByReason[reason], now(), before.valueSol, reason, closeReturnSol, position.id);
-    db.prepare("INSERT INTO events (position_id, ts, type, sol_delta, tx_cost_sol) VALUES (?, ?, ?, ?, ?)")
-      .run(position.id, now(), reason === "P0_safety" ? "safety_exit" : "withdraw", before.valueSol, 0.001);
+    // Record the exact signatures the delta was summed from: without them a
+    // disputed close can only be reconstructed by scanning wallet history.
+    db.prepare(
+      "INSERT INTO events (position_id, ts, type, tx_sig, sol_delta, tx_cost_sol, detail_json) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    ).run(
+      position.id, now(), reason === "P0_safety" ? "safety_exit" : "withdraw",
+      sigs[0] ?? null, before.valueSol, 0.001,
+      JSON.stringify({ sigs, closeReturnSol, markedExitSol: before.valueSol, swapped: xToSwap > 0n })
+    );
     return { exitSol: before.valueSol, txCostSol: 0.001 };
   }
 
