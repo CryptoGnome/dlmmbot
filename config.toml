@@ -130,7 +130,11 @@ kelly_lookback = 50            # closed positions in the rolling estimate
 kelly_min_samples = 10         # below this: cold-start sizing applies
 kelly_cold_start_frac = 0.03   # 3% of wallet per position until enough samples
 kelly_max_position_frac = 0.10 # hard cap: no position exceeds 10% of wallet
-kelly_block_negative = true    # estimated edge <= 0 -> no new entries (evidence-based brake)
+kelly_block_negative = false   # 2026-08-08: the brake is a one-way door — blocked entries
+                               # produce no new closes, so f* can never recover on its own.
+                               # With it off, negative edge clamps appliedFraction to 0 and
+                               # sizing falls to the min_position_sol floor (0.3 SOL): small
+                               # size while the sample rebuilds, rather than a permanent stop.
 reserve_sol = 1.0
 reserve_pct = 10
 per_token_max_pct = 40
