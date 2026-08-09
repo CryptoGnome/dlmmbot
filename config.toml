@@ -100,7 +100,9 @@ rebalance_max_per_6h = 2
 rebalance_cost_max_pct_of_fees = 25
 reentry_ladder_mult = 0.75
 reentry_max_per_24h = 2
-house_money_rule = true
+house_money_rule = false   # 2026-08-09: banks notional profit, never debits losses, and there is
+                           # no 'release' path in the codebase — deployable only ever falls. Ledger
+                           # had reached 0.1525 SOL, more than the whole measured account gain.
 # P4 in range
 claim_min_sol = 0.05
 claim_min_txcost_mult = 20
@@ -121,13 +123,20 @@ profit_lock_max_fires = 1
 below_range_grace_min = 15
 
 [sizing]                   # STRATEGY.md §5
-max_positions = 7
+max_positions = 3        # 2026-08-09: 7 slots x 10% cap allows 70% of the wallet in correlated
+                         # memecoin LP. Max ever held concurrently is 2, so the displacement /
+                         # alpha-slot / per-token-cap paths are untested. Hold at 3 until they are.
 min_position_sol = 0.3   # 0.5 made the 0.75x re-entry ladder unreachable at ~6.5 SOL bankroll (10% cap * 0.75 < 0.5)
 # --- Kelly criterion sizing (learns from our own closed-position ledger) ---
 kelly_enabled = true
-kelly_fraction = 0.5           # half-Kelly: ~75% of optimal growth, far smaller drawdowns
+kelly_fraction = 0.25          # 2026-08-09: quarter-Kelly. Half-Kelly is calibrated for a KNOWN
+                               # edge; this book has not demonstrated one.
 kelly_lookback = 50            # closed positions in the rolling estimate
-kelly_min_samples = 10         # below this: cold-start sizing applies
+kelly_min_samples = 50         # 2026-08-09: was 10. At n=19 the estimator reads the notional ledger
+                               # (exit-entry+fees_claimed), which omits rent/gas/slippage. Same
+                               # formula on the measured wallet-delta series, claudius sweep excluded,
+                               # gives f* = -0.227 — negative edge — while notional gave +0.174 and
+                               # sized pos#21 at 0.577 SOL. Hold at cold-start until a full window.
 kelly_cold_start_frac = 0.03   # 3% of wallet per position until enough samples
 kelly_max_position_frac = 0.10 # hard cap: no position exceeds 10% of wallet
 kelly_block_negative = false   # 2026-08-08: the brake is a one-way door — blocked entries
@@ -141,7 +150,10 @@ per_token_max_pct = 40
 score_mult_low = 0.5             # score 60-70
 score_mult_mid = 1.0             # 70-85
 score_mult_high = 1.5            # 85+
-circuit_daily_loss_pct = 10
+circuit_daily_loss_pct = 3       # 2026-08-09: was 10 (=0.66 SOL). Worst rolling 24h ever measured
+                                 # is 0.069 SOL, so 10% trips at ~9.6x the observed tail. Sweeping
+                                 # 10/5/3/2% over the measured series gives zero triggers either way.
+                                 # NOTE: limits.ts:141 still reads the notional sum — fix in Phase 1.
 circuit_pause_h = 12
 circuit_weekly_triggers_halt = 2
 regime_filter = true
