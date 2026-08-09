@@ -7,7 +7,7 @@ import { createRequire } from "node:module";
 // which TS interop mangles — type the static surface we use structurally.
 interface ChainPositionInfo {
   tokenX: { publicKey: PublicKey };
-  lbPairPositionsData?: Array<{ positionData: { lowerBinId: number; upperBinId: number } }>;
+  lbPairPositionsData?: Array<{ publicKey: PublicKey; positionData: { lowerBinId: number; upperBinId: number } }>;
 }
 interface DlmmStatic {
   getAllLbPairPositionsByUser(connection: Connection, user: PublicKey): Promise<Map<string, ChainPositionInfo>>;
@@ -82,9 +82,22 @@ export async function reconcileLive(connection: Connection, wallet: PublicKey): 
         min_bin_id, max_bin_id, state)
        VALUES ('live', ?, ?, ?, ?, 0, 0, ?, ?, 'open')`
     ).run(poolAddr, info.tokenX.publicKey.toString(), "ADOPTED", now(), minBin, maxBin);
+    const adoptedId = Number(res.lastInsertRowid);
+    // Without these the adoption is worse than useless. accountKeys() reads
+    // position_accounts, ourLbPositions() filters the wallet's on-chain
+    // positions down to that set, and valueOf([]) is 0 — so an adopted position
+    // marks as worthless, P0 closes it as pool_dead, and a live 0.3-0.6 SOL
+    // position is written off without a single instruction being sent.
+    for (const pos of positions)
+      db.prepare(
+        "INSERT INTO position_accounts (position_id, pubkey, min_bin_id, max_bin_id) VALUES (?, ?, ?, ?)"
+      ).run(adoptedId, pos.publicKey.toString(), pos.positionData.lowerBinId, pos.positionData.upperBinId);
     db.prepare(
       "INSERT INTO events (position_id, ts, type, detail_json) VALUES (?, ?, 'open', ?)"
-    ).run(Number(res.lastInsertRowid), now(), JSON.stringify({ reconcile: "adopted_from_chain — entry price/size unknown, PnL from adoption point" }));
+    ).run(adoptedId, now(), JSON.stringify({
+      reconcile: "adopted_from_chain — entry price/size unknown, PnL from adoption point",
+      accounts: positions.map((p) => p.publicKey.toString()),
+    }));
     report.adopted.push(poolAddr);
   }
 

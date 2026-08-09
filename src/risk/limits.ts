@@ -145,7 +145,12 @@ export function circuitBreakerTripped(walletSol: number): boolean {
     `SELECT COALESCE(SUM(
        CASE WHEN open_cost_sol IS NOT NULL AND close_return_sol IS NOT NULL
             THEN close_return_sol + fees_measured_sol + recovered_sol - open_cost_sol
-            ELSE exit_sol - entry_sol + fees_claimed_sol END
+            -- Adopted rows (reconcile.ts) carry entry_sol = 0 and a NULL cost
+            -- basis, so the notional branch would read exit_sol as pure profit
+            -- and could mask a real loss of the same size. Contribute nothing.
+            WHEN entry_sol > 0
+            THEN exit_sol - entry_sol + fees_claimed_sol
+            ELSE 0 END
      ), 0) AS pnl
      FROM positions WHERE exit_ts IS NOT NULL AND exit_ts > ?`
   ).get(dayAgo) as { pnl: number }).pnl;
