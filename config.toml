@@ -127,6 +127,13 @@ max_positions = 3        # 2026-08-09: 7 slots x 10% cap allows 70% of the walle
                          # memecoin LP. Max ever held concurrently is 2, so the displacement /
                          # alpha-slot / per-token-cap paths are untested. Hold at 3 until they are.
 min_position_sol = 0.3   # 0.5 made the 0.75x re-entry ladder unreachable at ~6.5 SOL bankroll (10% cap * 0.75 < 0.5)
+min_reentry_sol = 0.2    # 2026-08-09: viability floor for a re-entry, checked AFTER the ladder
+                         # multiplier. The 0.3 floor exists to cover per-position overhead, but
+                         # the dominant piece of that was the 0.00204 SOL token-account rent, and
+                         # a re-entry reuses an account it already paid for (measured: new-mint
+                         # flat trade -0.00212, reused-account flat trade -0.00005). Holding
+                         # re-entries to the new-mint floor made 0.3 * 0.75 = 0.225 a guaranteed
+                         # skip — 336 such rows, including 3 of the 5 best trades to date.
 # --- Kelly criterion sizing (learns from our own closed-position ledger) ---
 kelly_enabled = true
 kelly_fraction = 0.25          # 2026-08-09: quarter-Kelly. Half-Kelly is calibrated for a KNOWN

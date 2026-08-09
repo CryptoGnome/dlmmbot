@@ -3,6 +3,7 @@ import {
   sendAndConfirmTransaction,
 } from "@solana/web3.js";
 import type { ParsedTransactionWithMeta } from "@solana/web3.js";
+import { createCloseAccountInstruction } from "@solana/spl-token";
 import BN from "bn.js";
 import { createRequire } from "node:module";
 import type * as DLMMTypes from "@meteora-ag/dlmm";
@@ -425,8 +426,19 @@ export class LiveExecutor implements Executor {
     const closeReturnSol = await this.walletDelta(sigs);
 
     const db = getDb();
-    db.prepare("UPDATE positions SET state = ?, exit_ts = ?, exit_sol = ?, exit_reason = ?, close_return_sol = ? WHERE id = ?")
-      .run(stateByReason[reason], now(), before.valueSol, reason, closeReturnSol, position.id);
+    // `before.feesSol` is what shouldClaimAndClose collected on the way out.
+    // It is already inside closeReturnSol; recorded separately so fee income is
+    // attributable at all (see the fees_at_close_sol migration note in db.ts).
+    db.prepare(
+      "UPDATE positions SET state = ?, exit_ts = ?, exit_sol = ?, exit_reason = ?, close_return_sol = ?, fees_at_close_sol = ? WHERE id = ?"
+    // NOT NULL column: better-sqlite3 binds NaN as NULL, and this UPDATE runs
+    // AFTER removeLiquidity and the zap-out have irreversibly landed. A throw
+    // here would leave state='open' on a position with nothing on chain, which
+    // the next tick reads as valueSol 0 and writes off as a total loss.
+    ).run(
+      stateByReason[reason], now(), before.valueSol, reason, closeReturnSol,
+      Number.isFinite(before.feesSol) ? before.feesSol : 0, position.id
+    );
     // Record the exact signatures the delta was summed from: without them a
     // disputed close can only be reconstructed by scanning wallet history.
     db.prepare(
@@ -458,6 +470,7 @@ export class LiveExecutor implements Executor {
         .map((r) => r.token_mint)
     );
     const recovered: Array<{ mint: string; symbol: string; soldSol: number; positionId: number | null }> = [];
+    const closable: Array<{ pubkey: PublicKey; programId: PublicKey }> = [];
     const TOKEN_PROGRAMS = [
       new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
       new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"),
@@ -466,7 +479,16 @@ export class LiveExecutor implements Executor {
       const accs = await this.connection.getParsedTokenAccountsByOwner(this.wallet.publicKey, { programId });
       for (const acc of accs.value) {
         const info = acc.account.data.parsed.info as { mint: string; tokenAmount: { amount: string } };
-        if (!known.has(info.mint) || info.tokenAmount.amount === "0") continue;
+        if (!known.has(info.mint)) continue;
+        // An emptied account still holds its 0.00204 SOL of rent, and nothing
+        // in this codebase ever reclaimed it. The signature is exact in our own
+        // ledger: a flat round trip on a NEW mint measured -0.00212 (Bark pos#13,
+        // entry price == exit price) while a flat round trip reusing an existing
+        // account measured -0.00005 (BUTTHOLE pos#20). The rent WAS the loss.
+        if (info.tokenAmount.amount === "0") {
+          if (this.mintIsIdle(info.mint)) closable.push({ pubkey: acc.pubkey, programId });
+          continue;
+        }
         const raw = BigInt(info.tokenAmount.amount);
         const quoted = await quoteToSolLamports(info.mint, raw);
         if (quoted === null || quoted < minSol * 1e9) continue;
@@ -495,6 +517,42 @@ export class LiveExecutor implements Executor {
         }
       }
     }
+    if (closable.length) await this.closeEmptyAccounts(closable);
     return recovered;
+  }
+
+  /**
+   * Safe to close this mint's token account? Only when we hold no position in
+   * it and have not entered it inside the re-entry window — otherwise the next
+   * ladder rung just re-pays the rent we reclaimed, and churns a tx doing it.
+   */
+  private mintIsIdle(mint: string): boolean {
+    const row = getDb().prepare(
+      `SELECT COUNT(*) AS c FROM positions
+       WHERE token_mint = ?
+         AND (state IN ('pending','open','closing') OR entry_ts > ?)`
+    ).get(mint, now() - config().manage.loss_reentry_cooldown_h * 3600) as { c: number };
+    return row.c === 0;
+  }
+
+  /** Reclaim rent from emptied token accounts. Best-effort: never throws. */
+  private async closeEmptyAccounts(accounts: Array<{ pubkey: PublicKey; programId: PublicKey }>): Promise<void> {
+    const BATCH = 12; // close ix are tiny, but leave room for the priority-fee ix
+    for (let i = 0; i < accounts.length; i += BATCH) {
+      const batch = accounts.slice(i, i + BATCH);
+      const tx = new Transaction();
+      for (const a of batch)
+        tx.add(createCloseAccountInstruction(a.pubkey, this.wallet.publicKey, this.wallet.publicKey, [], a.programId));
+      try {
+        const sig = await this.send(tx);
+        const delta = await this.walletDelta([sig]);
+        getDb().prepare(
+          "INSERT INTO events (position_id, ts, type, tx_sig, sol_delta, detail_json) VALUES (NULL, ?, 'rent_reclaim', ?, ?, ?)"
+        ).run(now(), sig, delta ?? 0, JSON.stringify({ accounts: batch.map((a) => a.pubkey.toBase58()) }));
+        console.log(`[live] 🧹 reclaimed rent from ${batch.length} empty token account(s) — +${(delta ?? 0).toFixed(5)} SOL (tx ${sig})`);
+      } catch (e) {
+        console.error("[live] rent reclaim failed:", (e as Error).message.split("\n")[0]);
+      }
+    }
   }
 }

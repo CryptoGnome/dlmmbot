@@ -137,8 +137,16 @@ export function tokenExposureSol(mint: string): number {
 export function circuitBreakerTripped(walletSol: number): boolean {
   const s = config().sizing;
   const dayAgo = now() - 86_400;
+  // Measured wallet delta, not the notional mark. The mark omits rent, gas and
+  // swap slippage, so it read 08-08 as -0.026 SOL on a day the wallet gained
+  // +0.097 — a breaker steering on that is not measuring the thing it protects
+  // against. Rows predating the measured columns fall back to the old formula.
   const realized = (getDb().prepare(
-    `SELECT COALESCE(SUM(exit_sol - entry_sol + fees_claimed_sol), 0) AS pnl
+    `SELECT COALESCE(SUM(
+       CASE WHEN open_cost_sol IS NOT NULL AND close_return_sol IS NOT NULL
+            THEN close_return_sol + fees_measured_sol + recovered_sol - open_cost_sol
+            ELSE exit_sol - entry_sol + fees_claimed_sol END
+     ), 0) AS pnl
      FROM positions WHERE exit_ts IS NOT NULL AND exit_ts > ?`
   ).get(dayAgo) as { pnl: number }).pnl;
   return realized < 0 && Math.abs(realized) > walletSol * (s.circuit_daily_loss_pct / 100);

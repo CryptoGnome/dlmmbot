@@ -61,7 +61,7 @@ export interface Config {
     holder_poll_s: number;
   };
   sizing: {
-    max_positions: number; min_position_sol: number;
+    max_positions: number; min_position_sol: number; min_reentry_sol: number;
     kelly_enabled: boolean; kelly_fraction: number; kelly_lookback: number;
     kelly_min_samples: number; kelly_cold_start_frac: number;
     kelly_max_position_frac: number; kelly_block_negative: boolean;

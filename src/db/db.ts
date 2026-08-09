@@ -166,7 +166,32 @@ export function getDb(): Database.Database {
     try {
       db.exec("ALTER TABLE positions ADD COLUMN recovered_sol REAL NOT NULL DEFAULT 0");
     } catch { /* column already exists */ }
+    // Every close runs shouldClaimAndClose, so it collects whatever fees had
+    // accrued since the last claim — but nothing recorded them, and 17 of the
+    // first 20 positions therefore read fees_claimed_sol = 0 despite earning.
+    // Kept separate from fees_claimed_sol on purpose: close_return_sol already
+    // contains this SOL, so adding it there would double-count it against
+    // exit_sol and move Kelly. This column is for attribution, not for PnL.
+    try {
+      db.exec("ALTER TABLE positions ADD COLUMN fees_at_close_sol REAL NOT NULL DEFAULT 0");
+    } catch { /* column already exists */ }
     db.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+
+    // Those ALTERs are wrapped in `catch {}` to be idempotent, which also
+    // swallows a genuine failure (SQLITE_BUSY, disk full). The bot would then
+    // boot, trade normally, and throw `no such column` at the first close —
+    // after the on-chain removal, leaving a zombie row holding a slot with no
+    // alert. Assert instead, so a bad migration is a boot failure pm2 surfaces.
+    const cols = new Set(
+      (db.prepare("PRAGMA table_info(positions)").all() as Array<{ name: string }>).map((c) => c.name)
+    );
+    const required = [
+      "ever_in_range", "open_cost_sol", "close_return_sol", "fell_deep",
+      "fees_measured_sol", "recovered_sol", "fees_at_close_sol",
+    ];
+    const missing = required.filter((c) => !cols.has(c));
+    if (missing.length)
+      throw new Error(`positions table is missing migrated column(s): ${missing.join(", ")} — migration failed, refusing to start`);
   }
   return db;
 }

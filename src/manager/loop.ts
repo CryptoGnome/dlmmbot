@@ -612,8 +612,18 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     }
     size *= Math.pow(m.reentry_ladder_mult, priorEntries24h);
     size *= regime; // regime filter halves sizing in a SOL downdraft
-    if (size < config().sizing.min_position_sol) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "ladder_below_min", score, { priorEntries24h, size });
+    // Viability floor, applied once, here — AFTER the ladder and regime have
+    // had their say. A re-entry gets the lower floor because it reuses a token
+    // account the first entry already paid rent for (see min_reentry_sol).
+    // `?? min_position_sol`, not a bare read: config() is a hot-reloaded raw
+    // TOML parse cast to Config, so a missing key is undefined at runtime — and
+    // `size < undefined` is false, which would remove the floor entirely rather
+    // than fall back to it.
+    const sizeFloor = priorEntries24h > 0
+      ? (config().sizing.min_reentry_sol ?? config().sizing.min_position_sol)
+      : config().sizing.min_position_sol;
+    if (size < sizeFloor) {
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "ladder_below_min", score, { priorEntries24h, size, sizeFloor });
       continue;
     }
     // One primary position per token (§5) — tranches are the only sanctioned
@@ -637,7 +647,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     if (solUsd !== null && solUsd > 0) {
       const shareCapSol = (cand.pool.tvlUsd * (g.max_pool_share_pct / 100)) / solUsd;
       if (size > shareCapSol) {
-        if (shareCapSol < config().sizing.min_position_sol) {
+        if (shareCapSol < sizeFloor) {
           recordDecision(cand.tokenMint, cand.pool.address, "skipped", "pool_share", score, { shareCapSol, size, tvlUsd: cand.pool.tvlUsd });
           continue;
         }
@@ -654,14 +664,26 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       continue;
     }
 
-    const pos = await exec.open({
-      poolAddress: cand.pool.address,
-      tokenMint: cand.tokenMint,
-      symbol: cand.symbol,
-      sizeSol: size,
-      range,
-      entryPrice: cand.pool.price,
-    });
+    // A failed open used to throw straight past recordDecision to the tick
+    // handler, so 121 bounced entries left no row at all and the funnel could
+    // not tell "nothing qualified" from "the transaction did not land". It also
+    // abandoned the rest of the candidate list and that tick's residual sweep.
+    let pos;
+    try {
+      pos = await exec.open({
+        poolAddress: cand.pool.address,
+        tokenMint: cand.tokenMint,
+        symbol: cand.symbol,
+        sizeSol: size,
+        range,
+        entryPrice: cand.pool.price,
+      });
+    } catch (e) {
+      const msg = (e as Error).message.split("\n")[0]!.slice(0, 300);
+      console.error(`[enter] ${cand.symbol} open failed: ${msg}`);
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "open_failed", score, { size, range, error: msg });
+      continue;
+    }
     // Live-experiment cohort tags (2026-08-07): fee-gate path, mcap band, and
     // bonus composition — evaluated against outcomes after ~5 closes each.
     const feePath = cand.pool.feeTvl24hPct >= g.fee_tvl_24h_min_pct ? "24h" : "recent_hot";
@@ -716,8 +738,11 @@ export async function runLoop(): Promise<void> {
         lastSweep = Date.now();
         for (const r of await exec.sweepResiduals(RESIDUAL_SWEEP_MIN_SOL)) {
           const tag = r.positionId ? ` pos#${r.positionId}` : "";
-          getDb().prepare("INSERT INTO ledger (ts, kind, sol, note) VALUES (?, 'bank', ?, ?)")
-            .run(now(), r.soldSol, `residual sweep ${r.symbol}${tag}`);
+          // No ledger insert here. sweepResiduals already credits the same
+          // lamports to positions.recovered_sol, and `banked` is subtracted from
+          // deployable in computeBankroll — so banking it too counted the sweep
+          // twice AND shrank the working bankroll by recovered principal. Two of
+          // the ledger's first twelve rows (0.0367 SOL) are this double-count.
           // A sweep lands after the close alert, so that alert's true PnL was
           // short by exactly this. Restate it rather than leave the wrong
           // number as the last word on the position.

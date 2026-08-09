@@ -34,15 +34,25 @@ export async function rollupDaily(mode: "paper" | "live", unrealizedSol: number)
   const day = utcDay(now());
   const dayStart = Math.floor(Date.parse(`${day}T00:00:00Z`) / 1000);
 
+  // Measured wallet delta per position, falling back to the notional mark for
+  // rows closed before those columns existed. realized_sol is now the same
+  // quantity the wallet moves by, so the daily series stops disagreeing in sign
+  // with the account (08-08 read -0.026 against a true +0.097).
   const realized = (db.prepare(
-    `SELECT COALESCE(SUM(exit_sol - entry_sol + fees_claimed_sol), 0) AS r
+    `SELECT COALESCE(SUM(
+       CASE WHEN open_cost_sol IS NOT NULL AND close_return_sol IS NOT NULL
+            THEN close_return_sol + fees_measured_sol + recovered_sol - open_cost_sol
+            ELSE exit_sol - entry_sol + fees_claimed_sol END
+     ), 0) AS r
      FROM positions WHERE mode = ? AND exit_ts >= ? AND exit_ts IS NOT NULL`
   ).get(mode, dayStart) as { r: number }).r;
 
+  // Disclosure only — fees are ALREADY inside realized above (claims via
+  // fees_measured_sol, close-time collection via close_return_sol). Do not add
+  // this to realized_sol; it is here to show where the return came from.
   const fees = (db.prepare(
-    `SELECT COALESCE(SUM(e.sol_delta), 0) AS f FROM events e
-     JOIN positions p ON p.id = e.position_id
-     WHERE p.mode = ? AND e.type = 'claim' AND e.ts >= ?`
+    `SELECT COALESCE(SUM(p.fees_measured_sol + p.fees_at_close_sol), 0) AS f
+     FROM positions p WHERE p.mode = ? AND p.exit_ts >= ? AND p.exit_ts IS NOT NULL`
   ).get(mode, dayStart) as { f: number }).f;
 
   const costs = (db.prepare(
