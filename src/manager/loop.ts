@@ -81,7 +81,14 @@ async function closeAndReport(
   } | undefined;
   const feesClaimed = row?.fees_claimed_sol ?? pos.feesClaimedSol;
   const feesAtClose = row?.fees_at_close_sol ?? 0;
-  const feesTotal = feesClaimed + feesAtClose;
+  // Display prefers the MEASURED claim credit over the pool-mid mark. Book-wide
+  // fees_claimed_sol is 0.1727 against fees_measured_sol 0.1322 — the mark runs
+  // ~23% hot, and 2.3x on claudius pos#9 (0.0535 marked, 0.0234 measured). A hot
+  // mark printed one line above a measured true-PnL figure is the exact
+  // mark-vs-measured confusion that line exists to remove. || not ?? on purpose:
+  // 0 means no claim happened, so fall through to the mark (also 0).
+  const feesClaimShown = row?.fees_measured_sol || feesClaimed;
+  const feesTotal = feesClaimShown + feesAtClose;
   // `pnl` stays on the CLAIMED mark alone. exit_sol already contains whatever
   // the close itself collected — valueOf() folds feesSol into valueSol — so
   // adding feesAtClose here would count it twice. The display below shows the
@@ -106,7 +113,7 @@ async function closeAndReport(
     `${pos.symbol} pos#${pos.id} closed — ${headline}\n` +
     `PnL: ${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} SOL (${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%)\n` +
     `entry ${pos.entrySol.toFixed(3)} → exit ${res.exitSol.toFixed(3)} SOL | fees ${feesTotal.toFixed(4)} SOL` +
-    (feesAtClose > 0 ? ` (${feesClaimed.toFixed(4)} claimed + ${feesAtClose.toFixed(4)} at close)` : "") +
+    (feesAtClose > 0 ? ` (${feesClaimShown.toFixed(4)} claimed + ${feesAtClose.toFixed(4)} at close)` : "") +
     ` | held ${hold}` +
     trueLine
   );
