@@ -69,6 +69,8 @@ const StrategyType = dlmmMod.StrategyType;
 // ============================================================================
 
 const BINS_PER_ACCOUNT = 69;
+// Longer than any healthy call and far shorter than a manager tick backlog.
+const RPC_TIMEOUT_MS = 20_000;
 
 export class LiveExecutor implements Executor {
   readonly mode = "live" as const;
@@ -83,7 +85,14 @@ export class LiveExecutor implements Executor {
       );
     }
     this.wallet = loadKeypair(env().walletPrivateKey, env().walletKeypairPath);
-    this.connection = new Connection(env().rpcUrl, "confirmed");
+    // Every other outbound HTTP client in src/ carries an explicit timeout;
+    // this one did not, so a node that accepts the TCP connection and never
+    // answers wedges the manager tick indefinitely — the one failure shape the
+    // watchdog cannot help with, because the loop never gets to run it.
+    this.connection = new Connection(env().rpcUrl, {
+      commitment: "confirmed",
+      fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(RPC_TIMEOUT_MS) }),
+    });
     console.log(`[live] executor armed — wallet ${this.wallet.publicKey.toBase58()}`);
   }
 
@@ -186,11 +195,28 @@ export class LiveExecutor implements Executor {
     const { activeBin, userPositions } = await pool.getPositionsByUserAndLbPair(this.wallet.publicKey);
     const ours = new Set(this.accountKeys(position.id).map((k) => k.toBase58()));
     const priceYperX = Number(pool.fromPricePerLamport(Number(activeBin.price)));
-    return {
-      active: activeBin.binId,
-      priceYperX,
-      positions: userPositions.filter((p) => ours.has(p.publicKey.toBase58())),
-    };
+    const mine = userPositions.filter((p) => ours.has(p.publicKey.toBase58()));
+    // An empty-but-successful read is the most expensive silent failure in this
+    // codebase. getProgramAccounts returns `userPositions: []` without error
+    // when a node is lagging or serving a stale snapshot (only a missing
+    // activeBin throws in the SDK), the filter yields [], valueOf([]) returns
+    // valueSol 0, and the P0 block reads that as `pool_dead` -> close at
+    // safety slippage -> a terminal row with exit_sol 0 and close_return_sol 0.
+    // REALIZED_PNL_SQL then turns that into -open_cost_sol, roughly -0.31 SOL:
+    // past the circuit-breaker line and -1.0 into the Kelly window, for a
+    // position that is still sitting on chain. Throwing converts it into an
+    // ordinary mark failure the loop already counts, logs and survives.
+    // Accepted tradeoff: a position genuinely closed out of band will now throw
+    // every tick instead of self-closing. A noisy stuck row is recoverable at
+    // the next boot's reconcile; an abandoned on-chain position plus a
+    // fabricated loss in the risk inputs is not.
+    if (ours.size > 0 && mine.length === 0) {
+      throw new Error(
+        `pos#${position.id}: ${ours.size} tracked position account(s) but the chain returned none — ` +
+        `refusing to mark as worthless (stale/lagging RPC or missing position_accounts rows)`
+      );
+    }
+    return { active: activeBin.binId, priceYperX, positions: mine };
   }
 
   /**
@@ -467,6 +493,17 @@ export class LiveExecutor implements Executor {
       if (swap) sigs.push(swap.signature);
     }
 
+    // Never write terminal state for a close that sent nothing. walletDelta([])
+    // returns 0, not null, so an empty send would be recorded as a MEASURED
+    // zero return — indistinguishable from a real total loss. claimFees already
+    // guards this shape at its top; close() and withdraw() did not.
+    if (sigs.length === 0 && this.accountKeys(position.id).length > 0) {
+      throw new Error(
+        `pos#${position.id}: close sent no transactions against ${this.accountKeys(position.id).length} ` +
+        `tracked account(s) — refusing to write an exit`
+      );
+    }
+
     const stateByReason: Record<ExitReason, string> = {
       P0_safety: "closed_safety", P1_stop: "closed_stop", P2_rotation: "closed_rotation",
       P3_above: "closed_win", P5_below: "closed_below", escape: "closed_escape", manual: "closed_manual",
@@ -511,6 +548,10 @@ export class LiveExecutor implements Executor {
 
   async walletSol(): Promise<number> {
     return (await this.connection.getBalance(this.wallet.publicKey)) / 1e9;
+  }
+
+  async healthProbe(): Promise<number> {
+    return this.connection.getSlot();
   }
 
   /**

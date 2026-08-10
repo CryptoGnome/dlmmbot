@@ -203,6 +203,11 @@ export class PaperExecutor implements Executor {
     return { exitSol: mark.valueSol, txCostSol: PAPER_TX_COST_SOL };
   }
 
+  /** Paper mode has no chain to be blind to; always healthy. */
+  async healthProbe(): Promise<number> {
+    return 0;
+  }
+
   async walletSol(): Promise<number> {
     // Virtual wallet: start balance + realized PnL + claimed fees - costs.
     const db = getDb();

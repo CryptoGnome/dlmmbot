@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { config, isLive } from "../config.js";
@@ -44,6 +45,16 @@ const fellDeep = new Set<number>();                   // escape hatch armed (als
 // Watchdog / breaker state.
 let lastHealthyTick = Date.now();
 let watchdogAlerted = false;
+let probeFailures = 0;
+let nextAlertAtMin = 0;
+// ~30s fuse. Freezing entries is the one action that is strictly safe while
+// blind: not entering costs a missed opportunity, whereas adding exposure you
+// cannot manage is worse than holding exposure you cannot manage. It also
+// targets the failure that has actually happened — the only two failed marks
+// in the book sit inside an entry-retry storm (136 "tick error: Simulation
+// failed", 30 x 429) hammering the same endpoint the marks needed. The bot
+// rate-limited itself out of seeing its own position.
+const PROBE_FAILURES_FREEZE_ENTRIES = 2;
 let breakerAlerted = false;
 
 function clearRangeTimers(posId: number): void {
@@ -271,12 +282,19 @@ export async function managePositions(exec: Executor): Promise<void> {
       // for instead of discarding it. This is the series that makes traversal
       // depth measured rather than inferred from 65s pool_snapshots, and the
       // one the Spot-vs-BidAsk stop replay is scored against.
-      getDb().prepare(
-        `INSERT INTO position_marks
-           (position_id, ts, active_bin_id, price, value_sol, value_frac, unclaimed_fees_sol, in_range)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run(pos.id, now(), mark.activeBinId, mark.price, mark.valueSol, valueFrac,
-            mark.unclaimedFeesSol, mark.inRange ? 1 : 0);
+      // Own try: this is new, untested-in-anger code sitting directly above the
+      // P0-P5 state machine. Instrumentation must never be able to gate the
+      // risk logic below it.
+      try {
+        getDb().prepare(
+          `INSERT INTO position_marks
+             (position_id, ts, active_bin_id, price, value_sol, value_frac, unclaimed_fees_sol, in_range)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(pos.id, now(), mark.activeBinId, mark.price, mark.valueSol, valueFrac,
+              mark.unclaimedFeesSol, mark.inRange ? 1 : 0);
+      } catch (e) {
+        console.error("[manager] position_marks insert failed:", (e as Error).message);
+      }
       // Persisted (not just in-memory): restarts must not forget a position
       // was in range, or P3 exits misclassify win as missed (pos#2 incident).
       if (mark.inRange && !everInRange.has(pos.id)) {
@@ -431,11 +449,14 @@ export async function managePositions(exec: Executor): Promise<void> {
     }
   }
 
-  // Watchdog health: blind = positions exist but every mark failed.
-  if (positions.length === 0 || marksOk > 0) {
-    lastHealthyTick = Date.now();
-    watchdogAlerted = false;
-  }
+  // Health is now the getSlot probe (rpcProbe), not marks. The old signal was
+  // `positions.length === 0 || marksOk > 0`, which refreshed on every flat tick
+  // — and the book is flat ~87% of wall-clock — so it could not see an outage
+  // while flat, which is exactly when the bot is trying to ENTER. It was also a
+  // global OR over a book that has never exceeded 2 positions, so at n=1 any
+  // position-specific fault (dead pool, missing position_accounts row) read as
+  // a book-wide RPC outage. marksFailed is kept for the health rows.
+  if (marksFailed > 0) console.warn(`[manager] ${marksFailed}/${positions.length} marks failed this tick`);
 
   // Daily PnL rollup (§7) — keeps today's row current for promotion tracking.
   try {
@@ -445,20 +466,74 @@ export async function managePositions(exec: Executor): Promise<void> {
   }
 }
 
-/** Watchdog (§9): alert (and optionally close all) when marking is blind too long. */
-export async function watchdogCheck(exec: Executor): Promise<void> {
+/**
+ * Cheap liveness probe, run at the top of every tick. Maintains the blind clock
+ * that watchdogCheck reads and the fuse that freezes entries.
+ * Never throws — a probe that can break the tick is worse than no probe.
+ */
+async function rpcProbe(exec: Executor): Promise<void> {
+  try {
+    await exec.healthProbe();
+    if (probeFailures > 0) console.log(`[watchdog] RPC recovered after ${probeFailures} failed probes`);
+    probeFailures = 0;
+    lastHealthyTick = Date.now();
+    if (watchdogAlerted) {
+      watchdogAlerted = false;
+      await alert("watchdog", `RPC recovered — resuming normal operation`).catch(() => {});
+    }
+  } catch (e) {
+    probeFailures++;
+    console.error(`[watchdog] RPC probe failed (${probeFailures}):`, (e as Error).message.split("\n")[0]);
+  }
+}
+
+/** Entries are frozen well before the watchdog alerts — see watchdogCheck. */
+function entriesFrozen(): boolean {
+  return probeFailures >= PROBE_FAILURES_FREEZE_ENTRIES;
+}
+
+/**
+ * Watchdog (§9): alert when the RPC has been unreachable too long. It does NOT
+ * liquidate, and the close-all branch that used to live here is deleted rather
+ * than config-gated, deliberately.
+ *
+ * close()'s RPC read-set is a strict SUPERSET of mark()'s — both go through
+ * pool() -> refetchStates() -> getPositionsByUserAndLbPair, and close() then
+ * additionally needs simulateTransaction, getRecentPrioritizationFees,
+ * getLatestBlockhash, send, confirm, Jupiter, and 6x getParsedTransaction. So
+ * there is no state of the world in which marking fails but closing succeeds:
+ * a close-all can only complete when firing it was a mistake. Routing it
+ * through a fallback connection does not fix that, it just moves the
+ * requirement onto a less-trusted node — and a lagging node answering
+ * getProgramAccounts with a stale empty result is the trigger for the worst
+ * write-off path in this codebase (see ourLbPositions).
+ *
+ * Base rate as of 2026-08-10: 2 failed marks in ~2,710 attempts, both 429s
+ * five log lines apart. Longest blind streak ever observed ~30s, against a
+ * 300s trigger. The watchdog has never fired.
+ *
+ * Re-enabling automated liquidation is a code change and a review, not a TOML
+ * edit. The pre-committed criteria are in RANGE-SHAPE-DECISION.md's sibling
+ * section of the watchdog audit; the short version is that it needs a real
+ * recorded incident, a genuinely independent connection, a freshness gate, and
+ * position sizes about 10x today's before it is even positive-EV.
+ */
+export async function watchdogCheck(): Promise<void> {
   const w = config().watchdog;
   const blindMs = Date.now() - lastHealthyTick;
   if (blindMs < w.rpc_blind_after_min * 60_000) return;
-  if (!watchdogAlerted) {
+  const blindMin = blindMs / 60_000;
+  // Ladder rather than a latch: watchdogAlerted used to be set once and cleared
+  // only by a healthy tick, so a multi-hour outage produced exactly one message.
+  if (blindMin >= nextAlertAtMin) {
     watchdogAlerted = true;
-    await alert("watchdog", `marking blind for ${(blindMs / 60000).toFixed(0)}m — ${w.rpc_blind_close_all ? "attempting close-all" : "manual intervention needed"}`);
-  }
-  if (w.rpc_blind_close_all && exec.mode === "live") {
-    // TODO(live executor): route close-all through the fallback RPC connection.
-    for (const pos of loadOpenPositions()) {
-      try { await closeAndReport(exec, pos, "manual", config().exec.safety_exit_slippage_bps, "watchdog", "watchdog close-all (RPC blind)"); } catch { /* keep trying next tick */ }
-    }
+    nextAlertAtMin = blindMin >= 45 ? blindMin + 60 : blindMin >= 15 ? 45 : 15;
+    const open = loadOpenPositions();
+    await alert("watchdog",
+      `RPC blind for ${blindMin.toFixed(0)}m (${probeFailures} failed probes) — entries frozen, ` +
+      `${open.length} position(s) UNMANAGED: P0/P1/P3/P5 are all suspended while blind. ` +
+      `No automatic close will be attempted; that path was removed deliberately. Manual intervention.`
+    ).catch(() => {});
   }
 }
 
@@ -737,13 +812,38 @@ export async function runLoop(): Promise<void> {
     const { LiveExecutor } = await import("../executor/live.js");
     const live = new LiveExecutor();
     // Chain is truth: reconcile before the manager touches anything (§7).
-    const rec = await reconcileLive(live.connection, live.wallet.publicKey);
-    console.log(`[farmer] reconcile: ${rec.dbOpen} db-open, ${rec.chainPositions} on-chain, ${rec.orphanedInDb.length} orphaned, ${rec.adopted.length} adopted`);
+    // Retry rather than throw. An escaping throw reaches cli.ts's
+    // `main().catch(() => process.exit(1))`, and ecosystem.config.cjs sets
+    // restart_delay 5000 with no min_uptime — a tsx cold boot always clears the
+    // 1s default, so the unstable-restart counter resets every time and the bot
+    // crash-loops forever, silently, with money on chain. That is the most
+    // likely way this system ever reaches "cannot see its positions", and no
+    // watchdog covers it because the loop never starts.
+    let rec = null;
+    for (let attempt = 1; attempt <= 5 && rec === null; attempt++) {
+      try {
+        rec = await reconcileLive(live.connection, live.wallet.publicKey);
+      } catch (e) {
+        const msg = (e as Error).message.split("\n")[0];
+        console.error(`[farmer] reconcile attempt ${attempt}/5 failed: ${msg}`);
+        if (attempt === 1) await alert("watchdog", `reconcile failed at boot: ${msg} — retrying`).catch(() => {});
+        if (attempt === 5) {
+          await alert("watchdog", `reconcile failed 5x at boot — refusing to start. Money may be on chain; check manually.`).catch(() => {});
+          throw e;
+        }
+        await new Promise((r) => setTimeout(r, attempt * 5_000));
+      }
+    }
+    console.log(`[farmer] reconcile: ${rec!.dbOpen} db-open, ${rec!.chainPositions} on-chain, ${rec!.orphanedInDb.length} orphaned, ${rec!.adopted.length} adopted`);
     exec = live;
   } else {
     exec = new PaperExecutor();
   }
-  console.log(`[farmer] starting in ${exec.mode} mode (pid ${process.pid})`);
+  // Log the SHA actually running. "watched it boot" only proves the process
+  // restarted, not that it restarted onto the code you just wrote.
+  let sha = "unknown";
+  try { sha = execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim(); } catch { /* not a checkout */ }
+  console.log(`[farmer] starting in ${exec.mode} mode (pid ${process.pid}, build ${sha})`);
   startSmartFlow();
   let lastScan = 0;
   let lastSweep = 0;
@@ -754,10 +854,23 @@ export async function runLoop(): Promise<void> {
       for (const pos of loadOpenPositions()) await closeAndReport(exec, pos, "manual", config().exec.exit_slippage_bps, "close", "manual HALT");
       return;
     }
+    // Probe first and outside the shared try: watchdogCheck used to sit after
+    // managePositions inside one try, so a throw from config() or
+    // loadOpenPositions() skipped BOTH the health refresh and the watchdog —
+    // arming and muting the supervisor in the same instant, leaving only a
+    // console line.
+    await rpcProbe(exec);
+    try { await watchdogCheck(); } catch (e) {
+      console.error("[watchdog] check failed:", (e as Error).message);
+    }
     try {
       await managePositions(exec);
-      await watchdogCheck(exec);
-      if (Date.now() - lastScan > config().scanner.interval_s * 1000) {
+      if (entriesFrozen()) {
+        if (Date.now() - lastScan > config().scanner.interval_s * 1000) {
+          lastScan = Date.now();
+          console.warn(`[farmer] entries frozen — ${probeFailures} consecutive RPC probe failures`);
+        }
+      } else if (Date.now() - lastScan > config().scanner.interval_s * 1000) {
         lastScan = Date.now();
         await enterNewPositions(exec);
       }

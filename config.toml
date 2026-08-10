@@ -195,22 +195,25 @@ tx_retries = 3
 paper_promotion_days = 7
 
 [watchdog]
-rpc_blind_close_all = false      # 2026-08-10: was true. The close-all routes through
-                                 # LiveExecutor.connection — the SAME connection the watchdog
-                                 # just declared blind. loop.ts:458 admits it ("TODO: route
-                                 # close-all through the fallback RPC connection") and that
-                                 # fallback does not exist: RPC_URL_FALLBACK is set in .env and
-                                 # parsed to config.rpcUrlFallback, but `new Connection` is only
-                                 # ever called with env().rpcUrl. So it cannot work in the case
-                                 # it exists for (true blindness), and in the case it is not
-                                 # designed for (slow-but-alive RPC) it dumps the WHOLE book at
-                                 # safety_exit_slippage_bps = 1000 — 10% — retrying every 15s
-                                 # via `catch { keep trying next tick }`, with watchdogAlerted
-                                 # latched so only the first attempt is ever announced.
-                                 # False = alert and stop, which is the honest behaviour when
-                                 # you cannot trust your own connection. Re-enable only after
-                                 # the fallback Connection is actually wired and tested.
-rpc_blind_after_min = 5
+# rpc_blind_close_all was REMOVED on 2026-08-10, not set to false. The close-all
+# branch is deleted from loop.ts, so re-enabling automated liquidation is a code
+# change and a review rather than one TOML edit — which matters because
+# config.ts catches a parse failure and silently keeps the previous config, so a
+# safety property living only in this file is one bad edit from re-arming.
+#
+# Why it is gone: close()'s RPC read-set is a strict superset of mark()'s, so
+# there is no state of the world where marks fail but closes succeed. The
+# close-all could only ever complete when firing it was a mistake. A fallback
+# connection does not fix that, it moves the requirement onto a less-trusted
+# node — and a lagging node returning a stale-empty getProgramAccounts is the
+# trigger for the worst write-off path in the codebase.
+#
+# Measured base rate: 2 failed marks in ~2,710 attempts, both 429s five log
+# lines apart, longest blind streak ~30s against this 300s threshold. Never
+# fired. Re-enable criteria are in the watchdog audit; the short version is a
+# real recorded incident, a genuinely independent connection, a slot-freshness
+# gate at the moment of action, and positions ~10x today's size.
+rpc_blind_after_min = 5          # alert-only: freeze entries, never liquidate blind
 
 [gmgn]                     # discovery enrichment via official gmgn-cli (query tier only)
 enabled = true             # auto-off when GMGN_API_KEY is empty

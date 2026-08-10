@@ -51,6 +51,19 @@ export async function reconcileLive(connection: Connection, wallet: PublicKey): 
     adopted: [],
   };
 
+  // An empty chain read against a non-empty book is far more likely an RPC
+  // fault than a genuinely empty wallet, and the loop below would write EVERY
+  // open row to closed_manual with a NULL exit value on the strength of it.
+  // Bail instead: a stuck row is recoverable on the next boot, a mass write-off
+  // of live positions is not.
+  if (chainMap.size === 0 && dbOpen.length > 0) {
+    await alert("info",
+      `reconcile: chain returned zero positions but the DB has ${dbOpen.length} open ` +
+      `(${dbOpen.map((r) => `${r.symbol} pos#${r.id}`).join(", ")}) — refusing to orphan them. ` +
+      `Likely a lagging or rate-limited RPC. Verify on chain before acting.`);
+    return report;
+  }
+
   // 1. DB-open rows with no on-chain backing.
   for (const row of dbOpen) {
     if (!chainPools.has(row.pool)) {

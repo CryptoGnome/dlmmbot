@@ -38,6 +38,16 @@ export interface Executor {
   /** Full exit: withdraw 100%, zap token side to SOL, close accounts. */
   close(position: Position, reason: ExitReason, slippageBps: number): Promise<{ exitSol: number; txCostSol: number }>;
   walletSol(): Promise<number>;
+  /**
+   * Cheapest possible "is the RPC answering" check — returns the current slot.
+   * A dedicated probe rather than reusing mark(): the book is flat ~87% of
+   * wall-clock, and the old health signal (`positions.length === 0 ||
+   * marksOk > 0`) treated every flat tick as healthy, so it could not see an
+   * outage at all while flat. It was also a global OR over a book that has
+   * never held more than 2 positions, so with n=1 any position-specific fault
+   * read as a book-wide outage.
+   */
+  healthProbe(): Promise<number>;
   /** Live only: sell stranded token balances left by failed zap-out swaps. */
   sweepResiduals?(minSol: number): Promise<Array<{ mint: string; symbol: string; soldSol: number; positionId: number | null }>>;
 }
