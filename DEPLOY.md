@@ -69,7 +69,11 @@ outage is a handful of messages rather than one every two minutes.
 Install:
 
     crontab -e
-    */2 * * * * node deploy/heartbeat-check.cjs >> /tmp/farmer-heartbeat.log 2>&1
+    */2 * * * * /usr/bin/env node /home/gizmo/meteora-farmer/deploy/heartbeat-check.cjs >> /tmp/farmer-heartbeat.log 2>&1
+
+Use the ABSOLUTE script path: cron runs from $HOME, and a relative path silently
+fails there — a monitor that never runs is worse than none, because you believe
+you have one.
 
 Run it by hand any time with `npm run heartbeat-check`. Exit codes: 0 healthy,
 1 stale or missing (alert sent), 2 the checker itself could not read the DB —
