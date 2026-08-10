@@ -12,6 +12,15 @@ import type { RangePlan } from "../types.js";
 const BINS_PER_POSITION = 69; // one DLMM position account spans <= 69 bins
 const SOL_DECIMALS = 9;
 
+// Margin between the deepest bin we will fund and the P0 price-crash exit.
+// P0 force-closes the position at safety_price_crash_pct, so any bin below that
+// line can never trade — and in a bid-ask ladder those are the bins holding the
+// MOST capital (weight rises with depth). ZEUS pos#24: a -64.8% range against a
+// -60% trigger left 13 of 106 bins unreachable, but 22.9% of the position — 0.069
+// SOL — parked in them, idle for the whole hold. The margin keeps the last few
+// fundable bins on the live side of the trigger rather than exactly on it.
+const SAFETY_MARGIN_PCT = 10;
+
 export function priceToBinId(uiPrice: number, binStep: number, decimalsX: number): number {
   const rawPrice = uiPrice * 10 ** (SOL_DECIMALS - decimalsX);
   return Math.floor(Math.log(rawPrice) / Math.log(1 + binStep / 10_000));
@@ -49,7 +58,13 @@ export function planRange(
   const e = config().entry;
   const sw = swing(candles);
 
-  let bottomPrice = currentPrice * (1 - e.max_down_pct / 100);
+  // Never plan deeper than P0 will let price travel. Derived rather than left
+  // to config so the two numbers cannot drift apart again; clamped above
+  // min_down_pct so a tight safety threshold can't invert the range.
+  const safetyCapPct = Math.abs(config().manage.safety_price_crash_pct) - SAFETY_MARGIN_PCT;
+  const maxDownPct = Math.max(e.min_down_pct, Math.min(e.max_down_pct, safetyCapPct));
+
+  let bottomPrice = currentPrice * (1 - maxDownPct / 100);
   let fibAnchor: RangePlan["fibAnchor"] = null;
   if (sw && sw.low < currentPrice) {
     const fib = fibLevel(sw.high, sw.low, e.fib_bottom);

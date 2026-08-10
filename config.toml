@@ -68,7 +68,11 @@ w_pool_structure = 10
 
 [entry]                    # STRATEGY.md §3
 fib_bottom = 0.786
-max_down_pct = 65
+max_down_pct = 50                # 2026-08-10: was 65, against a -60% P0 exit. The planner now also
+                                 # derives a cap from safety_price_crash_pct (planner.ts SAFETY_MARGIN_PCT),
+                                 # so this is belt-and-braces — but keep them consistent by hand too.
+                                 # 5 of the first 25 entries planned -65.2% depth; on ZEUS that put 22.9%
+                                 # of the position in bins P0 guaranteed would never trade.
 min_down_pct = 40
 max_position_accounts = 2
 bin_rent_budget_sol = 0.05
@@ -84,7 +88,13 @@ safety_tvl_drop_pct = 40         # in 10 min
 safety_wallet_dump_pct = 3       # single holder's supply-% drop between polls
 safety_new_whale_pct = 10
 holder_poll_s = 90               # GMGN holder-snapshot interval per open position
-safety_price_crash_pct = -60     # from entry in <15 min
+safety_price_crash_pct = -60     # from entry, AT ANY AGE — there is no time window in the code
+                                 # (loop.ts: `crashed` compares mark.price to entryPrice, nothing else).
+                                 # This comment used to claim "in <15 min", which was never implemented.
+                                 # Do NOT add the window to match: ZEUS pos#24 tripped this at 57 minutes
+                                 # and exiting there was correct — holding 11 more minutes would have cost
+                                 # a further ~0.031 SOL, roughly doubling the loss. The unbounded age is
+                                 # the behaviour that works; the old comment was the bug.
 # P1 stop loss
 stop_loss_frac = 0.75            # position SOL value vs entry
 loss_reentry_cooldown_h = 24

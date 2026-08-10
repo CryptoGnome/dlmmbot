@@ -74,13 +74,21 @@ async function closeAndReport(
   // Re-read fees and actual wallet deltas: the close itself may claim
   // outstanding fees, and open_cost/close_return carry the real rent+tx costs.
   const row = getDb().prepare(
-    "SELECT fees_claimed_sol, fees_measured_sol, recovered_sol, open_cost_sol, close_return_sol FROM positions WHERE id = ?"
+    "SELECT fees_claimed_sol, fees_measured_sol, recovered_sol, open_cost_sol, close_return_sol, fees_at_close_sol FROM positions WHERE id = ?"
   ).get(pos.id) as {
     fees_claimed_sol: number; fees_measured_sol: number; recovered_sol: number;
-    open_cost_sol: number | null; close_return_sol: number | null;
+    open_cost_sol: number | null; close_return_sol: number | null; fees_at_close_sol: number;
   } | undefined;
-  const fees = row?.fees_claimed_sol ?? pos.feesClaimedSol;
-  const pnl = res.exitSol + fees - pos.entrySol;
+  const feesClaimed = row?.fees_claimed_sol ?? pos.feesClaimedSol;
+  const feesAtClose = row?.fees_at_close_sol ?? 0;
+  const feesTotal = feesClaimed + feesAtClose;
+  // `pnl` stays on the CLAIMED mark alone. exit_sol already contains whatever
+  // the close itself collected — valueOf() folds feesSol into valueSol — so
+  // adding feesAtClose here would count it twice. The display below shows the
+  // true total, which is a different job: ZEUS pos#24 reported "fees 0.0000"
+  // on a close that collected 0.0281 SOL, because this line read only the
+  // claimed column and every fee that position earned arrived at close.
+  const pnl = res.exitSol + feesClaimed - pos.entrySol;
   const pct = pos.entrySol > 0 ? (pnl / pos.entrySol) * 100 : 0;
   const holdH = (now() - pos.entryTs) / 3600;
   const hold = holdH < 1 ? `${(holdH * 60).toFixed(0)}m` : `${holdH.toFixed(1)}h`;
@@ -97,7 +105,9 @@ async function closeAndReport(
     kind,
     `${pos.symbol} pos#${pos.id} closed — ${headline}\n` +
     `PnL: ${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} SOL (${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%)\n` +
-    `entry ${pos.entrySol.toFixed(3)} → exit ${res.exitSol.toFixed(3)} SOL | fees ${fees.toFixed(4)} SOL | held ${hold}` +
+    `entry ${pos.entrySol.toFixed(3)} → exit ${res.exitSol.toFixed(3)} SOL | fees ${feesTotal.toFixed(4)} SOL` +
+    (feesAtClose > 0 ? ` (${feesClaimed.toFixed(4)} claimed + ${feesAtClose.toFixed(4)} at close)` : "") +
+    ` | held ${hold}` +
     trueLine
   );
   await accountPnlAlert(exec).catch((e) =>
