@@ -71,6 +71,42 @@ async function main(): Promise<void> {
         console.log(`  ${d.day}  realized ${d.realized >= 0 ? "+" : ""}${d.realized.toFixed(4)}  Δunrealized ${d.unrealizedDelta >= 0 ? "+" : ""}${d.unrealizedDelta.toFixed(4)}  ${d.profitable ? "✅" : "❌"}`);
       break;
     }
+    case "release": {
+      // House-money banking has no inverse in the manager: bankProfit only ever
+      // inserts 'bank', and computeBankroll subtracts the net from deployable —
+      // so banked SOL was a one-way door. `release` is that inverse, and it goes
+      // through the CLI rather than a hand-written UPDATE so the reversal is in
+      // the ledger with a note instead of being an unattributable DB poke.
+      //   npm run release            -> release everything currently banked
+      //   npm run release -- 0.05    -> release that much
+      const db = getDb();
+      const banked = (db.prepare(
+        "SELECT COALESCE(SUM(CASE kind WHEN 'bank' THEN sol ELSE -sol END), 0) AS b FROM ledger"
+      ).get() as { b: number }).b;
+      if (banked <= 0) { console.log(`nothing banked (net ${banked.toFixed(6)} SOL) — nothing to release`); break; }
+
+      // "all" rather than typing the number: the banked total is a float sum,
+      // so a hand-copied 6dp value overshoots it by an epsilon and trips the
+      // guard below. It also lets a full release still carry a custom note.
+      const arg = process.argv[3];
+      const amount = arg === undefined || arg === "all" ? banked : Number(arg);
+      if (!Number.isFinite(amount) || amount <= 0) { console.error(`bad amount: ${arg}`); process.exit(1); }
+      if (amount > banked) { console.error(`cannot release ${amount} SOL — only ${banked.toFixed(6)} is banked`); process.exit(1); }
+
+      const note = process.argv[4] ?? "manual release to deployable";
+      const ts = Math.floor(Date.now() / 1000);
+      const res = db.prepare("INSERT INTO ledger (ts, kind, sol, note) VALUES (?, 'release', ?, ?)")
+        .run(ts, amount, note);
+      const after = (db.prepare(
+        "SELECT COALESCE(SUM(CASE kind WHEN 'bank' THEN sol ELSE -sol END), 0) AS b FROM ledger"
+      ).get() as { b: number }).b;
+      console.log(
+        `released ${amount.toFixed(6)} SOL (ledger row ${res.lastInsertRowid}, "${note}")\n` +
+        `banked ${banked.toFixed(6)} -> ${after.toFixed(6)} SOL; that much returns to deployable on the next tick.\n` +
+        `undo: DELETE FROM ledger WHERE id = ${res.lastInsertRowid};`
+      );
+      break;
+    }
     case "halt": {
       const haltPath = resolve(process.cwd(), "HALT");
       if (existsSync(haltPath)) { unlinkSync(haltPath); console.log("HALT cleared — farmer may run again"); }
@@ -78,7 +114,7 @@ async function main(): Promise<void> {
       break;
     }
     default:
-      console.log("usage: npm run <scan|vet -- <mint>|run|status|halt>");
+      console.log("usage: npm run <scan|vet -- <mint>|run|status|halt|release [-- <sol> [note]]>");
   }
 }
 

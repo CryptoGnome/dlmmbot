@@ -10,6 +10,7 @@
     "run": "tsx src/cli.ts run",
     "status": "tsx src/cli.ts status",
     "halt": "tsx src/cli.ts halt",
+    "release": "tsx src/cli.ts release",
     "typecheck": "tsc --noEmit",
     "build": "tsc"
   },
