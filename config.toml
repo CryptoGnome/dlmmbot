@@ -195,7 +195,21 @@ tx_retries = 3
 paper_promotion_days = 7
 
 [watchdog]
-rpc_blind_close_all = true
+rpc_blind_close_all = false      # 2026-08-10: was true. The close-all routes through
+                                 # LiveExecutor.connection — the SAME connection the watchdog
+                                 # just declared blind. loop.ts:458 admits it ("TODO: route
+                                 # close-all through the fallback RPC connection") and that
+                                 # fallback does not exist: RPC_URL_FALLBACK is set in .env and
+                                 # parsed to config.rpcUrlFallback, but `new Connection` is only
+                                 # ever called with env().rpcUrl. So it cannot work in the case
+                                 # it exists for (true blindness), and in the case it is not
+                                 # designed for (slow-but-alive RPC) it dumps the WHOLE book at
+                                 # safety_exit_slippage_bps = 1000 — 10% — retrying every 15s
+                                 # via `catch { keep trying next tick }`, with watchdogAlerted
+                                 # latched so only the first attempt is ever announced.
+                                 # False = alert and stop, which is the honest behaviour when
+                                 # you cannot trust your own connection. Re-enable only after
+                                 # the fallback Connection is actually wired and tested.
 rpc_blind_after_min = 5
 
 [gmgn]                     # discovery enrichment via official gmgn-cli (query tier only)
