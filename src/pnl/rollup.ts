@@ -1,5 +1,5 @@
 import { config } from "../config.js";
-import { getDb, now } from "../db/db.js";
+import { getDb, now, REALIZED_PNL_SQL } from "../db/db.js";
 
 // Daily PnL rollup (§7) + paper->live promotion tracking (§8).
 // Called once per manager tick; upserts today's row so the day's numbers are
@@ -39,15 +39,7 @@ export async function rollupDaily(mode: "paper" | "live", unrealizedSol: number)
   // quantity the wallet moves by, so the daily series stops disagreeing in sign
   // with the account (08-08 read -0.026 against a true +0.097).
   const realized = (db.prepare(
-    `SELECT COALESCE(SUM(
-       CASE WHEN open_cost_sol IS NOT NULL AND close_return_sol IS NOT NULL
-            THEN close_return_sol + fees_measured_sol + recovered_sol - open_cost_sol
-            -- Adopted rows have entry_sol = 0 and no cost basis; counting
-            -- exit_sol as realized gain there is fiction. See limits.ts.
-            WHEN entry_sol > 0
-            THEN exit_sol - entry_sol + fees_claimed_sol
-            ELSE 0 END
-     ), 0) AS r
+    `SELECT COALESCE(SUM(${REALIZED_PNL_SQL}), 0) AS r
      FROM positions WHERE mode = ? AND exit_ts >= ? AND exit_ts IS NOT NULL`
   ).get(mode, dayStart) as { r: number }).r;
 

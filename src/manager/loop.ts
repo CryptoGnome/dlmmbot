@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { config, isLive } from "../config.js";
 import { reconcileLive } from "./reconcile.js";
 import { alert, type AlertKind } from "../alerts.js";
-import { blacklist, getDb, now, recordDecision } from "../db/db.js";
+import { blacklist, getDb, now, recordDecision, REALIZED_PNL_SQL } from "../db/db.js";
 import type { Executor } from "../executor/executor.js";
 import { PaperExecutor } from "../executor/paper.js";
 import { rollupDaily } from "../pnl/rollup.js";
@@ -143,7 +143,7 @@ async function accountPnlAlert(exec: Executor): Promise<void> {
     db.prepare("INSERT INTO meta (key, value) VALUES (?, ?)").run(key, String(baseline));
   }
   const closed = db.prepare(
-    `SELECT COUNT(*) AS c, COALESCE(SUM(exit_sol + fees_claimed_sol - entry_sol), 0) AS r
+    `SELECT COUNT(*) AS c, COALESCE(SUM(${REALIZED_PNL_SQL}), 0) AS r
      FROM positions WHERE exit_ts IS NOT NULL AND mode = ?`
   ).get(exec.mode) as { c: number; r: number };
   const acct = wallet + openSol - baseline; // open positions counted at entry value

@@ -200,6 +200,25 @@ export function now(): number {
   return Math.floor(Date.now() / 1000);
 }
 
+/**
+ * Per-row realized PnL, as a SQL fragment. ONE definition, because there used to
+ * be three: `npm run status`, the daily rollup and the circuit breaker each
+ * carried their own SUM and returned 0.1323 / 0.2303 / 0.2303 for the same book.
+ *
+ *   1. measured wallet delta where we have it — the truth,
+ *   2. the old notional mark for rows closed before those columns existed,
+ *   3. zero for adopted rows (entry_sol = 0, no cost basis), which would
+ *      otherwise report exit_sol as pure profit and mask a real loss.
+ *
+ * Lives in db.ts so every consumer can import it without an import cycle.
+ */
+export const REALIZED_PNL_SQL = `
+  CASE WHEN open_cost_sol IS NOT NULL AND close_return_sol IS NOT NULL
+       THEN close_return_sol + fees_measured_sol + recovered_sol - open_cost_sol
+       WHEN entry_sol > 0
+       THEN exit_sol - entry_sol + fees_claimed_sol
+       ELSE 0 END`;
+
 // ---- blacklist helpers (STRATEGY.md §6) ----
 
 export function isBlacklisted(key: string): string | null {

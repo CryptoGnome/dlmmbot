@@ -1,5 +1,5 @@
 import { config } from "../config.js";
-import { getDb, now } from "../db/db.js";
+import { getDb, now, REALIZED_PNL_SQL } from "../db/db.js";
 
 // STRATEGY.md §5 — sizing, portfolio limits, circuit breaker, regime filter.
 
@@ -142,16 +142,7 @@ export function circuitBreakerTripped(walletSol: number): boolean {
   // +0.097 — a breaker steering on that is not measuring the thing it protects
   // against. Rows predating the measured columns fall back to the old formula.
   const realized = (getDb().prepare(
-    `SELECT COALESCE(SUM(
-       CASE WHEN open_cost_sol IS NOT NULL AND close_return_sol IS NOT NULL
-            THEN close_return_sol + fees_measured_sol + recovered_sol - open_cost_sol
-            -- Adopted rows (reconcile.ts) carry entry_sol = 0 and a NULL cost
-            -- basis, so the notional branch would read exit_sol as pure profit
-            -- and could mask a real loss of the same size. Contribute nothing.
-            WHEN entry_sol > 0
-            THEN exit_sol - entry_sol + fees_claimed_sol
-            ELSE 0 END
-     ), 0) AS pnl
+    `SELECT COALESCE(SUM(${REALIZED_PNL_SQL}), 0) AS pnl
      FROM positions WHERE exit_ts IS NOT NULL AND exit_ts > ?`
   ).get(dayAgo) as { pnl: number }).pnl;
   return realized < 0 && Math.abs(realized) > walletSol * (s.circuit_daily_loss_pct / 100);

@@ -1,7 +1,7 @@
 import { writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { startConfigWatcher } from "./config.js";
-import { getDb } from "./db/db.js";
+import { getDb, REALIZED_PNL_SQL } from "./db/db.js";
 import { runLoop } from "./manager/loop.js";
 import { scan } from "./scanner/scan.js";
 import { vetToken } from "./vetting/vet.js";
@@ -54,12 +54,16 @@ async function main(): Promise<void> {
         "SELECT id, symbol, entry_sol, entry_price, state, fees_claimed_sol, datetime(entry_ts,'unixepoch') AS opened FROM positions WHERE state IN ('open','pending')"
       ).all();
       const closed = db.prepare(
-        `SELECT COUNT(*) AS n, COALESCE(SUM(exit_sol - entry_sol + fees_claimed_sol), 0) AS pnl
+        `SELECT COUNT(*) AS n, COALESCE(SUM(${REALIZED_PNL_SQL}), 0) AS pnl,
+                COALESCE(SUM(fees_measured_sol + fees_at_close_sol), 0) AS fees
          FROM positions WHERE exit_ts IS NOT NULL`
-      ).get() as { n: number; pnl: number };
+      ).get() as { n: number; pnl: number; fees: number };
       console.log(`open positions: ${open.length}`);
       console.table(open);
-      console.log(`closed: ${closed.n}  realized PnL (incl fees): ${closed.pnl.toFixed(4)} SOL`);
+      console.log(`closed: ${closed.n}  realized PnL (measured): ${closed.pnl.toFixed(4)} SOL`);
+      // Disclosure only — this is already inside realized above, via
+      // fees_measured_sol on claims and close_return_sol on close-time fees.
+      console.log(`  of which fee income: ${closed.fees.toFixed(4)} SOL`);
 
       const { promotionStatus } = await import("./pnl/rollup.js");
       const promo = promotionStatus();
