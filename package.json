@@ -11,6 +11,8 @@
     "status": "tsx src/cli.ts status",
     "halt": "tsx src/cli.ts halt",
     "release": "tsx src/cli.ts release",
+    "force-close": "tsx src/cli.ts force-close",
+    "heartbeat-check": "node deploy/heartbeat-check.cjs",
     "typecheck": "tsc --noEmit",
     "build": "tsc"
   },

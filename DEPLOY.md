@@ -53,3 +53,43 @@ pm2 logs meteora-farmer --lines 50
   mode reconciles against the chain at startup (chain wins).
 - Config changes in `config.toml` hot-reload without a restart — but pushing
   them through git triggers a restart via the watcher anyway, which is also fine.
+
+## Liveness monitoring (out-of-process)
+
+Every alert the farmer sends originates inside the farmer, so none of them can
+tell you the farmer is gone — "no Telegram messages" reads identically to "quiet
+market". `deploy/heartbeat-check.cjs` closes that gap from outside the process.
+
+The manager writes a `meta.heartbeat` row at the end of every tick (ts, pid,
+build, mode, open positions, probe failures). The checker reads it read-only and
+alerts to the same Telegram chat when it is older than 5 minutes — 20 ticks at
+`poll_s = 15`. It alerts on the falling edge and then at most hourly, so a long
+outage is a handful of messages rather than one every two minutes.
+
+Install:
+
+    crontab -e
+    */2 * * * * node deploy/heartbeat-check.cjs >> /tmp/farmer-heartbeat.log 2>&1
+
+Run it by hand any time with `npm run heartbeat-check`. Exit codes: 0 healthy,
+1 stale or missing (alert sent), 2 the checker itself could not read the DB —
+which deliberately does NOT alert, so a broken checker cannot page you at 3am
+about itself.
+
+It is dependency-free and imports nothing from `src/` on purpose: a monitor that
+shares a failure mode with the thing it monitors is not a monitor. Note it runs
+on the same box, so it detects a dead process, not a dead machine.
+
+## Recovering a stuck position row
+
+If a position is closed on chain but its DB row is still `open`, the manager
+will now throw on every mark rather than mark it worthless, and reconcile will
+refuse to orphan it. That is deliberate — see the 2026-08-10 watchdog commit —
+but it means the row needs a human:
+
+    npm run force-close -- <id> "why"
+
+It checks the chain first and refuses if any tracked position account still
+exists, so it cannot be used to write off a live position. `exit_sol` and
+`close_return_sol` are left NULL because the outcome is genuinely unknown; such
+a row contributes 0 to realized PnL rather than a fabricated number.

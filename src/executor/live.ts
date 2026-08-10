@@ -555,6 +555,20 @@ export class LiveExecutor implements Executor {
   }
 
   /**
+   * Read-only: how many of a position's tracked accounts still exist on chain.
+   * Deliberately does NOT go through ourLbPositions, whose whole job is to
+   * throw on exactly the tracked>0 / found==0 case — which is the case
+   * `npm run force-close` needs to observe rather than be protected from.
+   */
+  async chainPresence(position: { id: number; poolAddress: string }): Promise<{ tracked: number; found: number }> {
+    const pool = await this.pool(position.poolAddress);
+    await pool.refetchStates();
+    const { userPositions } = await pool.getPositionsByUserAndLbPair(this.wallet.publicKey);
+    const ours = new Set(this.accountKeys(position.id).map((k) => k.toBase58()));
+    return { tracked: ours.size, found: userPositions.filter((p) => ours.has(p.publicKey.toBase58())).length };
+  }
+
+  /**
    * Sell any wallet balance of a mint the bot has ever traded. Close/claim
    * zap-outs are best-effort — a failed swap strands tokens in the wallet with
    * nothing else ever looking at them again. Runs from the manager loop (same

@@ -55,6 +55,29 @@ let nextAlertAtMin = 0;
 // failed", 30 x 429) hammering the same endpoint the marks needed. The bot
 // rate-limited itself out of seeing its own position.
 const PROBE_FAILURES_FREEZE_ENTRIES = 2;
+let buildSha = "unknown";
+
+/**
+ * Liveness beacon for an OUT-OF-PROCESS watcher (deploy/heartbeat-check.cjs).
+ * Every alert this bot sends originates inside the bot, so by construction none
+ * of them can tell you the bot is gone — and "no Telegram messages" is
+ * indistinguishable from a quiet market. Written last in the tick so a stale
+ * timestamp means the tick is not completing, not merely that it started.
+ * Never throws: a monitoring write must not be able to kill the thing it
+ * monitors.
+ */
+function writeHeartbeat(exec: Executor, openCount: number): void {
+  try {
+    getDb().prepare(
+      "INSERT INTO meta (key, value) VALUES ('heartbeat', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+    ).run(JSON.stringify({
+      ts: now(), pid: process.pid, build: buildSha, mode: exec.mode,
+      open: openCount, probeFailures, entriesFrozen: entriesFrozen(),
+    }));
+  } catch (e) {
+    console.error("[farmer] heartbeat write failed:", (e as Error).message);
+  }
+}
 let breakerAlerted = false;
 
 function clearRangeTimers(posId: number): void {
@@ -841,9 +864,11 @@ export async function runLoop(): Promise<void> {
   }
   // Log the SHA actually running. "watched it boot" only proves the process
   // restarted, not that it restarted onto the code you just wrote.
-  let sha = "unknown";
-  try { sha = execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim(); } catch { /* not a checkout */ }
-  console.log(`[farmer] starting in ${exec.mode} mode (pid ${process.pid}, build ${sha})`);
+  // `--dirty` matters more than the SHA here: pm2 runs the WORKING TREE, not
+  // HEAD, so a clean-looking SHA on a dirty checkout is precisely the false
+  // reassurance this line exists to prevent.
+  try { buildSha = execSync("git describe --always --dirty", { encoding: "utf8" }).trim(); } catch { /* not a checkout */ }
+  console.log(`[farmer] starting in ${exec.mode} mode (pid ${process.pid}, build ${buildSha})`);
   startSmartFlow();
   let lastScan = 0;
   let lastSweep = 0;
@@ -901,6 +926,7 @@ export async function runLoop(): Promise<void> {
     } catch (e) {
       console.error("[farmer] tick error:", (e as Error).message);
     }
+    writeHeartbeat(exec, loadOpenPositions().length);
     await new Promise((r) => setTimeout(r, config().manage.poll_s * 1000));
   }
 }

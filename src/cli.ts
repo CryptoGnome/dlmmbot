@@ -1,6 +1,6 @@
 import { writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { startConfigWatcher } from "./config.js";
+import { isLive, startConfigWatcher } from "./config.js";
 import { getDb, REALIZED_PNL_SQL } from "./db/db.js";
 import { runLoop } from "./manager/loop.js";
 import { scan } from "./scanner/scan.js";
@@ -73,6 +73,63 @@ async function main(): Promise<void> {
       );
       for (const d of promo.days)
         console.log(`  ${d.day}  realized ${d.realized >= 0 ? "+" : ""}${d.realized.toFixed(4)}  Δunrealized ${d.unrealizedDelta >= 0 ? "+" : ""}${d.unrealizedDelta.toFixed(4)}  ${d.profitable ? "✅" : "❌"}`);
+      break;
+    }
+    case "force-close": {
+      // Recovery for a row stuck open with nothing behind it on chain. That
+      // state became unrecoverable-by-itself on 2026-08-10: ourLbPositions now
+      // throws when we track accounts the chain does not return (rather than
+      // marking the position worthless), and reconcile refuses to orphan a
+      // lone open row on an empty chain read. Both are the right call, and
+      // together they leave exactly this gap. This is the sanctioned exit —
+      // not a hand-written UPDATE, for the same reason `release` exists.
+      //   npm run force-close -- <id> "<reason>"
+      const db = getDb();
+      const id = Number(process.argv[3]);
+      const reason = process.argv[4];
+      if (!Number.isInteger(id) || !reason) {
+        console.error('usage: npm run force-close -- <position id> "<reason>"');
+        process.exit(1);
+      }
+      const pos = db.prepare("SELECT * FROM positions WHERE id = ?").get(id) as
+        | { id: number; symbol: string; pool: string; state: string; exit_ts: number | null; entry_sol: number }
+        | undefined;
+      if (!pos) { console.error(`no position ${id}`); process.exit(1); }
+      if (pos.exit_ts !== null) { console.error(`pos#${id} ${pos.symbol} is already closed (${pos.state})`); process.exit(1); }
+
+      // Never let an operator write off a position that still holds liquidity.
+      if (isLive()) {
+        const { LiveExecutor } = await import("./executor/live.js");
+        const live = new LiveExecutor();
+        const { tracked, found } = await live.chainPresence({ id: pos.id, poolAddress: pos.pool });
+        console.log(`chain check: ${found} of ${tracked} tracked account(s) still on chain`);
+        if (found > 0) {
+          console.error(
+            `REFUSING: pos#${id} ${pos.symbol} still has ${found} live position account(s).\n` +
+            `force-close only writes off rows with nothing behind them. To exit a real position,\n` +
+            `let the manager close it, or use \`npm run halt\` to close everything and stop.`
+          );
+          process.exit(1);
+        }
+      } else {
+        console.log("paper mode — skipping the chain check");
+      }
+
+      // exit_sol / close_return_sol stay NULL on purpose. We do not know what
+      // came back, and REALIZED_PNL_SQL yields NULL for such a row, which SUM
+      // skips — so it contributes nothing rather than a fabricated number.
+      // The SOL itself is still reflected in the wallet-level account figure.
+      db.prepare(
+        "UPDATE positions SET state = 'closed_manual', exit_ts = ?, exit_reason = 'manual' WHERE id = ?"
+      ).run(Math.floor(Date.now() / 1000), id);
+      db.prepare(
+        "INSERT INTO events (position_id, ts, type, detail_json) VALUES (?, ?, 'force_close', ?)"
+      ).run(id, Math.floor(Date.now() / 1000), JSON.stringify({ reason, by: "cli", chainChecked: isLive() }));
+      console.log(
+        `pos#${id} ${pos.symbol} marked closed_manual — "${reason}"\n` +
+        `exit_sol and close_return_sol left NULL: outcome unknown, so it contributes 0 to realized PnL.\n` +
+        `undo: UPDATE positions SET state='open', exit_ts=NULL, exit_reason=NULL WHERE id=${id};`
+      );
       break;
     }
     case "release": {
