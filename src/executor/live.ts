@@ -178,7 +178,9 @@ export class LiveExecutor implements Executor {
     return rows.map((r) => new PublicKey(r.pubkey));
   }
 
-  private async ourLbPositions(position: Position): Promise<{ active: number; priceYperX: number; positions: LbPosition[] }> {
+  // Takes only the two fields it reads, so open() can call it with a freshly
+  // inserted row before a full Position object exists.
+  private async ourLbPositions(position: { id: number; poolAddress: string }): Promise<{ active: number; priceYperX: number; positions: LbPosition[] }> {
     const pool = await this.pool(position.poolAddress);
     await pool.refetchStates();
     const { activeBin, userPositions } = await pool.getPositionsByUserAndLbPair(this.wallet.publicKey);
@@ -189,6 +191,27 @@ export class LiveExecutor implements Executor {
       priceYperX,
       positions: userPositions.filter((p) => ours.has(p.publicKey.toBase58())),
     };
+  }
+
+  /**
+   * Per-bin composition of our position accounts, for RANGE-SHAPE-DECISION.md.
+   * ~50 rows per position, so the fee-vs-depth and inventory-loss-vs-depth
+   * curves are measurable at ~50x the sample rate of per-position PnL — which
+   * is the whole reason the shape question is currently undecidable.
+   * Zero-amount bins are KEPT on purpose: "this bin never converted" is the
+   * observation the utilization question turns on. Keys are short because this
+   * is stringified into events.detail_json.
+   */
+  private binSnapshot(positions: LbPosition[]): Array<Record<string, string | number>> {
+    const out: Array<Record<string, string | number>> = [];
+    for (const p of positions)
+      for (const b of p.positionData.positionBinData)
+        out.push({
+          b: b.binId, p: b.price,
+          x: b.positionXAmount, y: b.positionYAmount,
+          fx: b.positionFeeXAmount, fy: b.positionFeeYAmount,
+        });
+    return out;
   }
 
   private valueOf(positions: LbPosition[], priceYperX: number, xDecimals: number): { valueSol: number; feesSol: number; feeXRaw: bigint } {
@@ -284,6 +307,26 @@ export class LiveExecutor implements Executor {
       db.prepare("INSERT INTO position_accounts (position_id, pubkey, min_bin_id, max_bin_id) VALUES (?, ?, ?, ?)")
         .run(id, a.pubkey, a.min, a.max);
 
+    // Open event. Two things that did not survive before: the open signatures
+    // (only close sigs reached events, which is why reconstructing the book
+    // needed a 205k-signature wallet scan) and the DEPOSITED per-bin
+    // composition. The latter is y_deposited(d) — the denominator of the
+    // inventory-loss curve, and not recoverable later once bins have traded.
+    // One extra RPC after the tx has already confirmed, so it cannot affect
+    // the fill; failure here must never orphan a position that is open on
+    // chain, hence the catch.
+    let openBins: Array<Record<string, string | number>> | null = null;
+    try {
+      const { positions: fresh } = await this.ourLbPositions({ id, poolAddress: params.poolAddress });
+      openBins = this.binSnapshot(fresh);
+    } catch (e) {
+      console.error("[live] open bin snapshot failed (position is fine):", (e as Error).message.split("\n")[0]);
+    }
+    db.prepare(
+      "INSERT INTO events (position_id, ts, type, tx_sig, sol_delta, tx_cost_sol, detail_json) VALUES (?, ?, 'open', ?, ?, ?, ?)"
+    ).run(id, now(), sigs[0] ?? null, openCostSol === null ? null : -openCostSol, 0.0005 * sigs.length,
+      JSON.stringify({ sigs, openCostSol, sizeSol: params.sizeSol, minBin, maxBin, bins: openBins }));
+
     return {
       id, mode: "live", poolAddress: params.poolAddress, tokenMint: params.tokenMint,
       symbol: params.symbol, trancheOf: params.trancheOf ?? null, entryTs: now(),
@@ -322,6 +365,9 @@ export class LiveExecutor implements Executor {
     if (positions.length === 0) return { claimedSol: 0, txCostSol: 0 };
     const xDecimals = pool.tokenX.mint.decimals;
     const { feesSol, feeXRaw } = this.valueOf(positions, priceYperX, xDecimals);
+    // Bins before the claim resets the fee accumulators — this is the only
+    // moment the per-bin fee split is observable (RANGE-SHAPE-DECISION.md).
+    const claimBins = this.binSnapshot(positions);
 
     const sigs: string[] = [];
     const txs = await pool.claimAllSwapFee({ owner: this.wallet.publicKey, positions });
@@ -348,7 +394,7 @@ export class LiveExecutor implements Executor {
       "INSERT INTO events (position_id, ts, type, tx_sig, sol_delta, tx_cost_sol, detail_json) VALUES (?, ?, 'claim', ?, ?, ?, ?)"
     ).run(
       position.id, now(), sigs[0] ?? null, feesSol, 0.0005 * txs.length,
-      JSON.stringify({ sigs, markedSol: feesSol, measuredSol: measured })
+      JSON.stringify({ sigs, markedSol: feesSol, measuredSol: measured, feeXRaw: feeXRaw.toString(), bins: claimBins })
     );
     db.prepare(
       "UPDATE positions SET fees_claimed_sol = fees_claimed_sol + ?, fees_measured_sol = fees_measured_sol + ? WHERE id = ?"
@@ -387,6 +433,9 @@ export class LiveExecutor implements Executor {
     const { priceYperX, positions } = await this.ourLbPositions(position);
     const xDecimals = pool.tokenX.mint.decimals;
     const before = this.valueOf(positions, priceYperX, xDecimals);
+    // Snapshot bins BEFORE removeLiquidity — afterwards the accounts are closed
+    // and the composition is gone for good.
+    const closeBins = this.binSnapshot(positions);
 
     // Every tx this close sends, so the wallet delta below covers all of them.
     const sigs: string[] = [];
@@ -446,7 +495,16 @@ export class LiveExecutor implements Executor {
     ).run(
       position.id, now(), reason === "P0_safety" ? "safety_exit" : "withdraw",
       sigs[0] ?? null, before.valueSol, 0.001,
-      JSON.stringify({ sigs, closeReturnSol, markedExitSol: before.valueSol, swapped: xToSwap > 0n })
+      JSON.stringify({
+        sigs, closeReturnSol, markedExitSol: before.valueSol, swapped: xToSwap > 0n,
+        // Chain legs, so attribution reconciles without a wallet scan
+        // (RANGE-SHAPE-DECISION.md item 3).
+        legs: { feesSolMarked: before.feesSol, feeXRaw: before.feeXRaw.toString(), xToSwapRaw: xToSwap.toString() },
+        // Per-bin composition at exit. Paired with the 'open' event's bins this
+        // gives y_deposited(d) and (y(d), x(d)) per bin — both sides of
+        // L(d) = y_deposited(d) - (y(d) + x(d) * p_exit).
+        bins: closeBins,
+      })
     );
     return { exitSol: before.valueSol, txCostSol: 0.001 };
   }

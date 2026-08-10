@@ -267,6 +267,16 @@ export async function managePositions(exec: Executor): Promise<void> {
       unrealizedSol += mark.valueSol - pos.entrySol;
       const ageH = (now() - pos.entryTs) / 3600;
       const valueFrac = pos.entrySol > 0 ? mark.valueSol / pos.entrySol : 1;
+      // Instrumentation (RANGE-SHAPE-DECISION.md): record the mark we just paid
+      // for instead of discarding it. This is the series that makes traversal
+      // depth measured rather than inferred from 65s pool_snapshots, and the
+      // one the Spot-vs-BidAsk stop replay is scored against.
+      getDb().prepare(
+        `INSERT INTO position_marks
+           (position_id, ts, active_bin_id, price, value_sol, value_frac, unclaimed_fees_sol, in_range)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(pos.id, now(), mark.activeBinId, mark.price, mark.valueSol, valueFrac,
+            mark.unclaimedFeesSol, mark.inRange ? 1 : 0);
       // Persisted (not just in-memory): restarts must not forget a position
       // was in range, or P3 exits misclassify win as missed (pos#2 incident).
       if (mark.inRange && !everInRange.has(pos.id)) {

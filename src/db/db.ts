@@ -125,6 +125,25 @@ CREATE TABLE IF NOT EXISTS ledger (                -- banked balance (§5)
   note TEXT
 );
 
+-- Instrumentation for the range-shape decision (RANGE-SHAPE-DECISION.md).
+-- One row per 15s manager poll per open position. pool_snapshots is the only
+-- price history we have and it samples at p50 65s, which has hidden
+-- single-interval jumps of up to 91 bins — too coarse to measure how deep a
+-- position actually traversed. Read-only side effect of a mark() we already do
+-- and already throw away. ~240 rows per hour-long position.
+CREATE TABLE IF NOT EXISTS position_marks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  position_id INTEGER NOT NULL,
+  ts INTEGER NOT NULL,
+  active_bin_id INTEGER,
+  price REAL,
+  value_sol REAL,
+  value_frac REAL,               -- value_sol / entry_sol, the P1 stop's input
+  unclaimed_fees_sol REAL,
+  in_range INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_position_marks ON position_marks(position_id, ts);
+
 CREATE TABLE IF NOT EXISTS config_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts INTEGER NOT NULL,
