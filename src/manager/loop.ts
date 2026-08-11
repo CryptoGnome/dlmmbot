@@ -15,6 +15,7 @@ import { trendingByMint } from "../scanner/gmgn.js";
 import { feeMomentumPart, opportunityScore, structurePart, turnoverPart } from "../scanner/score.js";
 import { scan } from "../scanner/scan.js";
 import { flowFor, startSmartFlow } from "../scanner/smartflow.js";
+import { armFollowChain, hasActiveFollowChain, onFollowLegClosed, tickFollowChains } from "./follow.js";
 import { clearHolderWatch, holderCheck } from "./holderwatch.js";
 import { sol24hChangePct, solUsdPrice } from "../market.js";
 import { circuitBreakerTripped, computeBankroll, kellyStats, openPositionCount, positionSize, regimeFactor, tokenExposureSol } from "../risk/limits.js";
@@ -151,6 +152,19 @@ async function closeAndReport(
     ` | held ${hold}` +
     trueLine
   );
+  // Follow-mode chain accounting: every close of a follow leg routes through
+  // here, so this is the one place the chain learns its leg's outcome. Budget
+  // reads the measured wallet delta when the columns exist, the mark otherwise.
+  if (pos.followChainId != null) {
+    const legPnl = row?.open_cost_sol != null && row?.close_return_sol != null
+      ? row.close_return_sol + row.fees_measured_sol + row.recovered_sol - row.open_cost_sol
+      : pnl;
+    try {
+      onFollowLegClosed(pos, reason, legPnl);
+    } catch (e) {
+      console.error(`[follow] leg-close hook failed for pos#${pos.id}:`, (e as Error).message);
+    }
+  }
   await accountPnlAlert(exec).catch((e) =>
     console.error("[alert] account summary failed:", (e as Error).message));
   return res;
@@ -270,7 +284,7 @@ function loadOpenPositions(): Position[] {
   const rows = getDb().prepare(
     `SELECT id, mode, pool, token_mint, symbol, tranche_of, entry_ts, entry_price, entry_sol,
             min_bin_id, max_bin_id, state, fees_claimed_sol, rent_paid_sol, profit_lock_fires,
-            exit_ts, exit_sol, exit_reason
+            exit_ts, exit_sol, exit_reason, follow_chain_id
      FROM positions WHERE state IN ('open','pending')`
   ).all() as Array<Record<string, unknown>>;
   return rows.map((r) => ({
@@ -284,6 +298,7 @@ function loadOpenPositions(): Position[] {
     profitLockFires: r.profit_lock_fires as number,
     exitTs: r.exit_ts as number | null, exitSol: r.exit_sol as number | null,
     exitReason: r.exit_reason as Position["exitReason"],
+    followChainId: r.follow_chain_id as number | null,
   }));
 }
 
@@ -393,6 +408,11 @@ export async function managePositions(exec: Executor): Promise<void> {
             getDb().prepare("UPDATE positions SET state='closed_missed' WHERE id=?").run(pos.id);
           else bankProfit(pos, exitSol, "P3 take-profit");
           recordDecision(pos.tokenMint, pos.poolAddress, "exited", `P3_above_${classification}`, null, { mark, sustainedS: now() - since, exitSol });
+          // Follow mode (§4 P3-F): an up-and-out close on a MAIN position arms
+          // an up-only re-entry chain — win and missed both mean the pool
+          // out-ran us. A follow leg closing up-and-out continues its own
+          // chain via the closeAndReport hook instead of arming a second one.
+          if (pos.followChainId == null) armFollowChain(pos, mark.price);
         }
         continue; // above range: nothing earns; wait out the sustain window
       }
@@ -429,7 +449,11 @@ export async function managePositions(exec: Executor): Promise<void> {
       // the deep part of our range, then recovered to the top slice — close
       // now, selling the accumulated token side near/above average acquisition
       // and realizing fees, instead of waiting to round-trip back down.
-      {
+      // Follow legs are exempt: escape depth is a FRACTION of range depth, and
+      // at the follow range's 30% width it would arm around -19% and fire on
+      // ordinary wiggles (the trap RANGE-SHAPE-DECISION.md documents at 25%).
+      // A follow leg is already the product of an escape-shaped cycle.
+      if (pos.followChainId == null) {
         const depth = pos.maxBinId - pos.minBinId;
         const frac = depth > 0 ? (pos.maxBinId - mark.activeBinId) / depth : 0; // 0 = top, 1 = bottom
         if (frac >= m.escape_hatch_depth_pct / 100) {
@@ -664,6 +688,14 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     }
     if (opened >= bankroll.effectiveSlots && !rot.displacement_enabled) break;
 
+    // One owner per token: while a follow chain is live for this mint, the
+    // chain decides re-entry timing — the normal pipeline entering in parallel
+    // would double exposure and race the chain's up-only discipline.
+    if (hasActiveFollowChain(cand.tokenMint, exec.mode)) {
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "follow_active", cand.score, {});
+      continue;
+    }
+
     const createdAtMs = cand.pool.createdAt ? Date.parse(cand.pool.createdAt) : null;
     const vet = await vetToken(cand.tokenMint, createdAtMs);
     if (vet.verdict !== "pass") {
@@ -890,6 +922,16 @@ export async function runLoop(): Promise<void> {
     }
     try {
       await managePositions(exec);
+      // Follow chains tick at poll cadence, not scanner cadence — dip detection
+      // on a 15% retrace needs finer sampling than the 60s scan. Frozen entries
+      // freeze follow legs too: both add exposure.
+      if (!entriesFrozen()) {
+        try {
+          await tickFollowChains(exec);
+        } catch (e) {
+          console.error("[follow] tick failed:", (e as Error).message);
+        }
+      }
       if (entriesFrozen()) {
         if (Date.now() - lastScan > config().scanner.interval_s * 1000) {
           lastScan = Date.now();

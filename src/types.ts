@@ -105,6 +105,8 @@ export interface Position {
   exitTs: number | null;
   exitSol: number | null;
   exitReason: ExitReason | null;
+  /** Non-null on follow-mode legs (manager/follow.ts) — points at follow_chains.id. */
+  followChainId?: number | null;
 }
 
 export type EventType =

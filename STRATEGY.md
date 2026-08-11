@@ -111,6 +111,33 @@ Two distinct cases, because they mean opposite things:
 - Rate limits: ≤ `[2]` rebalances per position per `[6h]`; skip entirely if projected rent + tx cost > `[25%]` of fees earned so far.
 - **House-money rule** `[on]`: after a profitable close, only the original base size is eligible for redeployment into the *same* token; the profit above entry goes to the banked balance (§5). Winners pay the bankroll, not the next bet on the same coin.
 
+### P3-F — FOLLOW MODE (up-only re-entry after an up-and-out close) `[on]`
+
+Added 2026-08-11. Decided by simulation over the 17 recorded post-exit price paths:
+unguarded chasing is negative-EV at every depth/shape (median hot-window retrace is
+26%, p75 34%, so tight "top blast" ranges get run through), and this gate set was the
+only configuration at/above breakeven at the measured in-range fee rate — with zero
+simulated stops or below-range cuts. A P3 close leaves the position 100% SOL, so every
+follow re-entry is swapless.
+
+- Any P3 close (win or missed) on a main position **arms a chain** (`follow_chains`).
+- A leg opens only when ALL hold: pool `vol_30m ≥ [$100k]` (4× the entry floor),
+  current-window heat (30m AND 1h fee rates annualized ≥ the 24h gate — deliberately
+  bypassing the stale 24h average, which TVL growth dilutes on exactly the best pools),
+  price retraced `[15%]` from the post-exit/post-high peak, and fresh §2.2 vetting.
+- Range: one-sided SOL bid-ask, `[30%]` deep (tighter than the [40%] default), top at
+  current price. Escape hatch disabled on follow legs (its depth is a fraction of range
+  width — at 30% it would fire on ordinary wiggles).
+- **Up-only**: after each leg closes up-and-out, the chain re-arms only once price makes
+  a NEW chain high. This condition alone separated +EV from −EV in the sim.
+- Chain ends on: any non-P3 leg close, `[3]` legs, cumulative chain PnL ≤ −`[0.075]` SOL,
+  `[3]` consecutive polls under the normal volume floor, `[12h]` age, blacklist, or vet fail.
+- Legs size at `[0.25]` SOL, are exempt from the §P3 re-entry ladder and `reentry_limit`
+  (the volume + up-only gates replace them), and are excluded from the main Kelly ledger —
+  the mode earns bigger sizing with its own closed-leg evidence, per the §10 principle.
+- While a chain is live, the normal pipeline skips that token (`follow_active`): one
+  owner of re-entry timing per token.
+
 ### P4 — IN RANGE (earning) — fee handling
 - Claim when unclaimed fees ≥ max(`[0.05 SOL]`, `[20×]` estimated tx cost) or every `[4h]`, whichever first.
 - Fee destination `[bank]`: token-side fees swapped to SOL via Jupiter at claim time; SOL banked to the wallet. Alternative `compound`: fees re-added to the position (only when pool score ≥ `[70]`).

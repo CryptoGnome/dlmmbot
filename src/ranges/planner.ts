@@ -97,3 +97,34 @@ export function planRange(
     estBinRentSol: Math.ceil(binCount / 70) * 0.075,
   };
 }
+
+/**
+ * Follow-mode range (manager/follow.ts): fixed depth below current price, no
+ * fib/swing input — a follow leg re-bids under a price that just made a new
+ * high, where the recent swing low sits below the chain's loss budget anyway.
+ * Allows the same account split as the main planner: at bin step >= 55 a 30%
+ * depth fits one 69-bin account, but a fine-step pool (ANSEM-SOL, step ~20)
+ * clamped to one account comes out ~-13% deep — a shallowness the follow sim
+ * shows gets run through by the median 26% hot-window retrace.
+ */
+export function planFollowRange(
+  currentPrice: number,
+  binStep: number,
+  depthPct: number,
+  decimalsX: number
+): RangePlan {
+  const maxBinId = priceToBinId(currentPrice, binStep, decimalsX);
+  let minBinId = priceToBinId(currentPrice * (1 - depthPct / 100), binStep, decimalsX);
+  const maxBins = BINS_PER_POSITION * config().entry.max_position_accounts;
+  if (maxBinId - minBinId + 1 > maxBins) minBinId = maxBinId - maxBins + 1;
+  const binCount = maxBinId - minBinId + 1;
+  return {
+    minBinId,
+    maxBinId,
+    binCount,
+    positionAccounts: Math.ceil(binCount / BINS_PER_POSITION),
+    bottomPricePct: (binIdToPrice(minBinId, binStep, decimalsX) / currentPrice - 1) * 100,
+    fibAnchor: null,
+    estBinRentSol: Math.ceil(binCount / 70) * 0.075,
+  };
+}

@@ -149,6 +149,31 @@ CREATE TABLE IF NOT EXISTS config_history (
   ts INTEGER NOT NULL,
   toml TEXT NOT NULL
 );
+
+-- Follow mode (up-only re-entry after a P3 up-and-out close). One row per
+-- chain; legs are ordinary positions rows carrying follow_chain_id. The state
+-- machine lives in manager/follow.ts; everything it needs to survive a restart
+-- (peaks, streaks, budget) is persisted here every tick.
+CREATE TABLE IF NOT EXISTS follow_chains (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  mode TEXT NOT NULL,               -- paper | live
+  pool TEXT NOT NULL,
+  token_mint TEXT NOT NULL,
+  symbol TEXT,
+  origin_position_id INTEGER NOT NULL,
+  started_ts INTEGER NOT NULL,
+  state TEXT NOT NULL,              -- awaiting_high | awaiting_dip | leg_open | done
+  end_reason TEXT,                  -- set when state = done
+  legs INTEGER NOT NULL DEFAULT 0,
+  chain_pnl_sol REAL NOT NULL DEFAULT 0,
+  chain_high REAL NOT NULL,         -- highest price seen since the chain started
+  high_mark REAL NOT NULL,          -- chain_high at last leg close; must be exceeded to re-arm
+  arm_peak REAL,                    -- running max since awaiting_dip began (dip reference)
+  cold_streak INTEGER NOT NULL DEFAULT 0,
+  last_leg_position_id INTEGER,
+  updated_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_follow_chains_state ON follow_chains(state, mode);
 `;
 
 let db: Database.Database | null = null;
@@ -194,6 +219,11 @@ export function getDb(): Database.Database {
     try {
       db.exec("ALTER TABLE positions ADD COLUMN fees_at_close_sol REAL NOT NULL DEFAULT 0");
     } catch { /* column already exists */ }
+    // Follow-mode legs point at their chain. NULL = ordinary position; the
+    // Kelly estimator filters on this so chase legs never move main sizing.
+    try {
+      db.exec("ALTER TABLE positions ADD COLUMN follow_chain_id INTEGER");
+    } catch { /* column already exists */ }
     db.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
 
     // Those ALTERs are wrapped in `catch {}` to be idempotent, which also
@@ -206,7 +236,7 @@ export function getDb(): Database.Database {
     );
     const required = [
       "ever_in_range", "open_cost_sol", "close_return_sol", "fell_deep",
-      "fees_measured_sol", "recovered_sol", "fees_at_close_sol",
+      "fees_measured_sol", "recovered_sol", "fees_at_close_sol", "follow_chain_id",
     ];
     const missing = required.filter((c) => !cols.has(c));
     if (missing.length)

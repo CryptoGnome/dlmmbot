@@ -53,10 +53,13 @@ export interface KellyStats {
 
 export function kellyStats(): KellyStats {
   const s = config().sizing;
+  // follow_chain_id IS NULL: follow-mode legs keep their own ledger (the
+  // follow_chains table) — a different entry distribution polluting this
+  // estimator was the same mistake STRATEGY §10 forbids for majors mode.
   const rows = getDb().prepare(
     `SELECT (exit_sol + fees_claimed_sol - entry_sol) / entry_sol AS ret
      FROM positions
-     WHERE exit_ts IS NOT NULL AND entry_sol > 0
+     WHERE exit_ts IS NOT NULL AND entry_sol > 0 AND follow_chain_id IS NULL
      ORDER BY exit_ts DESC LIMIT ?`
   ).all(s.kelly_lookback) as Array<{ ret: number }>;
 

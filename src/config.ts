@@ -71,6 +71,13 @@ export interface Config {
     circuit_weekly_triggers_halt: number;
     regime_filter: boolean; regime_sol_24h_halve_pct: number; regime_sol_24h_pause_pct: number;
   };
+  follow: {
+    enabled: boolean;
+    min_vol_30m_usd: number; retrace_arm_pct: number;
+    range_depth_pct: number; leg_size_sol: number;
+    max_legs: number; chain_loss_budget_sol: number;
+    chain_max_age_h: number; cold_polls_end: number;
+  };
   rotation: {
     alpha_slots: number; alpha_score_min: number;
     displacement_enabled: boolean; displacement_margin: number;

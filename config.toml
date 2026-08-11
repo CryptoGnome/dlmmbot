@@ -177,6 +177,21 @@ regime_filter = true
 regime_sol_24h_halve_pct = -8
 regime_sol_24h_pause_pct = -15
 
+[follow]                   # up-only re-entry after a P3 up-and-out close (§4 P3-F)
+# 2026-08-11: simulated over the 17 real post-exit price paths in this DB —
+# unguarded chasing is negative-EV at every depth/shape (median hot-window
+# retrace 26%, p75 34%); this gate set was the only one at/above breakeven at
+# the measured in-range fee rate, with zero simulated stops or below-cuts.
+enabled = true
+min_vol_30m_usd = 100000   # arm only while the pool does 4x our normal entry floor
+retrace_arm_pct = 15       # wait for this dip from the post-exit / post-high peak
+range_depth_pct = 30       # bid-ask depth — tighter than the 40% default, far from "top blast"
+leg_size_sol = 0.25        # small legs; the mode earns bigger sizing with its own ledger
+max_legs = 3               # per chain
+chain_loss_budget_sol = 0.075  # chain ends when cumulative leg PnL breaches this
+chain_max_age_h = 12
+cold_polls_end = 3         # consecutive polls under gates.vol_30m_min_usd ends the chain
+
 [rotation]                 # capital agility: room for spectacular newcomers (§5)
 alpha_slots = 1                  # slots reserved for score >= alpha_score_min only
 alpha_score_min = 85
