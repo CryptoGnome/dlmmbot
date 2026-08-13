@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Easy setup (Railway) — DLMM Bot</title>
-  <meta name="description" content="Deploy DLMM Bot on Railway. Paper first, then live with a burner wallet." />
+  <meta name="description" content="One-click Railway deploy for DLMM Bot. Paper first, then live from the dashboard." />
   <link rel="canonical" href="https://dlmmbot.com/setup/easy.html" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -33,16 +33,17 @@
     <header class="doc-hero">
       <h1>Easy setup (Railway)</h1>
       <p class="lede">
-        No VPS, no PM2. Start in <strong>paper mode</strong> (no wallet). Go live later with a burner.
+        One service. Config is automated. You attach a volume once, open the public URL,
+        then finish secrets in our dashboard Settings UI.
       </p>
       <div class="hero-cta" style="justify-content:flex-start;margin-bottom:0">
         <a class="btn btn-primary" href="https://railway.com?referralCode=SCj9lN" target="_blank" rel="noreferrer">
           Sign up on Railway <span class="arrow" aria-hidden="true">→</span>
         </a>
-        <a class="linkish" href="#railway">Jump to deploy steps</a>
+        <a class="linkish" href="#deploy">Jump to steps</a>
       </div>
       <p class="warn">
-        Memecoin LP can wipe a wallet. Not financial advice. Burner only. Never put rent money in it.
+        Memecoin LP can wipe a wallet. Not financial advice. Burner only.
       </p>
     </header>
 
@@ -50,11 +51,10 @@
       <aside class="toc" aria-label="On this page">
         <h2>On this page</h2>
         <ol>
-          <li><a href="#why">Why Railway</a></li>
-          <li><a href="#railway">Deploy (paper)</a></li>
-          <li><a href="#dash">Dashboard</a></li>
-          <li><a href="#updates">Auto-updates</a></li>
-          <li><a href="#keys">Keys &amp; APIs</a></li>
+          <li><a href="#auto">What’s automated</a></li>
+          <li><a href="#deploy">Deploy (3 steps)</a></li>
+          <li><a href="#dash">Open the dash</a></li>
+          <li><a href="#settings">Finish in Settings</a></li>
           <li><a href="#live">Going live</a></li>
           <li><a href="#cost">Cost</a></li>
           <li><a href="#troubleshoot">Troubleshooting</a></li>
@@ -62,81 +62,52 @@
       </aside>
 
       <div class="doc-main">
-        <section id="why">
-          <h2>Why Railway</h2>
+        <section id="auto">
+          <h2>What’s automated</h2>
           <p>
-            Click deploy, set a few secrets, get a public HTTPS link for the dashboard.
-            Railway restarts crashes and can redeploy when GitHub updates.
+            The repo ships a <code>railway.toml</code> so Railway builds the dashboard and runs
+            <strong>farmer + dash together</strong> in one service. On boot it:
           </p>
+          <ul>
+            <li>Defaults to <code>FARMER_MODE=paper</code> (safe)</li>
+            <li>Listens on Railway’s public <code>PORT</code></li>
+            <li>Seeds persistent <code>config.toml</code> + <code>.env</code> on the volume</li>
+            <li>Auto-generates a <code>DASH_TOKEN</code> if you didn’t set one (printed in logs)</li>
+          </ul>
           <p class="note">
-            Already have a VPS or prefer local?
-            Use the <a href="advanced.html">Advanced guide</a>.
+            Volumes still can’t be declared in TOML (Railway limitation). Attaching
+            <code>/app/data</code> once is the only infra click left.
           </p>
         </section>
 
-        <section id="railway">
-          <h2>Deploy on Railway (paper)</h2>
+        <section id="deploy">
+          <h2>Deploy (3 steps)</h2>
           <ol class="steps">
             <li>
-              <h3>Create a Railway account</h3>
+              <h3>Sign up &amp; deploy the repo</h3>
               <p>
-                Sign up with this link (supports the project):
-                <a href="https://railway.com?referralCode=SCj9lN" target="_blank" rel="noreferrer">railway.com?referralCode=SCj9lN</a>.
-                GitHub login is easiest.
-              </p>
-            </li>
-            <li>
-              <h3>New project from GitHub</h3>
-              <p>
-                <strong>New Project → Deploy from GitHub</strong> → pick
+                <a href="https://railway.com?referralCode=SCj9lN" target="_blank" rel="noreferrer">railway.com?referralCode=SCj9lN</a>
+                → <strong>New Project → Deploy from GitHub</strong> →
                 <code>CryptoGnome/dlmmbot</code> (or your fork).
-                Private repos need Railway access granted.
+              </p>
+              <p>
+                One service is enough. Start/build commands come from <code>railway.toml</code> —
+                you should not need to type them.
               </p>
             </li>
             <li>
-              <h3>Two services, same repo</h3>
-              <table class="req">
-                <thead>
-                  <tr><th>Service</th><th>Start command</th><th>Public?</th></tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td><strong>farmer</strong></td>
-                    <td><code>npm run run</code></td>
-                    <td>No</td>
-                  </tr>
-                  <tr>
-                    <td><strong>dash</strong></td>
-                    <td><code>npm run dash:build &amp;&amp; npm run dash</code></td>
-                    <td>Yes — generate a domain</td>
-                  </tr>
-                </tbody>
-              </table>
-              <p class="note">Both need Node 20+. Railway runs <code>npm install</code> on deploy.</p>
-            </li>
-            <li>
-              <h3>Shared variables (paper-safe)</h3>
-              <pre><button type="button" class="copy" data-copy>Copy</button><code>FARMER_MODE=paper
-RPC_URL=https://api.mainnet-beta.solana.com
-DASH_TOKEN=pick-a-long-random-password
-DASH_PORT=8787</code></pre>
+              <h3>Attach a volume at <code>/app/data</code></h3>
               <p>
-                Leave <code>WALLET_PRIVATE_KEY</code> empty for paper.
-                <code>FARMER_MODE=paper</code> will not live-trade even if config says live.
+                Service → click the service → <strong>Volumes</strong> → Add → mount path
+                <code>/app/data</code>. This keeps SQLite, Settings, and your token across redeploys.
               </p>
-              <p class="note danger">Never paste keys into Discord or screenshots. Never use your main wallet.</p>
+              <p class="note">Redeploy after attaching so the mount is live.</p>
             </li>
             <li>
-              <h3>Attach a volume</h3>
+              <h3>Generate a public domain</h3>
               <p>
-                SQLite lives under <code>data/</code>. Mount a volume at <code>/app/data</code>
-                (or app root + <code>/data</code>) so redeploys don’t wipe history.
-              </p>
-            </li>
-            <li>
-              <h3>Deploy</h3>
-              <p>
-                Wait for green. On <strong>dash</strong>: Settings → Networking → Generate domain.
+                Settings → Networking → <strong>Generate domain</strong>.
+                That’s your dashboard URL.
               </p>
             </li>
           </ol>
@@ -145,40 +116,26 @@ DASH_PORT=8787</code></pre>
         <section id="dash">
           <h2>Open the dashboard</h2>
           <p>
-            Use the dash HTTPS URL (<code>https://….up.railway.app</code>).
-            Enter the same <code>DASH_TOKEN</code>. Works from your phone — token still required.
+            Open the public URL. If you didn’t set <code>DASH_TOKEN</code>, check
+            <strong>Deploy logs</strong> for <code>[railway] generated DASH_TOKEN=…</code>
+            and paste that token.
+          </p>
+          <p class="note">
+            Optional but recommended: copy that token into Railway Variables as
+            <code>DASH_TOKEN</code> so it never rotates.
           </p>
         </section>
 
-        <section id="updates">
-          <h2>Auto-updates</h2>
-          <p>Connect Railway to GitHub so pushes to <code>master</code> redeploy.</p>
-          <ul>
-            <li><strong>Paper:</strong> auto-deploy is fine.</li>
-            <li><strong>Live:</strong> prefer deploying after CI is green, or deploy manually.</li>
+        <section id="settings">
+          <h2>Finish in our Settings UI</h2>
+          <p>With the volume attached, Settings writes persist on disk. In the dash:</p>
+          <ul class="checklist">
+            <li>Leave paper mode until you’re comfortable</li>
+            <li>Add private <code>RPC_URL</code> when ready (public RPC is ok for a short paper smoke test)</li>
+            <li>When going live: burner <code>WALLET_PRIVATE_KEY</code> + <code>JUPITER_API_KEY</code></li>
+            <li>Tune token-safety / sizing knobs as you like</li>
           </ul>
-        </section>
-
-        <section id="keys">
-          <h2>Keys &amp; APIs</h2>
-          <h3>Burner wallet — Phantom</h3>
-          <ol>
-            <li>Install <a href="https://phantom.app" target="_blank" rel="noreferrer">Phantom</a>.</li>
-            <li>Create a <strong>new</strong> account.</li>
-            <li>Fund only SOL you’re willing to lose.</li>
-            <li>Export Private Key (base58) → Railway <code>WALLET_PRIVATE_KEY</code>.</li>
-          </ol>
-          <p class="note danger">Close the export screen. Don’t screenshot it.</p>
-          <h3>Private RPC</h3>
-          <p>
-            Live needs a private endpoint
-            (<a href="https://www.helius.dev" target="_blank" rel="noreferrer">Helius</a>,
-            <a href="https://www.quicknode.com" target="_blank" rel="noreferrer">QuickNode</a>, etc.).
-          </p>
-          <pre><button type="button" class="copy" data-copy>Copy</button><code>RPC_URL=https://your-provider-url-here</code></pre>
-          <h3>Jupiter</h3>
-          <p><a href="https://portal.jup.ag" target="_blank" rel="noreferrer">portal.jup.ag</a></p>
-          <pre><button type="button" class="copy" data-copy>Copy</button><code>JUPITER_API_KEY=your_key_here</code></pre>
+          <p class="note danger">Never use your main wallet. Burner only.</p>
         </section>
 
         <section id="live">
@@ -186,10 +143,10 @@ DASH_PORT=8787</code></pre>
           <p class="note danger">Real SOL. Burner only. One farmer process per wallet.</p>
           <ul class="checklist">
             <li>Paper looked sane</li>
-            <li>Burner + private RPC + Jupiter in Railway vars</li>
-            <li><code>FARMER_MODE=live</code></li>
-            <li><code>[exec] mode = "live"</code> in config</li>
-            <li>Redeploy so both switches are live</li>
+            <li>Burner + private RPC + Jupiter set (Settings or Railway Variables)</li>
+            <li>Set <code>FARMER_MODE=live</code> (Railway variable or Settings)</li>
+            <li>Set <code>[exec] mode = "live"</code> in Settings / config</li>
+            <li>Restart / redeploy so both switches are live</li>
           </ul>
           <p class="note">Live requires <strong>both</strong> env and config. One alone stays safe.</p>
         </section>
@@ -197,9 +154,10 @@ DASH_PORT=8787</code></pre>
         <section id="cost">
           <h2>Cost</h2>
           <p>
-            Trial credits, then Hobby (~$5) + usage is the realistic always-on floor.
+            Trial credits, then Hobby (~$5) + usage is the realistic always-on floor
+            (volume needs a paid plan tier).
             <a href="https://railway.com/pricing?referralCode=SCj9lN" target="_blank" rel="noreferrer">Pricing</a>.
-            Own hardware can be cheaper — <a href="advanced.html">Advanced</a>.
+            Own hardware: <a href="advanced.html">Advanced</a>.
           </p>
         </section>
 
@@ -208,11 +166,11 @@ DASH_PORT=8787</code></pre>
           <table class="req">
             <thead><tr><th>Symptom</th><th>Fix</th></tr></thead>
             <tbody>
-              <tr><td>Native module build fail</td><td>Node 20; check <code>better-sqlite3</code> logs</td></tr>
-              <tr><td>Dash unauthorized</td><td>Same <code>DASH_TOKEN</code> in vars and browser</td></tr>
-              <tr><td>History wiped</td><td>Persistent volume on <code>data/</code></td></tr>
-              <tr><td>RPC spam / failed opens</td><td>Private <code>RPC_URL</code></td></tr>
-              <tr><td>Thought paper, it traded</td><td>Check both <code>FARMER_MODE</code> and <code>[exec].mode</code></td></tr>
+              <tr><td>Build fails on native module</td><td>Node 20 (Railpack default); check <code>better-sqlite3</code> logs</td></tr>
+              <tr><td>Dash unauthorized</td><td>Token from logs or Railway <code>DASH_TOKEN</code></td></tr>
+              <tr><td>History / Settings wiped</td><td>Volume at <code>/app/data</code>, then redeploy</td></tr>
+              <tr><td>Healthcheck failing</td><td>Wait for first build; path is <code>/health</code></td></tr>
+              <tr><td>Want local / PM2</td><td><a href="advanced.html">Advanced setup</a></td></tr>
             </tbody>
           </table>
         </section>

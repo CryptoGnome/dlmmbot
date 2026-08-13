@@ -12,10 +12,12 @@ Scans hot SOL-quoted meme pools, vets the token, opens a **one-sided SOL** LP be
 
 | Path | Who it’s for | Link |
 |---|---|---|
-| **Easy — Railway** | Most users | [Docs → Easy](https://dlmmbot.com/setup/easy.html) · [Sign up](https://railway.com?referralCode=SCj9lN) |
+| **Easy — Railway** | Most users (one service, automated config) | [Docs → Easy](https://dlmmbot.com/setup/easy.html) · [Sign up](https://railway.com?referralCode=SCj9lN) |
 | **Advanced — local / VPS / PM2** | You already have a box | [Docs → Advanced](https://dlmmbot.com/setup/advanced.html) |
 
-Local preview of the site: open [`docs/index.html`](docs/index.html) in a browser.
+**Railway (shortest path):** Deploy `CryptoGnome/dlmmbot` → attach volume at `/app/data` → Generate domain → open the URL (token is in deploy logs if unset) → finish secrets in the dashboard Settings UI.
+
+`railway.toml` builds the dash and starts farmer + dashboard together. Paper mode is the default.
 
 ---
 

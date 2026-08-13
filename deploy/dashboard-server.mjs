@@ -18,16 +18,19 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const root = resolve(process.env.FARMER_ROOT ?? resolve(__dir, ".."));
 
 try {
-  for (const line of readFileSync(resolve(root, ".env"), "utf8").split(/\r?\n/)) {
-    const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/.exec(line);
-    if (!m || line.trimStart().startsWith("#")) continue;
-    const [, key, value] = m;
-    if (key && process.env[key] === undefined) process.env[key] = value;
+  const envFiles = [resolve(root, ".env"), process.env.FARMER_ENV_PATH].filter(Boolean);
+  for (const file of envFiles) {
+    for (const line of readFileSync(file, "utf8").split(/\r?\n/)) {
+      const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/.exec(line);
+      if (!m || line.trimStart().startsWith("#")) continue;
+      const [, key, value] = m;
+      if (key && process.env[key] === undefined) process.env[key] = value;
+    }
   }
 } catch { /* no .env */ }
 
 const dist = resolve(root, "dashboard/dist");
-const port = Number(process.env.DASH_PORT ?? 8787);
+const port = Number(process.env.PORT ?? process.env.DASH_PORT ?? 8787);
 const token = process.env.DASH_TOKEN ?? "";
 const WATCH_MS = Number(process.env.DASH_WS_WATCH_MS ?? 3_000);
 const HIST_MS = Number(process.env.DASH_WS_HIST_MS ?? 30_000);
@@ -121,6 +124,12 @@ const server = createServer(async (req, res) => {
       "Access-Control-Allow-Methods": "GET, PATCH, POST, OPTIONS",
     });
     res.end();
+    return;
+  }
+
+  // Unauthenticated probe for Railway / load balancers
+  if (url.pathname === "/health") {
+    sendJson(res, 200, { ok: true });
     return;
   }
 

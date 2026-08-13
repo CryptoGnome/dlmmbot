@@ -13,7 +13,9 @@ const EDITABLE_SECTIONS = new Set([
 ]);
 
 function configPath(root) {
-  return resolve(root, "config.toml");
+  return process.env.FARMER_CONFIG_PATH
+    ? resolve(process.env.FARMER_CONFIG_PATH)
+    : resolve(root, "config.toml");
 }
 
 export function readConfigToml(root) {
@@ -157,7 +159,9 @@ export const SECRET_EDIT_KEYS = [
 const SECRET_EDIT_SET = new Set(SECRET_EDIT_KEYS);
 
 function envPath(root) {
-  return resolve(root, ".env");
+  return process.env.FARMER_ENV_PATH
+    ? resolve(process.env.FARMER_ENV_PATH)
+    : resolve(root, ".env");
 }
 
 /** Status-only env snapshot — sensitive values are never included. */

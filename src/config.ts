@@ -161,21 +161,27 @@ export interface Env {
   farmerMode: string;
 }
 
-const CONFIG_PATH = resolve(process.cwd(), "config.toml");
+const CONFIG_PATH = resolve(process.env.FARMER_CONFIG_PATH ?? resolve(process.cwd(), "config.toml"));
 
 // Minimal .env loader (no dependency): KEY=VALUE lines, # comments,
-// existing process.env always wins.
+// existing process.env always wins. Volume path (FARMER_ENV_PATH) wins last.
 (() => {
-  try {
-    const lines = readFileSync(resolve(process.cwd(), ".env"), "utf8").split(/\r?\n/);
-    for (const line of lines) {
-      const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/.exec(line);
-      if (!m || line.trimStart().startsWith("#")) continue;
-      const [, key, value] = m;
-      if (key && process.env[key] === undefined) process.env[key] = value;
+  const files = [
+    resolve(process.cwd(), ".env"),
+    process.env.FARMER_ENV_PATH,
+  ].filter(Boolean) as string[];
+  for (const file of files) {
+    try {
+      const lines = readFileSync(file, "utf8").split(/\r?\n/);
+      for (const line of lines) {
+        const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/.exec(line);
+        if (!m || line.trimStart().startsWith("#")) continue;
+        const [, key, value] = m;
+        if (key && process.env[key] === undefined) process.env[key] = value;
+      }
+    } catch {
+      /* missing file — fine */
     }
-  } catch {
-    /* no .env file — fine, env()/defaults cover it */
   }
 })();
 

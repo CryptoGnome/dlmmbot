@@ -1,0 +1,16 @@
+# Single-service Railway deploy: farmer + dashboard.
+# User steps: Deploy from GitHub → attach volume at /app/data → Generate domain.
+# Optional vars: DASH_TOKEN (auto-generated if unset), FARMER_MODE=paper (default),
+# RPC_URL, WALLET_PRIVATE_KEY, JUPITER_API_KEY — or set secrets in the dash Settings UI
+# (persisted on the volume).
+
+[build]
+builder = "RAILPACK"
+buildCommand = "npm ci && npm run dash:build"
+
+[deploy]
+startCommand = "node deploy/railway-start.mjs"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "ALWAYS"
+restartPolicyMaxRetries = 10
