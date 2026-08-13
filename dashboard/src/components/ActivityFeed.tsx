@@ -1,17 +1,15 @@
-import { Badge } from "@/components/ui";
 import { TokenSymbol } from "@/components/TokenSymbol";
 import { cn, shortTime } from "@/lib/utils";
 import type { FeedItem } from "@/lib/activityFeed";
 import { Icon, eventGateIcon, feedKindIcon } from "@/lib/icons";
 
-const kindTone = {
-  entry: "ok",
-  exit: "ok",
-  fail: "danger",
-  skip: "warn",
-  event: "accent",
-  cluster: "warn",
-} as const;
+function toneClass(tone: FeedItem["tone"]) {
+  return tone === "ok" ? "text-ok"
+    : tone === "danger" ? "text-danger"
+      : tone === "warn" ? "text-warn"
+        : tone === "accent" ? "text-accent"
+          : "text-muted";
+}
 
 export function ActivityFeedList({
   items,
@@ -39,38 +37,26 @@ export function ActivityFeedList({
         const KindIcon = it.kind === "event" && it.gate
           ? eventGateIcon(it.gate)
           : feedKindIcon[it.kind];
+        const tone = toneClass(it.tone);
+        const sz = dense ? 11 : 12;
         return (
           <li
             key={`${it.at}-${it.kind}-${it.symbol}-${i}`}
             className={cn(
-              "flex gap-3 border-t border-grid first:border-0",
+              "flex items-start gap-3 border-t border-grid first:border-0",
               dense ? "py-1.5" : "py-2",
             )}
           >
             <span className="w-16 shrink-0 text-[10px] text-dim tabular-nums">{shortTime(it.at)}</span>
-            <div className={cn(
-              "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center border",
-              it.tone === "ok" ? "border-ok/50 text-ok"
-                : it.tone === "danger" ? "border-danger/50 text-danger"
-                  : it.tone === "warn" ? "border-warn/50 text-warn"
-                    : it.tone === "accent" ? "border-accent/50 text-accent"
-                      : "border-grid text-muted",
-            )}>
-              <Icon icon={KindIcon} size={dense ? 11 : 12} />
-            </div>
+            <span className={cn("mt-0.5 shrink-0", tone)} title={it.kind}>
+              <Icon icon={KindIcon} size={sz} />
+            </span>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 {it.symbol && it.symbol !== "?" ? (
                   <TokenSymbol symbol={it.symbol} mint={it.mint} />
                 ) : null}
-                <span className={cn(
-                  dense ? "text-[12px]" : "text-[13px]",
-                  it.tone === "ok" ? "text-ok"
-                    : it.tone === "danger" ? "text-danger"
-                      : it.tone === "warn" ? "text-warn"
-                        : it.tone === "accent" ? "text-accent"
-                          : "text-fg",
-                )}>
+                <span className={cn(dense ? "text-[12px]" : "text-[13px]", tone === "text-muted" ? "text-fg" : tone)}>
                   {it.label}
                 </span>
               </div>
@@ -78,9 +64,9 @@ export function ActivityFeedList({
                 <div className="truncate text-[11px] text-muted">{it.detail}</div>
               )}
             </div>
-            <Badge tone={kindTone[it.kind] ?? "ok"} title={it.kind}>
-              <Icon icon={feedKindIcon[it.kind]} size={11} />
-            </Badge>
+            <span className={cn("mt-0.5 shrink-0", tone)} title={it.kind}>
+              <Icon icon={feedKindIcon[it.kind]} size={sz} />
+            </span>
           </li>
         );
       })}
