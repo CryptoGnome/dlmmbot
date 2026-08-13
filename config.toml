@@ -38,6 +38,14 @@ price_divergence_max_pct = 2.0   # pool price vs Jupiter quote
 max_pool_share_pct = 20          # skip if our position would exceed this % of pool TVL
 
 [vetting]                  # STRATEGY.md §2.2 — token hard gates
+# Master switches (Settings UI). Off = skip that hard fail; thresholds still apply when on.
+age_min_enabled = true           # block "too young"
+age_max_enabled = true           # block "too old"
+insider_gate_enabled = true      # block high insider / funding-cluster %
+holder_gate_enabled = true       # block single-holder / top-10 concentration
+rugcheck_veto_enabled = true     # block high RugCheck score (rugged flag always on)
+creator_rug_enabled = true       # block creators with prior rug count
+gmgn_security_enabled = true     # block honeypot / sell-tax from GMGN
 single_holder_max_pct = 15
 top10_max_pct = 40
 insider_cluster_max_pct = 10

@@ -30,6 +30,7 @@ function applyHolderGates(
 ): void {
   facts.singleHolderPct = shares.single;
   facts.top10Pct = shares.top10;
+  if (v.holder_gate_enabled === false) return;
   if (shares.single > v.single_holder_max_pct)
     fail("single_holder", shares.single.toFixed(1), v.single_holder_max_pct);
   if (shares.top10 > v.top10_max_pct)
@@ -91,12 +92,12 @@ export async function vetToken(mint: string, tokenCreatedAtMs: number | null): P
     facts.holderCount = report.totalHolders;
 
     if (report.rugged) fail("rugged_flag", "true", "false");
-    if (report.score_normalised >= v.rugcheck_veto_normalised)
+    if (v.rugcheck_veto_enabled !== false && report.score_normalised >= v.rugcheck_veto_normalised)
       fail("rugcheck_veto", report.score_normalised, `< ${v.rugcheck_veto_normalised}`);
 
     const rugs = creatorRugCount(report);
     facts.creatorRugCount = rugs;
-    if (rugs > 0) {
+    if (v.creator_rug_enabled !== false && rugs > 0) {
       fail("creator_rug_history", rugs, "0");
       if (report.creator) blacklist(report.creator, "creator", `rug history x${rugs}`);
     }
@@ -118,7 +119,7 @@ export async function vetToken(mint: string, tokenCreatedAtMs: number | null): P
       const insiderPct = insiderNetworkPct(report, oc.supplyRaw);
       if (insiderPct !== null) {
         facts.insiderClusterPct = insiderPct;
-        if (insiderPct > v.insider_cluster_max_pct)
+        if (v.insider_gate_enabled !== false && insiderPct > v.insider_cluster_max_pct)
           fail("insider_clusters", insiderPct.toFixed(1), v.insider_cluster_max_pct);
       }
     }
@@ -135,8 +136,10 @@ export async function vetToken(mint: string, tokenCreatedAtMs: number | null): P
       const rugs = localCreatorRugCount(knownCreator);
       facts.creatorRugCount = rugs;
       if (rugs > 0) {
-        fail("creator_rug_history", rugs, "0");
-        blacklist(knownCreator, "creator", `local rug history x${rugs}`);
+        if (v.creator_rug_enabled !== false) {
+          fail("creator_rug_history", rugs, "0");
+          blacklist(knownCreator, "creator", `local rug history x${rugs}`);
+        }
       }
     }
   }
@@ -144,11 +147,11 @@ export async function vetToken(mint: string, tokenCreatedAtMs: number | null): P
   // Funding-cluster / sniper fallback when RugCheck didn't give a usable insider %.
   if (facts.insiderClusterPct === null && rpcShares.length) {
     const clusterPct = await detectInsiderClusterPct(rpcShares);
-    if (clusterPct !== null) {
-      facts.insiderClusterPct = clusterPct;
-      if (clusterPct > v.insider_cluster_max_pct)
-        fail("insider_clusters", clusterPct.toFixed(1), v.insider_cluster_max_pct);
-    }
+      if (clusterPct !== null) {
+        facts.insiderClusterPct = clusterPct;
+        if (v.insider_gate_enabled !== false && clusterPct > v.insider_cluster_max_pct)
+          fail("insider_clusters", clusterPct.toFixed(1), v.insider_cluster_max_pct);
+      }
   }
 
   // --- GMGN cross-check layer (degrades silently on API failure) ---
@@ -158,8 +161,10 @@ export async function vetToken(mint: string, tokenCreatedAtMs: number | null): P
   if (gmgnSec) {
     facts.gmgnHoneypot = gmgnSec.honeypot;
     facts.gmgnSellTaxPct = gmgnSec.sellTaxPct;
-    if (gmgnSec.honeypot) fail("gmgn_honeypot", "true", "false");
-    if (gmgnSec.sellTaxPct > 0) fail("gmgn_sell_tax", `${gmgnSec.sellTaxPct}%`, "0%");
+    if (v.gmgn_security_enabled !== false) {
+      if (gmgnSec.honeypot) fail("gmgn_honeypot", "true", "false");
+      if (gmgnSec.sellTaxPct > 0) fail("gmgn_sell_tax", `${gmgnSec.sellTaxPct}%`, "0%");
+    }
   }
   if (traderTags) {
     facts.traderRiskShare = traderTags.riskShare;
@@ -182,8 +187,10 @@ export async function vetToken(mint: string, tokenCreatedAtMs: number | null): P
   if (tokenCreatedAtMs) {
     const ageMin = (Date.now() - tokenCreatedAtMs) / 60_000;
     facts.tokenAgeMinutes = Math.round(ageMin);
-    if (ageMin < v.age_min_minutes) fail("age_min", `${ageMin.toFixed(0)}m`, `${v.age_min_minutes}m`);
-    if (ageMin > v.age_max_days * 1440) fail("age_max", `${(ageMin / 1440).toFixed(1)}d`, `${v.age_max_days}d`);
+    if (v.age_min_enabled !== false && ageMin < v.age_min_minutes)
+      fail("age_min", `${ageMin.toFixed(0)}m`, `${v.age_min_minutes}m`);
+    if (v.age_max_enabled !== false && ageMin > v.age_max_days * 1440)
+      fail("age_max", `${(ageMin / 1440).toFixed(1)}d`, `${v.age_max_days}d`);
   }
 
   // --- soft score (0-100): holder quality when we have data, penalty when blind ---

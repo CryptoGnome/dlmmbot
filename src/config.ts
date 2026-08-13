@@ -20,6 +20,14 @@ export interface Config {
     max_pool_share_pct: number;
   };
   vetting: {
+    /** When false, skip that hard fail (thresholds still stored for when re-enabled). */
+    age_min_enabled?: boolean;
+    age_max_enabled?: boolean;
+    insider_gate_enabled?: boolean;
+    holder_gate_enabled?: boolean;
+    rugcheck_veto_enabled?: boolean;
+    creator_rug_enabled?: boolean;
+    gmgn_security_enabled?: boolean;
     single_holder_max_pct: number; top10_max_pct: number;
     insider_cluster_max_pct: number; rugcheck_veto_normalised: number;
     age_min_minutes: number; age_max_days: number;
