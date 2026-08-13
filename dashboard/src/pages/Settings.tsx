@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  fetchConfig, fetchEnv, patchConfig, patchSecrets, unlockSecrets,
-  type EnvRow, type FlatConfig,
+  fetchConfig, fetchEnv, fetchSetupStatus, generateWallet, importWallet,
+  patchConfig, patchSecrets, unlockSecrets, unlockWallet,
+  type EnvRow, type FlatConfig, type SetupStatus,
 } from "@/lib/api";
 import { Badge, Panel } from "@/components/ui";
 import { Icon } from "@/lib/icons";
-import { Settings as SettingsIcon, Save, RefreshCw, Lock, Unlock } from "lucide-react";
+import { toast } from "@/lib/toast";
+import {
+  Settings as SettingsIcon, Save, RefreshCw, Lock, Unlock, KeyRound, Wallet,
+} from "lucide-react";
 
 type Field =
   | { path: string; label: string; help?: string; kind: "bool" }
@@ -306,6 +310,7 @@ const SECRET_LABELS: Record<string, string> = {
   GMGN_API_KEY: "GMGN API key",
   TELEGRAM_BOT_TOKEN: "Telegram bot token",
   TELEGRAM_CHAT_ID: "Telegram chat id",
+  FARMER_MODE: "Bot mode",
 };
 
 const SECRET_IS_PASSWORD = new Set([
@@ -423,12 +428,20 @@ export function SettingsPage() {
   const [confirmToken, setConfirmToken] = useState("");
   const [secretDraft, setSecretDraft] = useState<Record<string, string>>({});
   const [secretsSaving, setSecretsSaving] = useState(false);
+  const [setup, setSetup] = useState<SetupStatus | null>(null);
+  const [walletTab, setWalletTab] = useState<"create" | "import" | "unlock">("create");
+  const [walletConfirm, setWalletConfirm] = useState("");
+  const [walletPass, setWalletPass] = useState("");
+  const [walletPass2, setWalletPass2] = useState("");
+  const [walletSecret, setWalletSecret] = useState("");
+  const [walletBusy, setWalletBusy] = useState(false);
+  const [secretOnce, setSecretOnce] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
     setErr(null);
     try {
-      const [c, e] = await Promise.all([fetchConfig(), fetchEnv()]);
+      const [c, e, s] = await Promise.all([fetchConfig(), fetchEnv(), fetchSetupStatus()]);
       setConfig(c);
       const d: Record<string, string> = {};
       for (const path of PUBLIC_PATHS) {
@@ -436,6 +449,8 @@ export function SettingsPage() {
       }
       setDraft(d);
       setEnv(e);
+      setSetup(s);
+      if (s.wallet.encrypted) setWalletTab("unlock");
     } catch (e) {
       setErr((e as Error).message ?? String(e));
     } finally {
@@ -473,9 +488,11 @@ export function SettingsPage() {
       setSecretsUnlocked(true);
       setSecretDraft({});
       setMsg("Secrets unlocked — paste new values only where you want to replace. Blank keeps current.");
+      toast({ title: "Secrets unlocked", tone: "ok", kind: "event" });
     } catch (e) {
       setSecretsUnlocked(false);
       setErr((e as Error).message ?? String(e));
+      toast({ title: "Unlock failed", detail: (e as Error).message, tone: "danger", kind: "fail" });
     }
   };
 
@@ -500,8 +517,15 @@ export function SettingsPage() {
       setEnv(result.env);
       setSecretDraft({});
       setMsg(`${result.note ?? "Saved."} Updated: ${result.applied.join(", ") || "none"}.`);
+      toast({
+        title: "Secrets saved",
+        detail: result.applied.join(", ") || "none",
+        tone: "ok",
+        kind: "event",
+      });
     } catch (e) {
       setErr((e as Error).message ?? String(e));
+      toast({ title: "Secrets write failed", detail: (e as Error).message, tone: "danger", kind: "fail" });
     } finally {
       setSecretsSaving(false);
     }
@@ -528,9 +552,16 @@ export function SettingsPage() {
         if (path in result.config) d[path] = wireStr(result.config[path]);
       }
       setDraft(d);
-      setMsg(`Saved ${result.applied.length} setting(s). Farmer hot-reloads within ~2s.`);
+      setMsg(`Saved ${result.applied.length} setting(s). Bot hot-reloads within ~2s.`);
+      toast({
+        title: `Saved ${result.applied.length} setting(s)`,
+        detail: "Bot hot-reloads within ~2s",
+        tone: "ok",
+        kind: "event",
+      });
     } catch (e) {
       setErr((e as Error).message ?? String(e));
+      toast({ title: "Save failed", detail: (e as Error).message, tone: "danger", kind: "fail" });
     } finally {
       setSaving(false);
     }
@@ -697,12 +728,154 @@ export function SettingsPage() {
       </Panel>
 
       <Panel
+        title="Encrypted wallet"
+        right={
+          <Badge tone={setup?.wallet.unlocked ? "ok" : setup?.wallet.encrypted ? "warn" : "fg"}>
+            {setup?.wallet.unlocked ? "unlocked" : setup?.wallet.encrypted ? "locked" : "none"}
+          </Badge>
+        }
+      >
+        <p className="mb-3 text-[11px] leading-snug text-dim">
+          Create a new keypair or import Phantom. Encrypted at rest with your passphrase.
+          Unlock writes the key into .env for live mode — restart the bot after unlock
+          (or set WALLET_PASSPHRASE on Railway to auto-unlock on boot).
+        </p>
+        {setup?.wallet.publicKey && (
+          <p className="mb-3 font-mono text-[11px] text-ok">
+            {setup.wallet.publicKey}
+          </p>
+        )}
+        <div className="mb-3 flex gap-1 border border-grid p-0.5">
+          {(["create", "import", "unlock"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              className={`flex-1 px-2 py-1.5 text-[10px] tracking-wider uppercase ${
+                walletTab === t ? "bg-ok/15 text-ok" : "text-dim hover:text-muted"
+              }`}
+              onClick={() => setWalletTab(t)}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        <div className="space-y-2">
+          <label className="block space-y-1">
+            <span className="text-[11px] text-muted">Confirm dash token</span>
+            <input
+              className="input-field"
+              type="password"
+              autoComplete="off"
+              value={walletConfirm}
+              onChange={(e) => setWalletConfirm(e.target.value)}
+            />
+          </label>
+          {walletTab === "import" && (
+            <label className="block space-y-1">
+              <span className="text-[11px] text-muted">Phantom private key</span>
+              <input
+                className="input-field"
+                type="password"
+                autoComplete="off"
+                value={walletSecret}
+                onChange={(e) => setWalletSecret(e.target.value)}
+              />
+            </label>
+          )}
+          <label className="block space-y-1">
+            <span className="text-[11px] text-muted">
+              {walletTab === "unlock" ? "Passphrase" : "Encrypt passphrase"}
+            </span>
+            <input
+              className="input-field"
+              type="password"
+              autoComplete="off"
+              value={walletPass}
+              onChange={(e) => setWalletPass(e.target.value)}
+            />
+          </label>
+          {walletTab !== "unlock" && (
+            <label className="block space-y-1">
+              <span className="text-[11px] text-muted">Confirm passphrase</span>
+              <input
+                className="input-field"
+                type="password"
+                autoComplete="off"
+                value={walletPass2}
+                onChange={(e) => setWalletPass2(e.target.value)}
+              />
+            </label>
+          )}
+          {secretOnce && (
+            <div className="border border-warn/50 bg-bg p-2 text-[10px] break-all text-warn">
+              Backup once: {secretOnce}
+            </div>
+          )}
+          <button
+            type="button"
+            className="btn-primary inline-flex items-center gap-1.5"
+            disabled={walletBusy || !walletConfirm.trim() || !walletPass}
+            onClick={() => {
+              void (async () => {
+                setWalletBusy(true);
+                setErr(null);
+                setMsg(null);
+                try {
+                  if (walletTab === "unlock") {
+                    const r = await unlockWallet({ confirm: walletConfirm, passphrase: walletPass });
+                    setSetup(r.status);
+                    setMsg(r.note ?? "Unlocked.");
+                    toast({ title: "Wallet unlocked", detail: r.publicKey.slice(0, 8) + "…", tone: "ok", kind: "event" });
+                    setWalletPass("");
+                  } else {
+                    if (walletPass !== walletPass2) throw new Error("passphrases do not match");
+                    if (walletTab === "create") {
+                      const r = await generateWallet({
+                        confirm: walletConfirm,
+                        passphrase: walletPass,
+                        overwrite: !!setup?.wallet.encrypted,
+                      });
+                      setSecretOnce(r.secretOnce);
+                      setSetup(r.status);
+                      setMsg(r.note ?? "Created.");
+                      toast({ title: "Wallet created", detail: r.publicKey.slice(0, 8) + "…", tone: "ok", kind: "event" });
+                    } else {
+                      const r = await importWallet({
+                        confirm: walletConfirm,
+                        passphrase: walletPass,
+                        secret: walletSecret,
+                        overwrite: !!setup?.wallet.encrypted,
+                      });
+                      setSetup(r.status);
+                      setWalletSecret("");
+                      setMsg(r.note ?? "Imported.");
+                      toast({ title: "Wallet imported", detail: r.publicKey.slice(0, 8) + "…", tone: "ok", kind: "event" });
+                    }
+                    setWalletPass("");
+                    setWalletPass2("");
+                  }
+                } catch (e) {
+                  setErr((e as Error).message);
+                  toast({ title: "Wallet action failed", detail: (e as Error).message, tone: "danger", kind: "fail" });
+                } finally {
+                  setWalletBusy(false);
+                }
+              })();
+            }}
+          >
+            <Icon icon={walletTab === "unlock" ? Unlock : walletTab === "create" ? KeyRound : Wallet} size={12} />
+            {walletBusy ? "Working…" : walletTab === "unlock" ? "Unlock" : walletTab === "create" ? "Create" : "Import"}
+          </button>
+        </div>
+      </Panel>
+
+      <Panel
         title="Secrets vault"
         right={<Badge tone="warn">{secretsUnlocked ? "unlocked" : "locked"}</Badge>}
       >
         <p className="mb-3 text-[11px] leading-snug text-dim">
           Re-enter your dash token to edit RPC / wallet / API keys. Values are never shown —
-          leave a field blank to keep what is already on the box. Farmer restart needed after wallet/RPC changes.
+          leave a field blank to keep what is already on the box. Bot restart needed after wallet/RPC changes.
         </p>
 
         {!secretsOpen && (

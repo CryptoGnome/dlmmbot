@@ -1,8 +1,10 @@
 import type { HistorySnap, LiveWatch, RangeKey } from "./types";
 import { tokenFromUrl } from "./utils";
 
-const WATCH_KEY = "meteora_dash_watch";
-const HIST_PREFIX = "meteora_dash_hist_";
+const WATCH_KEY = "dlmm_dash_watch";
+const HIST_PREFIX = "dlmm_dash_hist_";
+const LEGACY_WATCH_KEY = "meteora_dash_watch";
+const LEGACY_HIST_PREFIX = "meteora_dash_hist_";
 
 type Envelope<T> = { at: number; data: T };
 
@@ -32,11 +34,15 @@ function authHeaders(): HeadersInit {
 }
 
 export function cachedWatch(): LiveWatch | null {
-  return read<LiveWatch>(WATCH_KEY)?.data ?? null;
+  return read<LiveWatch>(WATCH_KEY)?.data
+    ?? read<LiveWatch>(LEGACY_WATCH_KEY)?.data
+    ?? null;
 }
 
 export function cachedHistory(range: RangeKey): HistorySnap | null {
-  return read<HistorySnap>(HIST_PREFIX + range)?.data ?? null;
+  return read<HistorySnap>(HIST_PREFIX + range)?.data
+    ?? read<HistorySnap>(LEGACY_HIST_PREFIX + range)?.data
+    ?? null;
 }
 
 export async function fetchWatch(): Promise<LiveWatch> {
@@ -133,6 +139,108 @@ export async function patchSecrets(
   };
   if (!res.ok) throw new Error(data.error ?? `secrets ${res.status}`);
   return { applied: data.applied ?? [], env: data.env ?? [], note: data.note };
+}
+
+export type SetupStatus = {
+  needsWizard: boolean;
+  coreReady: boolean;
+  hasRpc: boolean;
+  farmerMode: string;
+  setup: { completed: boolean; skipped: boolean; completedAt: string | null };
+  wallet: {
+    encrypted: boolean;
+    unlocked: boolean;
+    publicKey: string | null;
+    createdAt: string | null;
+  };
+};
+
+export async function fetchSetupStatus(): Promise<SetupStatus> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/setup/status${q}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`setup ${res.status}`);
+  return await res.json() as SetupStatus;
+}
+
+export async function completeSetup(opts?: { skipped?: boolean }): Promise<SetupStatus & { ok: boolean }> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/setup/complete${q}`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ skipped: !!opts?.skipped }),
+  });
+  const data = await res.json() as SetupStatus & { ok?: boolean; error?: string };
+  if (!res.ok) throw new Error(data.error ?? `setup complete ${res.status}`);
+  return { ...data, ok: !!data.ok };
+}
+
+export async function generateWallet(opts: {
+  confirm: string;
+  passphrase: string;
+  overwrite?: boolean;
+}): Promise<{ publicKey: string; secretOnce: string; note?: string; status: SetupStatus }> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/wallet/generate${q}`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(opts),
+  });
+  const data = await res.json() as {
+    publicKey?: string; secretOnce?: string; note?: string; status?: SetupStatus; error?: string;
+  };
+  if (!res.ok) throw new Error(data.error ?? `wallet generate ${res.status}`);
+  return {
+    publicKey: data.publicKey!,
+    secretOnce: data.secretOnce!,
+    note: data.note,
+    status: data.status!,
+  };
+}
+
+export async function importWallet(opts: {
+  confirm: string;
+  passphrase: string;
+  secret: string;
+  overwrite?: boolean;
+}): Promise<{ publicKey: string; note?: string; status: SetupStatus }> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/wallet/import${q}`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(opts),
+  });
+  const data = await res.json() as {
+    publicKey?: string; note?: string; status?: SetupStatus; error?: string;
+  };
+  if (!res.ok) throw new Error(data.error ?? `wallet import ${res.status}`);
+  return { publicKey: data.publicKey!, note: data.note, status: data.status! };
+}
+
+export async function unlockWallet(opts: {
+  confirm: string;
+  passphrase: string;
+}): Promise<{ ok: boolean; publicKey: string; note?: string; status: SetupStatus }> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/wallet/unlock${q}`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(opts),
+  });
+  const data = await res.json() as {
+    ok?: boolean; publicKey?: string; note?: string; status?: SetupStatus; error?: string;
+  };
+  if (!res.ok) throw new Error(data.error ?? `wallet unlock ${res.status}`);
+  return {
+    ok: !!data.ok,
+    publicKey: data.publicKey!,
+    note: data.note,
+    status: data.status!,
+  };
 }
 
 export type LiveStatus = "connecting" | "open" | "closed";

@@ -64,6 +64,25 @@ if (!volume) {
   console.log(`[railway] volume mount=${volume} db=${dbPath}`);
 }
 
+// Optional: unlock encrypted wallet into .env before farmer starts
+if (process.env.WALLET_PASSPHRASE && !process.env.WALLET_PRIVATE_KEY) {
+  try {
+    const { unlockEncryptedWallet, hasEncryptedWallet } = await import("./lib/wallet-crypto.mjs");
+    const { applyEnvUpdates } = await import("./lib/config-edit.mjs");
+    if (hasEncryptedWallet()) {
+      const unlocked = unlockEncryptedWallet(process.env.WALLET_PASSPHRASE);
+      applyEnvUpdates(root, {
+        WALLET_PRIVATE_KEY: unlocked.secret,
+        PUBLIC_WALLET: unlocked.publicKey,
+        WALLET_PUBKEY: unlocked.publicKey,
+      });
+      console.log(`[railway] unlocked encrypted wallet ${unlocked.publicKey.slice(0, 8)}…`);
+    }
+  } catch (e) {
+    console.error(`[railway] wallet unlock failed: ${e.message ?? e}`);
+  }
+}
+
 console.log(`[railway] mode=${process.env.FARMER_MODE} dash_port=${process.env.DASH_PORT}`);
 
 const kids = [];

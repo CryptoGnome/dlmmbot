@@ -180,3 +180,22 @@ h1, h2, .font-display {
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes toast-out {
+  to { opacity: 0; transform: translateY(8px); }
+}
+
+.toast-enter {
+  animation: toast-in 0.2s ease-out both;
+}
+
+.toast-leave {
+  animation: toast-out 0.24s ease-in both;
+  pointer-events: none;
+}
+

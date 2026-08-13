@@ -1,0 +1,45 @@
+---
+description: On every commit, sync website/docs/llms.txt with the change set
+alwaysApply: true
+---
+
+# Docs & site sync on commit
+
+Whenever you **create a git commit** (or the user asks to commit), treat documentation as part of the same change — do not leave public copy stale.
+
+## Before finishing the commit
+
+1. **Diff the change set** (`git diff` / staged files) and ask: does this alter user-facing behavior, setup, branding, env vars, Railway/deploy steps, dashboard features, strategy knobs, or public URLs?
+2. If **yes**, update the matching surfaces in the **same commit** (or a follow-up commit in the same turn before you declare done). If **no**, note that briefly and skip.
+3. Prefer **surgical edits** — only the sections that drifted. Do not rewrite unrelated docs.
+
+## Surfaces to check (in order)
+
+| Surface | Path | Update when… |
+|---------|------|----------------|
+| Marketing site | `docs/index.html`, `docs/assets/*` | Positioning, features, CTAs, branding, pricing/setup claims |
+| Setup docs | `docs/setup/**` (`index`, `easy`, `advanced`) | Deploy/Railway/PM2/env/wizard/wallet steps change |
+| LLM indexes | `llms.txt`, `llms-full.txt` (repo root; create if missing) | Public product facts, URLs, setup summary, or feature list change |
+| README | `README.md` | Install, quickstart, links, or project description change |
+| Strategy / deploy notes | `STRATEGY.md`, `DEPLOY.md` | Only if the commit actually changes those workflows |
+
+`llms.txt` = short machine-readable map (links + 1-line descriptions).  
+`llms-full.txt` = fuller plain-text summary for crawlers/agents. Keep both factual and current with **DLMM Bot** / `dlmmbot.com` branding.
+
+## Triggers that almost always need a docs pass
+
+- New/changed setup wizard, wallet encryption, Settings, or Railway start behavior
+- Renames/branding (product name, domain, repo URL)
+- New env vars or required config keys users must set
+- New dashboard capabilities called out on the marketing site
+- Changes to easy vs advanced install paths
+
+## Do not
+
+- Skip docs because “we can update later” unless the user explicitly says so
+- Paste secrets, private keys, or live `DASH_TOKEN` values into docs/llms files
+- Expand scope into unrelated README/STRATEGY rewrites
+
+## Done means
+
+Commit includes code **and** any required doc/site/llms updates (or an explicit “no doc impact” judgment for that diff).

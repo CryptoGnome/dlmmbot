@@ -1,0 +1,60 @@
+# DLMM Bot — full summary for LLMs / agents
+
+Product name: DLMM Bot
+Domain: https://dlmmbot.com
+Repository: https://github.com/CryptoGnome/dlmmbot (private may apply; site is public)
+Brand: DLMM Bot (not “Meteora Farmer”)
+
+## What it is
+
+An automated Solana bot for Meteora DLMM liquidity. It scans hot SOL-quoted meme pools (and majors sleeves where configured), vets the non-SOL token, opens a one-sided SOL LP position shaped for the strategy, manages claims/exits by fixed rules, and records PnL in SQLite. A private ops dashboard ships with the bot.
+
+## Who it is for
+
+Operators who want paper trading first, then a burner wallet for live. Not custody, not a hosted trading service that holds user keys on our servers as a product — keys live on the user’s Railway volume / host.
+
+## Deploy paths
+
+1. Easy — Railway: deploy the repo template/service, attach a persistent volume at `/app/data`, generate a public domain, open `?token=` (DASH_TOKEN from logs or Railway variables). `railway.toml` builds the dashboard and runs farmer + dash together. Default mode is paper.
+2. Advanced — local, VPS, or PM2: see https://dlmmbot.com/setup/advanced.html
+
+## First-run dashboard
+
+On first login when RPC + wallet are missing, a setup wizard walks through:
+
+- Confirm dash token
+- Set RPC_URL
+- Create a new Solana keypair or import a Phantom base58 private key; encrypt with a passphrase (AES-256-GCM on volume as wallet.enc.json)
+- Choose paper or live (live still needs the double lock)
+- Optional unlock into .env for trading
+
+Settings also exposes encrypted wallet create / import / unlock later. Set WALLET_PASSPHRASE on Railway to unlock on boot before the farmer starts.
+
+## Dashboard features
+
+- Live watch over WebSocket: positions, heartbeat, cluster brake, build/sync pill
+- Activity feed with signed SOL coloring (inflows green, outflows red)
+- Toasts for new entries/exits/fails/cluster/events and link/heartbeat edges (max two visible; pressure shortens TTL)
+- Settings: sizing, risk, pool filters, secrets vault, encrypted wallet
+- Research page: public X credits (not partners/signals)
+
+## Safety model
+
+- Paper: no wallet required (`FARMER_MODE=paper`)
+- Live: requires BOTH process env `FARMER_MODE=live` AND config `[exec].mode = "live"`
+- Burner wallet only; never main wallet
+- Keys must not be committed to git
+- One bot process per wallet/DB
+
+## Key links
+
+- Site: https://dlmmbot.com
+- Docs hub: https://dlmmbot.com/setup/
+- Easy: https://dlmmbot.com/setup/easy.html
+- Advanced: https://dlmmbot.com/setup/advanced.html
+- Short LLM map: https://dlmmbot.com/llms.txt
+- Railway referral: https://railway.com?referralCode=SCj9lN
+
+## Disclaimer
+
+Not financial advice. Memecoin LP can wipe a wallet. Paper first. Burner only.

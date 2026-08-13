@@ -1,0 +1,24 @@
+# DLMM Bot
+
+> Automated Meteora DLMM liquidity bot for Solana. Paper first. Burner wallet only.
+
+Site: https://dlmmbot.com
+Docs: https://dlmmbot.com/setup/
+GitHub: https://github.com/CryptoGnome/dlmmbot
+Railway signup: https://railway.com?referralCode=SCj9lN
+
+## Docs
+
+- [Easy setup (Railway)](https://dlmmbot.com/setup/easy.html): one service, volume at `/app/data`, public domain, dashboard wizard
+- [Advanced setup](https://dlmmbot.com/setup/advanced.html): local / VPS / PM2
+- [Full text for agents](https://dlmmbot.com/llms-full.txt): longer product summary
+- [Strategy (repo)](https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md): exits and risk rules
+
+## Product facts
+
+- Scans SOL-quoted Meteora DLMM pools, vets tokens, opens one-sided SOL LP, exits by fixed rules
+- Dashboard: overview, book, analytics, activity feed, research credits, settings
+- First-run setup wizard: RPC, encrypted wallet (create or Phantom import), paper/live mode
+- Live requires both `FARMER_MODE=live` and `[exec].mode = "live"`
+- Optional Railway `WALLET_PASSPHRASE` auto-unlocks encrypted wallet on boot
+- Not financial advice; memecoin LP can lose 100%

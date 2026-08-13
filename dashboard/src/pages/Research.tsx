@@ -12,7 +12,7 @@ export function ResearchPage() {
           Research
         </h1>
         <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-dim">
-          Public voices on X whose Meteora DLMM talk we studied while building this farmer.
+          Public voices on X whose Meteora DLMM talk we studied while building DLMM Bot.
           Credits only — not partners, not signals, not financial advice. We kept what survived
           our ledger and dropped what was just APR screenshots.
         </p>

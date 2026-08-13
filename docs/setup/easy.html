@@ -128,11 +128,18 @@
 
         <section id="settings">
           <h2>Finish in our Settings UI</h2>
-          <p>With the volume attached, Settings writes persist on disk. In the dash:</p>
+          <p>
+            First login opens a <strong>setup wizard</strong> for the core pieces (RPC, wallet, mode).
+            With the volume attached, Settings writes persist on disk.
+          </p>
           <ul class="checklist">
             <li>Leave paper mode until you’re comfortable</li>
-            <li>Add private <code>RPC_URL</code> when ready (public RPC is ok for a short paper smoke test)</li>
-            <li>When going live: burner <code>WALLET_PRIVATE_KEY</code> + <code>JUPITER_API_KEY</code></li>
+            <li>Add private <code>RPC_URL</code> (wizard or Settings)</li>
+            <li>
+              Create an encrypted burner wallet in the dash, or import from Phantom —
+              never paste your main wallet
+            </li>
+            <li>Optional: set <code>WALLET_PASSPHRASE</code> on Railway to auto-unlock on boot</li>
             <li>Tune token-safety / sizing knobs as you like</li>
           </ul>
           <p class="note danger">Never use your main wallet. Burner only.</p>

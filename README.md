@@ -15,9 +15,9 @@ Scans hot SOL-quoted meme pools, vets the token, opens a **one-sided SOL** LP be
 | **Easy — Railway** | Most users (one service, automated config) | [Docs → Easy](https://dlmmbot.com/setup/easy.html) · [Sign up](https://railway.com?referralCode=SCj9lN) |
 | **Advanced — local / VPS / PM2** | You already have a box | [Docs → Advanced](https://dlmmbot.com/setup/advanced.html) |
 
-**Railway (shortest path):** Deploy `CryptoGnome/dlmmbot` → attach volume at `/app/data` → Generate domain → open the URL (token is in deploy logs if unset) → finish secrets in the dashboard Settings UI.
+**Railway (shortest path):** Deploy `CryptoGnome/dlmmbot` → attach volume at `/app/data` → Generate domain → open the URL (token is in deploy logs if unset) → first-run setup wizard (RPC, encrypted wallet create/import, paper/live) or Settings.
 
-`railway.toml` builds the dash and starts farmer + dashboard together. Paper mode is the default.
+`railway.toml` builds the dash and starts farmer + dashboard together. Paper mode is the default. Optional: set `WALLET_PASSPHRASE` on Railway to auto-unlock an encrypted wallet on boot.
 
 ---
 
@@ -35,8 +35,8 @@ Scans hot SOL-quoted meme pools, vets the token, opens a **one-sided SOL** LP be
 
 - Paper needs no wallet (`FARMER_MODE=paper`)
 - Live needs **both** `[exec].mode = "live"` and `FARMER_MODE=live`
-- Wallet keys are only read by the live executor
-- One farmer process per wallet/DB
+- Prefer the dashboard **encrypted wallet** (create or Phantom import); unlock into `.env` only when trading
+- One bot process per wallet/DB
 
 ---
 

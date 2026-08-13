@@ -13,6 +13,10 @@ import { WebSocketServer } from "ws";
 import { buildLiveBookSnapshot } from "./lib/live-book-snapshot.mjs";
 import { buildHistorySnapshot } from "./lib/history-snapshot.mjs";
 import { applyConfigUpdates, applyEnvUpdates, flattenConfig, parseConfig, readEnvMasked } from "./lib/config-edit.mjs";
+import {
+  generateAndEncrypt, importAndEncrypt, unlockEncryptedWallet,
+  setupStatus, writeSetupState, hasEncryptedWallet,
+} from "./lib/wallet-crypto.mjs";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const root = resolve(process.env.FARMER_ROOT ?? resolve(__dir, ".."));
@@ -200,7 +204,7 @@ const server = createServer(async (req, res) => {
       const result = applyEnvUpdates(root, updates);
       sendJson(res, 200, {
         ...result,
-        note: "Wrote .env. Restart meteora-farmer (and dash if RPC/token changed) for full effect.",
+        note: "Wrote .env. Restart the bot (and dash if RPC/token changed) for full effect.",
       });
     } catch (e) {
       sendJson(res, 400, { error: e.message ?? String(e) });
@@ -224,6 +228,115 @@ const server = createServer(async (req, res) => {
           "JUPITER_API_KEY", "GMGN_API_KEY",
           "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
         ],
+      });
+    } catch (e) {
+      sendJson(res, 400, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/setup/status" && req.method === "GET") {
+    try {
+      sendJson(res, 200, setupStatus(readEnvMasked(root)));
+    } catch (e) {
+      sendJson(res, 500, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/setup/complete" && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      const state = writeSetupState({
+        completed: body?.skipped ? false : true,
+        skipped: !!body?.skipped,
+        completedAt: new Date().toISOString(),
+      });
+      sendJson(res, 200, { ok: true, setup: state, ...setupStatus(readEnvMasked(root)) });
+    } catch (e) {
+      sendJson(res, 400, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/wallet/generate" && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      const confirm = typeof body?.confirm === "string" ? body.confirm : "";
+      if (!token || confirm !== token) {
+        sendJson(res, 403, { error: "re-enter dash token" });
+        return;
+      }
+      const passphrase = typeof body?.passphrase === "string" ? body.passphrase : "";
+      const overwrite = !!body?.overwrite;
+      const result = generateAndEncrypt(passphrase, { overwrite });
+      applyEnvUpdates(root, {
+        PUBLIC_WALLET: result.publicKey,
+        WALLET_PUBKEY: result.publicKey,
+      });
+      sendJson(res, 200, {
+        publicKey: result.publicKey,
+        secretOnce: result.secretOnce,
+        note: "Encrypted wallet saved. Copy secretOnce now — it is not shown again. Unlock to enable live trading.",
+        status: setupStatus(readEnvMasked(root)),
+      });
+    } catch (e) {
+      sendJson(res, 400, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/wallet/import" && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      const confirm = typeof body?.confirm === "string" ? body.confirm : "";
+      if (!token || confirm !== token) {
+        sendJson(res, 403, { error: "re-enter dash token" });
+        return;
+      }
+      const passphrase = typeof body?.passphrase === "string" ? body.passphrase : "";
+      const secret = typeof body?.secret === "string" ? body.secret : "";
+      const overwrite = !!body?.overwrite;
+      const result = importAndEncrypt(secret, passphrase, { overwrite });
+      applyEnvUpdates(root, {
+        PUBLIC_WALLET: result.publicKey,
+        WALLET_PUBKEY: result.publicKey,
+      });
+      sendJson(res, 200, {
+        publicKey: result.publicKey,
+        note: "Imported & encrypted. Unlock with your passphrase when you want the bot to trade.",
+        status: setupStatus(readEnvMasked(root)),
+      });
+    } catch (e) {
+      sendJson(res, 400, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/wallet/unlock" && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      const confirm = typeof body?.confirm === "string" ? body.confirm : "";
+      if (!token || confirm !== token) {
+        sendJson(res, 403, { error: "re-enter dash token" });
+        return;
+      }
+      if (!hasEncryptedWallet()) {
+        sendJson(res, 400, { error: "no encrypted wallet — create or import first" });
+        return;
+      }
+      const passphrase = typeof body?.passphrase === "string" ? body.passphrase : "";
+      const unlocked = unlockEncryptedWallet(passphrase);
+      applyEnvUpdates(root, {
+        WALLET_PRIVATE_KEY: unlocked.secret,
+        PUBLIC_WALLET: unlocked.publicKey,
+        WALLET_PUBKEY: unlocked.publicKey,
+      });
+      sendJson(res, 200, {
+        ok: true,
+        publicKey: unlocked.publicKey,
+        note: "Wallet unlocked into .env for the bot. Restart/redeploy to pick up the live key.",
+        status: setupStatus(readEnvMasked(root)),
       });
     } catch (e) {
       sendJson(res, 400, { error: e.message ?? String(e) });

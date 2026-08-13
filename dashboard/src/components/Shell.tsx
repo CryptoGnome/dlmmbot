@@ -81,8 +81,8 @@ export function Shell({
     <div className="flex min-h-screen bg-bg text-fg">
       <aside className="hidden w-44 shrink-0 border-r border-grid md:flex md:flex-col">
         <div className="border-b border-grid px-3 py-4">
-          <div className="font-display text-sm font-semibold tracking-[0.14em]">METEORA</div>
-          <div className="mt-0.5 text-[10px] tracking-widest text-dim">FARMER OPS</div>
+          <div className="font-display text-sm font-semibold tracking-[0.14em]">DLMM</div>
+          <div className="mt-0.5 text-[10px] tracking-widest text-dim">BOT OPS</div>
         </div>
         <nav className="flex-1 py-2">
           {TABS.map((t) => {
@@ -110,7 +110,7 @@ export function Shell({
               className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10px] tracking-widest ${
                 stale ? "border-danger/70 text-danger" : "border-ok/70 text-ok"
               }`}
-              title={stale ? "farmer heartbeat stale / off" : "farmer heartbeat fresh"}
+              title={stale ? "bot heartbeat stale / off" : "bot heartbeat fresh"}
             >
               <Icon icon={stale ? Unplug : CircleDot} size={11} />
               {stale ? "OFF" : "ON"}

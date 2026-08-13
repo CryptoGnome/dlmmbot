@@ -154,6 +154,7 @@ export const SECRET_EDIT_KEYS = [
   "GMGN_API_KEY",
   "TELEGRAM_BOT_TOKEN",
   "TELEGRAM_CHAT_ID",
+  "FARMER_MODE",
 ];
 
 const SECRET_EDIT_SET = new Set(SECRET_EDIT_KEYS);
@@ -171,7 +172,7 @@ export function readEnvMasked(root = process.cwd()) {
   const safeKeys = ["FARMER_MODE", "DASH_PORT", "DEPLOY_BRANCH"];
   const statusKeys = [
     ...safeKeys,
-    ...SECRET_EDIT_KEYS,
+    ...SECRET_EDIT_KEYS.filter((k) => !safeKeys.includes(k)),
   ];
 
   return statusKeys.map((key) => {

@@ -106,7 +106,7 @@ export function buildActivityFeed(watch: LiveWatch | null, limit = 80): FeedItem
       symbol: r.symbol,
     });
   }
-  for (const r of watch.open_failed_since_boot?.recent ?? []) {
+  for (const r of watch.open_failed_since_fix?.recent ?? []) {
     items.push({
       at: r.at,
       kind: "fail",
@@ -126,7 +126,7 @@ export function buildActivityFeed(watch: LiveWatch | null, limit = 80): FeedItem
       symbol: r.symbol,
     });
   }
-  for (const r of watch.p3_missed_since_boot ?? []) {
+  for (const r of watch.p3_missed_since_fix ?? []) {
     items.push({
       at: r.at,
       kind: "exit",

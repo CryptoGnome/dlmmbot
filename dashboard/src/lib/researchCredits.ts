@@ -1,4 +1,4 @@
-/** Curated X/Twitter credits — people whose public LP talk shaped this farmer. */
+/** Curated X/Twitter credits — people whose public LP talk shaped DLMM Bot. */
 export type Credit = {
   handle: string;
   name: string;
