@@ -16,6 +16,7 @@ export interface LiveWatch {
     sync?: string;
     repo_url?: string | null;
     release_url?: string | null;
+    commits_url?: string | null;
     /** Farmer process `git describe` from heartbeat (may differ from disk HEAD). */
     running?: string | null;
     fetched_at?: number | null;

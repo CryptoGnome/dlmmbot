@@ -79,6 +79,7 @@ function buildGitInfo(root) {
   } catch { /* */ }
 
   const releaseUrl = `${repoUrl}/releases`;
+  const commitsUrl = `${repoUrl}/commits/${branch}`;
 
   return {
     version,
@@ -91,6 +92,7 @@ function buildGitInfo(root) {
     sync,
     repo_url: repoUrl,
     release_url: releaseUrl,
+    commits_url: commitsUrl,
     fetched_at: lastOriginFetchAt ? Math.floor(lastOriginFetchAt / 1000) : null,
     fetch_ok: lastOriginFetchOk,
   };
@@ -756,6 +758,7 @@ export function buildLiveBookSnapshot(root) {
         sync: gitInfo.sync,
         repo_url: gitInfo.repo_url,
         release_url: gitInfo.release_url,
+        commits_url: gitInfo.commits_url,
         running: hb?.build ?? null,
         fetched_at: gitInfo.fetched_at,
         fix_sha: fixSha,

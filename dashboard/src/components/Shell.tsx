@@ -2,7 +2,7 @@ import type { LiveWatch } from "@/lib/types";
 import type { LiveStatus } from "@/lib/api";
 import type { ReactNode } from "react";
 import { CircleDot } from "lucide-react";
-import { Icon, PauseCircle, tabIcon, Unplug, Zap } from "@/lib/icons";
+import { GithubMark, Icon, PauseCircle, tabIcon, Unplug, Zap } from "@/lib/icons";
 
 export type TabId = "overview" | "book" | "analytics" | "activity" | "research" | "settings";
 
@@ -39,15 +39,18 @@ function BuildPill({ build }: { build: LiveWatch["build"] }) {
     build.origin ? `github ${build.origin}` : "github ?",
     sync,
     build.dirty ? "tracked working tree dirty" : null,
-    "click → GitHub releases",
+    "click → GitHub commits",
   ].filter(Boolean).join(" · ");
   const cls =
     syncTone === "ok" ? "border-ok/70 text-ok"
       : syncTone === "warn" ? "border-warn/70 text-warn"
         : syncTone === "accent" ? "border-accent/70 text-accent"
           : "border-grid text-muted";
-  const href = build.release_url
-    ?? (build.repo_url ? `${build.repo_url.replace(/\/$/, "")}/releases` : "https://github.com/CryptoGnome/meteora-farmer/releases");
+  const branch = build.branch || "master";
+  const href = build.commits_url
+    ?? (build.repo_url
+      ? `${build.repo_url.replace(/\/$/, "")}/commits/${encodeURIComponent(branch)}`
+      : "https://github.com/CryptoGnome/meteora-farmer/commits/master");
   return (
     <a
       href={href}
@@ -56,6 +59,7 @@ function BuildPill({ build }: { build: LiveWatch["build"] }) {
       title={tip}
       className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10px] tracking-widest no-underline hover:border-hover hover:text-hover ${cls}`}
     >
+      <GithubMark size={11} />
       v{build.version ?? "?"} {build.describe ?? build.head ?? "—"} · {syncLabel}
       {sync === "behind" && build.origin ? ` → ${build.origin}` : ""}
     </a>
