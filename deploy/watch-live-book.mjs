@@ -212,6 +212,66 @@ const p3Missed = db.prepare(
    ORDER BY exit_ts DESC LIMIT 10`
 ).all(fixTs);
 
+const BIN_RENT_SCORE_MIN = 70;
+const BIN_RENT_GATES = ["bin_rent", "majors_bin_rent"];
+
+function parseBinRentNearMiss(feat) {
+  try {
+    const j = JSON.parse(feat);
+    const range = j.range ?? {};
+    const pool = j.pool ?? j.cand?.pool ?? {};
+    return {
+      symbol: pool.symbol ?? pool.name?.split("-")[0] ?? null,
+      pool: pool.address ?? j.poolAddress ?? null,
+      estRentSol: range.estBinRentSol ?? null,
+      binCount: range.binCount ?? null,
+      bottomPct: range.bottomPricePct ?? null,
+      rentBudget: j.rentBudget ?? null,
+      sleeve: j.sleeve ?? null,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function binRentNearMiss(since) {
+  const gates = BIN_RENT_GATES.map(() => "?").join(",");
+  const byGate = db.prepare(
+    `SELECT failed_gate g, COUNT(*) n
+     FROM decisions
+     WHERE action='skipped' AND failed_gate IN (${gates}) AND score >= ? AND ts > ?
+     GROUP BY failed_gate ORDER BY n DESC`
+  ).all(...BIN_RENT_GATES, BIN_RENT_SCORE_MIN, since);
+  const n = byGate.reduce((s, r) => s + r.n, 0);
+  const recent = db.prepare(
+    `SELECT datetime(ts,'unixepoch') at, mint, pool, failed_gate g, ROUND(score,1) score,
+            substr(features_json,1,500) feat
+     FROM decisions
+     WHERE action='skipped' AND failed_gate IN (${gates}) AND score >= ? AND ts > ?
+     ORDER BY ts DESC LIMIT 8`
+  ).all(...BIN_RENT_GATES, BIN_RENT_SCORE_MIN, since);
+  const best = db.prepare(
+    `SELECT datetime(ts,'unixepoch') at, mint, pool, failed_gate g, ROUND(score,1) score,
+            substr(features_json,1,500) feat
+     FROM decisions
+     WHERE action='skipped' AND failed_gate IN (${gates}) AND score >= ? AND ts > ?
+     ORDER BY score DESC LIMIT 1`
+  ).get(...BIN_RENT_GATES, BIN_RENT_SCORE_MIN, since);
+  const mapRow = (r) => r ? {
+    at: r.at,
+    mint: r.mint?.slice(0, 8),
+    pool: r.pool?.slice(0, 8),
+    gate: r.g,
+    score: r.score,
+    ...parseBinRentNearMiss(r.feat),
+  } : null;
+  return { n, score_min: BIN_RENT_SCORE_MIN, by_gate: byGate, best: mapRow(best),
+    recent: recent.map(mapRow) };
+}
+
+const binRentNearMissSinceFix = binRentNearMiss(fixTs);
+const binRentNearMiss24h = binRentNearMiss(dayAgo);
+
 const out = {
   ts: now,
   at: new Date(now * 1000).toISOString(),
@@ -263,6 +323,10 @@ const out = {
   },
   follow_since_fix: follow,
   p3_missed_since_fix: p3Missed,
+  bin_rent_near_miss: {
+    since_fix: binRentNearMissSinceFix,
+    last_24h: binRentNearMiss24h,
+  },
 };
 
 console.log(JSON.stringify(out, null, 2));
