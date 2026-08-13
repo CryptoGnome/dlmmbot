@@ -80,15 +80,24 @@ export default function App() {
           <div className="flex items-center gap-3">
             <span className="text-sm font-semibold tracking-[0.18em] text-fg">METEORA // LIVE OPS</span>
             <span
-              className={`live-blink text-[10px] tracking-widest ${
-                stale || live === "closed"
-                  ? "text-danger"
-                  : live === "connecting"
-                    ? "text-warn"
-                    : "text-ok"
-              }`}
+              className={`live-blink text-[10px] tracking-widest ${stale ? "text-danger" : "text-ok"}`}
+              title={stale ? "farmer heartbeat stale" : "farmer heartbeat fresh"}
             >
-              ● {stale ? "STALE" : live === "open" ? "LIVE" : live === "connecting" ? "CONNECTING" : "OFFLINE"}
+              ● {stale ? "STALE" : "LIVE"}
+            </span>
+            <span
+              className={`live-blink text-[10px] tracking-widest ${
+                live === "open" ? "text-ok" : live === "connecting" ? "text-warn" : "text-danger"
+              }`}
+              title={
+                live === "open"
+                  ? "WebSocket connected"
+                  : live === "connecting"
+                    ? "WebSocket connecting…"
+                    : "WebSocket disconnected — retrying"
+              }
+            >
+              ● {live === "open" ? "WS" : live === "connecting" ? "WS…" : "WS OFF"}
             </span>
             {watch && (
               <span

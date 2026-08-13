@@ -709,11 +709,11 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
   }
   const cluster = clusterBrakeTripped();
   if (cluster) {
-    console.log(`[risk] cluster brake — ${cluster.count} hard exits in ${config().sizing.cluster_brake_window_h}h, paused ${cluster.remainingMin}m`);
+    console.log(`[risk] cluster brake — ${cluster.count} lossy hard exits in ${config().sizing.cluster_brake_window_h}h, paused ${cluster.remainingMin}m`);
     if (!breakerAlerted) {
       breakerAlerted = true;
       await alert("circuit_breaker",
-        `cluster brake: ${cluster.count}× P0/P1 in ${config().sizing.cluster_brake_window_h}h — ` +
+        `cluster brake: ${cluster.count}× lossy P0/P1 in ${config().sizing.cluster_brake_window_h}h — ` +
         `new entries paused ${cluster.remainingMin}m (open positions still managed)`
       );
     }

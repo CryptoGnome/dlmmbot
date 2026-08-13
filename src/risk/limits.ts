@@ -156,18 +156,22 @@ export function circuitBreakerTripped(walletSol: number): boolean {
 }
 
 /**
- * Cluster brake: N hard exits (P0/P1) inside a window pauses new entries.
+ * Cluster brake: N *lossy* hard exits (P0/P1) inside a window pauses new entries.
  * Wallet-% breaker missed Aug 12 (−0.159 on a ~24 SOL book); this fires on
- * the loss *pattern* before the dollar threshold.
+ * a loss *cluster* before the dollar threshold — not every safety exit.
+ *
+ * Counts only P0/P1 where realized / entry ≤ −cluster_brake_loss_pct
+ * (successful dumps / near-flat empties do not trip the book).
  *
  * Operator clear: meta `cluster_brake_cleared_at` = unix seconds. Hard exits
- * at or before that ts are ignored (future P0/P1 still trip normally).
+ * at or before that ts are ignored (future lossy P0/P1 still trip normally).
  */
 export function clusterBrakeTripped(): { count: number; remainingMin: number } | null {
   const s = config().sizing;
   if (!s.cluster_brake_exits || s.cluster_brake_exits <= 0) return null;
   const windowS = (s.cluster_brake_window_h || 6) * 3600;
   const pauseS = (s.cluster_brake_pause_h || 6) * 3600;
+  const lossFrac = (s.cluster_brake_loss_pct ?? 10) / 100;
   const clearedRaw = getDb().prepare(
     "SELECT value FROM meta WHERE key='cluster_brake_cleared_at'"
   ).get() as { value: string } | undefined;
@@ -176,8 +180,10 @@ export function clusterBrakeTripped(): { count: number; remainingMin: number } |
   const rows = getDb().prepare(
     `SELECT exit_ts FROM positions
      WHERE exit_reason IN ('P0_safety','P1_stop') AND exit_ts IS NOT NULL AND exit_ts > ?
+       AND entry_sol > 0
+       AND (${REALIZED_PNL_SQL}) / entry_sol <= ?
      ORDER BY exit_ts DESC`
-  ).all(since) as Array<{ exit_ts: number }>;
+  ).all(since, -lossFrac) as Array<{ exit_ts: number }>;
   if (rows.length < s.cluster_brake_exits) return null;
   // Pause measured from the Nth-most-recent hard exit (the one that tripped).
   const tripTs = rows[s.cluster_brake_exits - 1]!.exit_ts;

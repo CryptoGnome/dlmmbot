@@ -279,9 +279,10 @@ export function buildLiveBookSnapshot(root) {
       };
     }
 
-    const clusterExits = tomlNum(toml, "cluster_brake_exits") ?? 2;
+    const clusterExits = tomlNum(toml, "cluster_brake_exits") ?? 4;
     const clusterWindowH = tomlNum(toml, "cluster_brake_window_h") ?? 6;
-    const clusterPauseH = tomlNum(toml, "cluster_brake_pause_h") ?? 6;
+    const clusterPauseH = tomlNum(toml, "cluster_brake_pause_h") ?? 2;
+    const clusterLossPct = tomlNum(toml, "cluster_brake_loss_pct") ?? 10;
     const clearedRaw = db.prepare(
       "SELECT value FROM meta WHERE key='cluster_brake_cleared_at'"
     ).get()?.value;
@@ -295,8 +296,10 @@ export function buildLiveBookSnapshot(root) {
        FROM positions
        WHERE exit_reason IN ('P0_safety','P1_stop') AND exit_ts IS NOT NULL
          AND exit_ts > ?
+         AND entry_sol > 0
+         AND (${REALIZED_PNL}) / entry_sol <= ?
        ORDER BY exit_ts DESC`
-    ).all(clusterSince);
+    ).all(clusterSince, -(clusterLossPct / 100));
 
     let cluster = { tripped: false, count: hard.length, remainingMin: 0, recent: hard.slice(0, 5) };
     if (hard.length >= clusterExits) {
@@ -559,6 +562,7 @@ export function buildLiveBookSnapshot(root) {
         cluster_brake_exits: clusterExits,
         cluster_brake_window_h: clusterWindowH,
         cluster_brake_pause_h: clusterPauseH,
+        cluster_brake_loss_pct: clusterLossPct,
         open_fail_cooldown_s: tomlNum(toml, "open_fail_cooldown_s"),
         kelly_enabled: tomlBool(toml, "kelly_enabled"),
         kelly_min_samples: tomlNum(toml, "kelly_min_samples"),

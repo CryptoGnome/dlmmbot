@@ -75,6 +75,8 @@ export interface Config {
     circuit_daily_loss_pct: number; circuit_pause_h: number;
     circuit_weekly_triggers_halt: number;
     cluster_brake_exits: number; cluster_brake_window_h: number; cluster_brake_pause_h: number;
+    /** Only count P0/P1 with realized return ≤ −this % of entry (0 = count all). */
+    cluster_brake_loss_pct: number;
     regime_filter: boolean; regime_sol_24h_halve_pct: number; regime_sol_24h_pause_pct: number;
   };
   follow: {

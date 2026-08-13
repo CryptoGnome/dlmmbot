@@ -28,6 +28,7 @@ describe("clusterBrakeTripped", () => {
       c.sizing.cluster_brake_exits = 2;
       c.sizing.cluster_brake_window_h = 6;
       c.sizing.cluster_brake_pause_h = 6;
+      c.sizing.cluster_brake_loss_pct = 10;
     });
   });
   afterEach(() => {
@@ -35,25 +36,54 @@ describe("clusterBrakeTripped", () => {
     restoreConfig();
   });
 
-  it("fires on 2× P0/P1 inside the window (Aug 12 pattern)", () => {
+  it("fires on 2× lossy P0/P1 inside the window", () => {
     const t = now();
-    insertClosedPosition({ entrySol: 0.3, exitSol: 0.2, exitReason: "P1_stop", exitTs: t - 100 });
-    insertClosedPosition({ entrySol: 0.3, exitSol: 0.15, exitReason: "P0_safety", exitTs: t - 50 });
+    insertClosedPosition({
+      entrySol: 0.3, exitSol: 0.2, openCostSol: 0.3, closeReturnSol: 0.2,
+      exitReason: "P1_stop", exitTs: t - 100,
+    });
+    insertClosedPosition({
+      entrySol: 0.3, exitSol: 0.15, openCostSol: 0.3, closeReturnSol: 0.15,
+      exitReason: "P0_safety", exitTs: t - 50,
+    });
     const hit = clusterBrakeTripped();
     expect(hit).not.toBeNull();
     expect(hit!.count).toBeGreaterThanOrEqual(2);
     expect(hit!.remainingMin).toBeGreaterThan(0);
   });
 
+  it("ignores near-flat / recovered hard exits", () => {
+    const t = now();
+    // −5% — under the −10% loss floor
+    insertClosedPosition({
+      entrySol: 0.3, exitSol: 0.285, openCostSol: 0.3, closeReturnSol: 0.285,
+      exitReason: "P0_safety", exitTs: t - 100,
+    });
+    insertClosedPosition({
+      entrySol: 0.3, exitSol: 0.29, openCostSol: 0.3, closeReturnSol: 0.29,
+      exitReason: "P0_safety", exitTs: t - 50,
+    });
+    expect(clusterBrakeTripped()).toBeNull();
+  });
+
   it("does not fire on a single hard exit", () => {
-    insertClosedPosition({ entrySol: 0.3, exitSol: 0.2, exitReason: "P1_stop", exitTs: now() - 100 });
+    insertClosedPosition({
+      entrySol: 0.3, exitSol: 0.2, openCostSol: 0.3, closeReturnSol: 0.2,
+      exitReason: "P1_stop", exitTs: now() - 100,
+    });
     expect(clusterBrakeTripped()).toBeNull();
   });
 
   it("respects cluster_brake_cleared_at operator clear", () => {
     const t = now();
-    insertClosedPosition({ entrySol: 0.3, exitSol: 0.2, exitReason: "P1_stop", exitTs: t - 100 });
-    insertClosedPosition({ entrySol: 0.3, exitSol: 0.15, exitReason: "P0_safety", exitTs: t - 50 });
+    insertClosedPosition({
+      entrySol: 0.3, exitSol: 0.2, openCostSol: 0.3, closeReturnSol: 0.2,
+      exitReason: "P1_stop", exitTs: t - 100,
+    });
+    insertClosedPosition({
+      entrySol: 0.3, exitSol: 0.15, openCostSol: 0.3, closeReturnSol: 0.15,
+      exitReason: "P0_safety", exitTs: t - 50,
+    });
     expect(clusterBrakeTripped()).not.toBeNull();
     getDb().prepare(
       "INSERT INTO meta (key, value) VALUES ('cluster_brake_cleared_at', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value"
