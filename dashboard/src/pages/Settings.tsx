@@ -300,18 +300,28 @@ const GROUPS: Group[] = [
 const PUBLIC_PATHS = new Set(GROUPS.flatMap((g) => g.fields.map((f) => f.path)));
 
 const SECRET_LABELS: Record<string, string> = {
-  RPC_URL: "Primary RPC",
-  RPC_URL_FALLBACK: "Fallback RPC",
-  WALLET_PUBKEY: "Wallet pubkey",
-  PUBLIC_WALLET: "Public wallet",
-  WALLET_PRIVATE_KEY: "Wallet private key",
-  WALLET_KEYPAIR_PATH: "Keypair path",
+  RPC_URL: "RPC URL (required)",
+  RPC_URL_FALLBACK: "Backup RPC (optional)",
+  WALLET_PUBKEY: "Wallet address",
+  PUBLIC_WALLET: "Public wallet (legacy)",
+  WALLET_PRIVATE_KEY: "Private key (advanced)",
+  WALLET_KEYPAIR_PATH: "Key file path (advanced)",
   JUPITER_API_KEY: "Jupiter API key",
-  GMGN_API_KEY: "GMGN API key",
-  TELEGRAM_BOT_TOKEN: "Telegram bot token",
-  TELEGRAM_CHAT_ID: "Telegram chat id",
-  FARMER_MODE: "Bot mode",
+  GMGN_API_KEY: "GMGN API key (optional)",
+  TELEGRAM_BOT_TOKEN: "Telegram bot token (optional)",
+  TELEGRAM_CHAT_ID: "Telegram chat id (optional)",
+  FARMER_MODE: "Bot mode (paper / live)",
 };
+
+/** Keys most operators actually need — rest stay under “More”. */
+const SECRET_PRIMARY = new Set([
+  "RPC_URL",
+  "RPC_URL_FALLBACK",
+  "JUPITER_API_KEY",
+  "FARMER_MODE",
+  "TELEGRAM_BOT_TOKEN",
+  "TELEGRAM_CHAT_ID",
+]);
 
 const SECRET_IS_PASSWORD = new Set([
   "WALLET_PRIVATE_KEY",
@@ -319,6 +329,20 @@ const SECRET_IS_PASSWORD = new Set([
   "GMGN_API_KEY",
   "TELEGRAM_BOT_TOKEN",
 ]);
+
+const SECRET_HELP: Record<string, string> = {
+  RPC_URL: "Private Solana RPC from Helius / QuickNode / etc.",
+  RPC_URL_FALLBACK: "Used if the primary RPC fails.",
+  JUPITER_API_KEY: "Helps swaps during exits. Free key from Jupiter.",
+  FARMER_MODE: 'Type "paper" or "live". Live also needs Mode → Live in Bot settings.',
+  TELEGRAM_BOT_TOKEN: "Optional alerts.",
+  TELEGRAM_CHAT_ID: "Optional alerts.",
+  WALLET_PRIVATE_KEY: "Prefer Encrypted wallet above. Only paste here if you know why.",
+  WALLET_KEYPAIR_PATH: "Rare — leave blank if you use Encrypted wallet.",
+  WALLET_PUBKEY: "Usually filled automatically when you unlock.",
+  PUBLIC_WALLET: "Older installs only.",
+  GMGN_API_KEY: "Optional research/enrichment.",
+};
 
 function wireStr(v: unknown): string {
   if (Array.isArray(v)) return v.join(", ");
@@ -437,6 +461,7 @@ export function SettingsPage() {
   const [walletBusy, setWalletBusy] = useState(false);
   const [secretOnce, setSecretOnce] = useState<string | null>(null);
   const [pageTab, setPageTab] = useState<"bot" | "wallet">("bot");
+  const [showAdvancedSecrets, setShowAdvancedSecrets] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -670,7 +695,7 @@ export function SettingsPage() {
           <p className="text-[11px] text-dim">
             {pageTab === "bot"
               ? "Bot knobs — advanced keys stay in config.toml."
-              : "Encrypted wallet and secrets vault — kept off the bot knobs page."}
+              : "Burner wallet + RPC keys. Follow the numbered steps."}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -734,76 +759,98 @@ export function SettingsPage() {
 
       {!loading && pageTab === "wallet" && (
       <>
-      <Panel title="Runtime" right={<Badge tone="ok">safe</Badge>}>
-        <p className="mb-2 text-[11px] text-dim">
-          Non-secret process status only. RPC, wallet, and keys never appear here.
-        </p>
-        <div className="grid gap-2 sm:grid-cols-2">
-          {safeEnv.map((row) => (
-            <div key={row.key} className="flex items-baseline justify-between gap-2 border border-grid px-2 py-1.5 text-[12px]">
-              <span className="text-muted">{row.key}</span>
-              <span className={`font-mono text-[11px] ${row.set ? "text-fg" : "text-dim"}`}>
-                {row.value ?? "—"}
-              </span>
-            </div>
-          ))}
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {secretEnv.map((row) => (
-            <span
-              key={row.key}
-              className={`border px-2 py-1 text-[10px] tracking-wider uppercase ${
-                row.set ? "border-ok/40 text-ok" : "border-grid text-dim"
-              }`}
-              title={row.key}
-            >
-              {SECRET_LABELS[row.key] ?? row.key} · {row.set ? "set" : "missing"}
-            </span>
-          ))}
-        </div>
-      </Panel>
+      {(() => {
+        const hasWallet = !!setup?.wallet.encrypted;
+        const unlocked = !!setup?.wallet.unlocked;
+        const rpcOk = secretEnv.find((r) => r.key === "RPC_URL")?.set;
+        const modeLive = (safeEnv.find((r) => r.key === "FARMER_MODE")?.value ?? "").toLowerCase() === "live"
+          || secretEnv.find((r) => r.key === "FARMER_MODE")?.set;
+        return (
+          <Panel title="Quick status">
+            <p className="mb-3 text-[12px] text-fg">
+              Two jobs here: <span className="text-ok">1)</span> burner wallet,{" "}
+              <span className="text-ok">2)</span> RPC / API keys. Nothing fancy.
+            </p>
+            <ul className="space-y-2 text-[12px]">
+              <li className="flex items-start gap-2">
+                <span className={rpcOk ? "text-ok" : "text-warn"}>{rpcOk ? "✓" : "○"}</span>
+                <span>
+                  <span className="text-fg">RPC</span>
+                  <span className="text-dim"> — {rpcOk ? "set" : "missing → add under API keys below"}</span>
+                </span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className={hasWallet ? "text-ok" : "text-warn"}>{hasWallet ? "✓" : "○"}</span>
+                <span>
+                  <span className="text-fg">Burner wallet</span>
+                  <span className="text-dim">
+                    {" — "}
+                    {!hasWallet ? "not created yet" : unlocked ? "unlocked (bot can trade)" : "locked (unlock to trade)"}
+                  </span>
+                </span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-dim">·</span>
+                <span className="text-dim">
+                  Mode looks {modeLive ? "live-capable in env" : "paper-friendly"} — switch live in Bot settings too.
+                </span>
+              </li>
+            </ul>
+          </Panel>
+        );
+      })()}
 
       <Panel
-        title="Encrypted wallet"
+        title="1. Burner wallet"
         right={
           <Badge tone={walletBadgeTone}>
-            {setup?.wallet.unlocked ? "unlocked" : setup?.wallet.encrypted ? "locked" : "none"}
+            {setup?.wallet.unlocked ? "ready" : setup?.wallet.encrypted ? "locked" : "needed"}
           </Badge>
         }
       >
-        <p className="mb-3 text-[11px] leading-snug text-dim">
-          Create a new keypair or import Phantom. Encrypted at rest with your passphrase.
-          Unlock writes the key into .env for live mode — restart the bot after unlock
-          (or set WALLET_PASSPHRASE on Railway to auto-unlock on boot).
+        <p className="mb-3 text-[12px] leading-snug text-dim">
+          This is the SOL wallet the bot uses. Use a <span className="text-warn">burner only</span> — never your main wallet.
+          Pick one action:
         </p>
         {setup?.wallet.publicKey && (
-          <p className="mb-3 font-mono text-[11px] text-ok">
-            {setup.wallet.publicKey}
-          </p>
+          <div className="mb-3 border border-grid bg-bg px-2 py-2">
+            <div className="text-[10px] tracking-wider text-dim uppercase">Address</div>
+            <p className="mt-0.5 break-all font-mono text-[11px] text-ok">{setup.wallet.publicKey}</p>
+          </div>
         )}
         <div className="mb-3 flex gap-1 border border-grid p-0.5">
-          {(["create", "import", "unlock"] as const).map((t) => (
+          {([
+            { id: "create" as const, label: "Make new" },
+            { id: "import" as const, label: "Import Phantom" },
+            { id: "unlock" as const, label: "Unlock" },
+          ]).map((t) => (
             <button
-              key={t}
+              key={t.id}
               type="button"
               className={`flex-1 px-2 py-1.5 text-[10px] tracking-wider uppercase ${
-                walletTab === t ? "bg-ok/15 text-ok" : "text-dim hover:text-muted"
+                walletTab === t.id ? "bg-ok/15 text-ok" : "text-dim hover:text-muted"
               }`}
-              onClick={() => setWalletTab(t)}
+              onClick={() => setWalletTab(t.id)}
             >
-              {t}
+              {t.label}
             </button>
           ))}
         </div>
+        <p className="mb-2 text-[11px] text-muted">
+          {walletTab === "create" && "Makes a fresh key, locks it with a password you choose, then shows the private key once for backup."}
+          {walletTab === "import" && "Paste a Phantom private key, lock it with a password, and store it encrypted on this host."}
+          {walletTab === "unlock" && "Type your password so the bot can use the wallet. Restart the bot after unlocking."}
+        </p>
         <div className="space-y-2">
           <label className="block space-y-1">
-            <span className="text-[11px] text-muted">Confirm dash token</span>
+            <span className="text-[11px] text-muted">Dash password (same as login token)</span>
             <input
               className="input-field"
               type="password"
               autoComplete="off"
               value={walletConfirm}
               onChange={(e) => setWalletConfirm(e.target.value)}
+              placeholder="DASH_TOKEN"
             />
           </label>
           {walletTab === "import" && (
@@ -815,12 +862,13 @@ export function SettingsPage() {
                 autoComplete="off"
                 value={walletSecret}
                 onChange={(e) => setWalletSecret(e.target.value)}
+                placeholder="Paste once — never your main wallet"
               />
             </label>
           )}
           <label className="block space-y-1">
             <span className="text-[11px] text-muted">
-              {walletTab === "unlock" ? "Passphrase" : "Encrypt passphrase"}
+              {walletTab === "unlock" ? "Wallet password" : "New wallet password"}
             </span>
             <input
               className="input-field"
@@ -828,11 +876,12 @@ export function SettingsPage() {
               autoComplete="off"
               value={walletPass}
               onChange={(e) => setWalletPass(e.target.value)}
+              placeholder={walletTab === "unlock" ? "Passphrase you set earlier" : "Pick something you’ll remember"}
             />
           </label>
           {walletTab !== "unlock" && (
             <label className="block space-y-1">
-              <span className="text-[11px] text-muted">Confirm passphrase</span>
+              <span className="text-[11px] text-muted">Repeat wallet password</span>
               <input
                 className="input-field"
                 type="password"
@@ -843,14 +892,15 @@ export function SettingsPage() {
             </label>
           )}
           {secretOnce && (
-            <div className="border border-warn/50 bg-bg p-2 text-[10px] break-all text-warn">
-              Backup once: {secretOnce}
+            <div className="border border-warn/50 bg-bg p-2 text-[11px] leading-snug text-warn">
+              <div className="mb-1 font-medium">Save this private key somewhere safe — shown once:</div>
+              <div className="break-all font-mono text-[10px]">{secretOnce}</div>
             </div>
           )}
           <button
             type="button"
             className="btn-primary inline-flex items-center gap-1.5"
-            disabled={walletBusy || !walletConfirm.trim() || !walletPass}
+            disabled={walletBusy || !walletConfirm.trim() || !walletPass || (walletTab === "import" && !walletSecret.trim())}
             onClick={() => {
               void (async () => {
                 setWalletBusy(true);
@@ -860,11 +910,11 @@ export function SettingsPage() {
                   if (walletTab === "unlock") {
                     const r = await unlockWallet({ confirm: walletConfirm, passphrase: walletPass });
                     setSetup(r.status);
-                    setMsg(r.note ?? "Unlocked.");
+                    setMsg(r.note ?? "Unlocked. Restart the bot if it was already running.");
                     toast({ title: "Wallet unlocked", detail: r.publicKey.slice(0, 8) + "…", tone: "ok", kind: "event" });
                     setWalletPass("");
                   } else {
-                    if (walletPass !== walletPass2) throw new Error("passphrases do not match");
+                    if (walletPass !== walletPass2) throw new Error("passwords do not match");
                     if (walletTab === "create") {
                       const r = await generateWallet({
                         confirm: walletConfirm,
@@ -873,7 +923,7 @@ export function SettingsPage() {
                       });
                       setSecretOnce(r.secretOnce);
                       setSetup(r.status);
-                      setMsg(r.note ?? "Created.");
+                      setMsg(r.note ?? "Wallet created. Save the backup key, then Unlock when you want to trade.");
                       toast({ title: "Wallet created", detail: r.publicKey.slice(0, 8) + "…", tone: "ok", kind: "event" });
                     } else {
                       const r = await importWallet({
@@ -884,7 +934,7 @@ export function SettingsPage() {
                       });
                       setSetup(r.status);
                       setWalletSecret("");
-                      setMsg(r.note ?? "Imported.");
+                      setMsg(r.note ?? "Imported. Unlock when you want to trade.");
                       toast({ title: "Wallet imported", detail: r.publicKey.slice(0, 8) + "…", tone: "ok", kind: "event" });
                     }
                     setWalletPass("");
@@ -900,35 +950,41 @@ export function SettingsPage() {
             }}
           >
             <Icon icon={walletTab === "unlock" ? Unlock : walletTab === "create" ? KeyRound : Wallet} size={12} />
-            {walletBusy ? "Working…" : walletTab === "unlock" ? "Unlock" : walletTab === "create" ? "Create" : "Import"}
+            {walletBusy
+              ? "Working…"
+              : walletTab === "unlock"
+                ? "Unlock wallet"
+                : walletTab === "create"
+                  ? "Create burner"
+                  : "Import & lock"}
           </button>
         </div>
       </Panel>
 
       <Panel
-        title="Secrets vault"
-        right={<Badge tone="warn">{secretsUnlocked ? "unlocked" : "locked"}</Badge>}
+        title="2. API keys & mode"
+        right={<Badge tone={secretsUnlocked ? "ok" : "warn"}>{secretsUnlocked ? "editing" : "locked"}</Badge>}
       >
-        <p className="mb-3 text-[11px] leading-snug text-dim">
-          Re-enter your dash token to edit RPC / wallet / API keys. Values are never shown —
-          leave a field blank to keep what is already on the box. Bot restart needed after wallet/RPC changes.
+        <p className="mb-3 text-[12px] leading-snug text-dim">
+          Paste your RPC and optional API keys. We never show what’s already saved —
+          leave a box blank to keep it. Restart the bot after big changes (RPC / wallet / live).
         </p>
 
         {!secretsOpen && (
           <button
             type="button"
-            className="inline-flex items-center gap-1.5 border border-grid px-3 py-1.5 text-[11px] tracking-wider text-muted uppercase hover:text-hover"
+            className="btn-primary inline-flex items-center gap-1.5"
             onClick={() => setSecretsOpen(true)}
           >
             <Icon icon={Lock} size={12} />
-            Edit secrets…
+            Edit keys
           </button>
         )}
 
         {secretsOpen && !secretsUnlocked && (
           <div className="space-y-2">
             <label className="block space-y-1">
-              <span className="text-[11px] text-muted">Confirm dash token</span>
+              <span className="text-[11px] text-muted">Dash password (same as login token)</span>
               <input
                 className="input-field"
                 type="password"
@@ -941,7 +997,7 @@ export function SettingsPage() {
             <div className="flex flex-wrap gap-2">
               <button type="button" className="btn-primary inline-flex items-center gap-1.5" onClick={() => void onUnlock()}>
                 <Icon icon={Unlock} size={12} />
-                Unlock
+                Unlock keys
               </button>
               <button
                 type="button"
@@ -957,24 +1013,61 @@ export function SettingsPage() {
         {secretsUnlocked && (
           <div className="space-y-3">
             <div className="grid gap-3 md:grid-cols-2">
-              {secretEnv.map((row) => (
+              {secretEnv.filter((r) => SECRET_PRIMARY.has(r.key)).map((row) => (
                 <label key={row.key} className="block space-y-1">
                   <span className="flex items-baseline justify-between gap-2 text-[11px] text-muted">
                     <span>{SECRET_LABELS[row.key] ?? row.key}</span>
-                    <span className={row.set ? "text-ok" : "text-dim"}>{row.set ? "set" : "empty"}</span>
+                    <span className={row.set ? "text-ok" : "text-warn"}>{row.set ? "saved" : "needed"}</span>
                   </span>
+                  {SECRET_HELP[row.key] && (
+                    <span className="block text-[10px] leading-snug text-dim">{SECRET_HELP[row.key]}</span>
+                  )}
                   <input
                     className="input-field"
                     type={SECRET_IS_PASSWORD.has(row.key) ? "password" : "text"}
                     autoComplete="off"
                     spellCheck={false}
                     value={secretDraft[row.key] ?? ""}
-                    placeholder={row.set ? "•••• leave blank to keep" : "paste new value"}
+                    placeholder={row.set ? "•••• leave blank to keep" : "paste here"}
                     onChange={(e) => setSecretDraft((d) => ({ ...d, [row.key]: e.target.value }))}
                   />
                 </label>
               ))}
             </div>
+
+            <button
+              type="button"
+              className="text-[11px] tracking-wider text-dim uppercase hover:text-hover"
+              onClick={() => setShowAdvancedSecrets((v) => !v)}
+            >
+              {showAdvancedSecrets ? "Hide advanced" : "Show advanced (usually skip)"}
+            </button>
+
+            {showAdvancedSecrets && (
+              <div className="grid gap-3 border border-grid p-3 md:grid-cols-2">
+                {secretEnv.filter((r) => !SECRET_PRIMARY.has(r.key)).map((row) => (
+                  <label key={row.key} className="block space-y-1">
+                    <span className="flex items-baseline justify-between gap-2 text-[11px] text-muted">
+                      <span>{SECRET_LABELS[row.key] ?? row.key}</span>
+                      <span className={row.set ? "text-ok" : "text-dim"}>{row.set ? "saved" : "empty"}</span>
+                    </span>
+                    {SECRET_HELP[row.key] && (
+                      <span className="block text-[10px] leading-snug text-dim">{SECRET_HELP[row.key]}</span>
+                    )}
+                    <input
+                      className="input-field"
+                      type={SECRET_IS_PASSWORD.has(row.key) ? "password" : "text"}
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={secretDraft[row.key] ?? ""}
+                      placeholder={row.set ? "•••• leave blank to keep" : "paste here"}
+                      onChange={(e) => setSecretDraft((d) => ({ ...d, [row.key]: e.target.value }))}
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
+
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
@@ -983,7 +1076,7 @@ export function SettingsPage() {
                 onClick={() => void saveSecrets()}
               >
                 <Icon icon={Save} size={12} />
-                {secretsSaving ? "Writing…" : secretDirty ? "Write secrets" : "No changes"}
+                {secretsSaving ? "Saving…" : secretDirty ? "Save keys" : "No changes"}
               </button>
               <button
                 type="button"
@@ -991,7 +1084,7 @@ export function SettingsPage() {
                 onClick={onLock}
               >
                 <Icon icon={Lock} size={12} />
-                Lock
+                Done / lock
               </button>
             </div>
           </div>
