@@ -115,6 +115,23 @@ export function shortTime(isoOrSql: string | null | undefined): string {
   return `${get("month")}-${get("day")} ${get("hour")}:${get("minute")} ${get("dayPeriod")}`;
 }
 
+/** Relative age: `just now`, `5 minutes ago`, `2 hours ago`, `3 days ago`. */
+export function timeAgo(isoOrSql: string | null | undefined, nowMs = Date.now()): string {
+  if (!isoOrSql) return "—";
+  const d = parseUtc(isoOrSql);
+  if (!d) return "—";
+  const sec = Math.max(0, Math.floor((nowMs - d.getTime()) / 1000));
+  if (sec < 45) return "just now";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return min === 1 ? "1 minute ago" : `${min} minutes ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 48) return hr === 1 ? "1 hour ago" : `${hr} hours ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 60) return day === 1 ? "1 day ago" : `${day} days ago`;
+  const mo = Math.floor(day / 30);
+  return mo === 1 ? "1 month ago" : `${mo} months ago`;
+}
+
 /** Footer / clock: Eastern `10:33:52 AM` */
 export function clockTime(ms: number | Date | null | undefined): string {
   if (ms == null) return "—";

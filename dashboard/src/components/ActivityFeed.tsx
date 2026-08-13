@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
+import { Clock } from "lucide-react";
 import { TokenSymbol } from "@/components/TokenSymbol";
-import { cn, fmtSol, shortTime } from "@/lib/utils";
+import { cn, fmtSol, shortTime, timeAgo } from "@/lib/utils";
 import type { FeedItem } from "@/lib/activityFeed";
 import { Icon, eventGateIcon, feedKindIcon } from "@/lib/icons";
 
@@ -24,6 +26,12 @@ export function ActivityFeedList({
   empty?: string;
   dense?: boolean;
 }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+
   if (!items.length) {
     return (
       <div className={cn(
@@ -34,6 +42,8 @@ export function ActivityFeedList({
       </div>
     );
   }
+
+  const now = Date.now();
 
   return (
     <ul className="space-y-0">
@@ -52,7 +62,19 @@ export function ActivityFeedList({
               dense ? "py-1.5" : "py-2",
             )}
           >
-            <span className="w-16 shrink-0 text-[10px] text-dim tabular-nums">{shortTime(it.at)}</span>
+            <span
+              className={cn(
+                "shrink-0 text-[10px] text-dim leading-tight",
+                dense ? "w-[6.5rem]" : "w-[7.25rem]",
+              )}
+              title={it.at}
+            >
+              <span className="block tabular-nums">{shortTime(it.at)}</span>
+              <span className="mt-0.5 flex items-center gap-0.5 text-dim/90">
+                <Icon icon={Clock} size={9} className="opacity-70" />
+                <span className={dense ? "truncate" : undefined}>{timeAgo(it.at, now)}</span>
+              </span>
+            </span>
             <span className={cn("mt-0.5 shrink-0", tone)} title={it.kind}>
               <Icon icon={KindIcon} size={sz} />
             </span>
