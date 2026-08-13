@@ -81,13 +81,10 @@ const server = createServer((req, res) => {
     return;
   }
 
-  if (!authorized(req, url)) {
-    if (url.pathname.startsWith("/api/")) {
-      sendJson(res, 401, { error: "unauthorized — set ?token= or Authorization: Bearer" });
-      return;
-    }
-    res.writeHead(401, { "Content-Type": "text/plain; charset=utf-8" });
-    res.end("unauthorized — open with ?token=YOUR_DASH_TOKEN");
+  // Token gates API only — browsers fetch /assets/* without ?token= on the URL.
+  const needsAuth = url.pathname.startsWith("/api/");
+  if (needsAuth && !authorized(req, url)) {
+    sendJson(res, 401, { error: "unauthorized — set ?token= or Authorization: Bearer" });
     return;
   }
 
