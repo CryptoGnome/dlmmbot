@@ -65,7 +65,7 @@ export function OpenPositionCard({ p, live = false }: { p: OpenPos; live?: boole
         <div className="min-w-0 space-y-0.5">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[11px] text-accent" title="Position id">#{p.id}</span>
-            <TokenSymbol symbol={p.symbol} mint={p.mint} />
+            <TokenSymbol symbol={p.symbol} mint={p.mint} name={p.name} iconUrl={p.icon_url} />
             <SleeveBadge sleeve={p.sleeve} follow={p.follow} />
             <StatusBadge status={status} />
             {underwater && (

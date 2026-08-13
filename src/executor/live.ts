@@ -9,7 +9,7 @@ import { createRequire } from "node:module";
 import type * as DLMMTypes from "@meteora-ag/dlmm";
 import type { LbPosition } from "@meteora-ag/dlmm";
 import { config, env, isLive, SOL_MINT } from "../config.js";
-import { getDb, now } from "../db/db.js";
+import { getDb, now, upsertTokenMeta } from "../db/db.js";
 import { fetchPool } from "../scanner/meteora.js";
 import type { ExitReason, Position } from "../types.js";
 import type { Executor, OpenParams, PositionMark } from "./executor.js";
@@ -500,6 +500,7 @@ export class LiveExecutor implements Executor {
     for (const a of accountRows)
       db.prepare("INSERT INTO position_accounts (position_id, pubkey, min_bin_id, max_bin_id) VALUES (?, ?, ?, ?)")
         .run(id, a.pubkey, a.min, a.max);
+    upsertTokenMeta(params.tokenMint, { symbol: params.symbol });
 
     // Open event. Two things that did not survive before: the open signatures
     // (only close sigs reached events, which is why reconstructing the book

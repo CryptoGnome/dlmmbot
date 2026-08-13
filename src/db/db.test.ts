@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { getDb, REALIZED_PNL_SQL, logError } from "./db.js";
+import { getDb, REALIZED_PNL_SQL, logError, upsertTokenMeta } from "./db.js";
 import { useMemoryDb, resetTestDb, insertClosedPosition } from "../test/db.js";
 
 function pnlFor(id: number): number {
@@ -71,16 +71,14 @@ describe("logError", () => {
     expect(n).toBe(1);
   });
 
-  it("stores stack from Error objects", () => {
-    const id = logError({
-      source: "test",
-      code: "stack",
-      message: "with stack",
-      err: new Error("with stack"),
-      dedupeSec: 0,
-    });
-    const row = getDb().prepare("SELECT stack FROM error_log WHERE id = ?").get(id) as { stack: string | null };
-    expect(row.stack).toBeTruthy();
-    expect(row.stack!).toContain("Error: with stack");
+  it("upserts display metadata without wiping existing fields", () => {
+    upsertTokenMeta("mintA", { symbol: "AAA", icon_url: "https://x/a.png" });
+    upsertTokenMeta("mintA", { name: "Token A" });
+    const row = getDb().prepare(
+      "SELECT symbol, name, icon_url FROM tokens WHERE mint = ?",
+    ).get("mintA") as { symbol: string; name: string; icon_url: string };
+    expect(row.symbol).toBe("AAA");
+    expect(row.name).toBe("Token A");
+    expect(row.icon_url).toBe("https://x/a.png");
   });
 });

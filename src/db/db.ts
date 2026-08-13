@@ -13,7 +13,10 @@ CREATE TABLE IF NOT EXISTS tokens (
   creator TEXT,
   launchpad TEXT,
   first_seen INTEGER NOT NULL,
-  last_vet_json TEXT
+  last_vet_json TEXT,
+  name TEXT,
+  icon_url TEXT,
+  meta_updated_ts INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS creators (
@@ -229,6 +232,9 @@ function migrate(database: Database.Database): void {
     database.exec("ALTER TABLE positions ADD COLUMN follow_chain_id INTEGER");
   } catch { /* column already exists */ }
   database.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+  try { database.exec("ALTER TABLE tokens ADD COLUMN name TEXT"); } catch { /* */ }
+  try { database.exec("ALTER TABLE tokens ADD COLUMN icon_url TEXT"); } catch { /* */ }
+  try { database.exec("ALTER TABLE tokens ADD COLUMN meta_updated_ts INTEGER"); } catch { /* */ }
   database.exec(`
 CREATE TABLE IF NOT EXISTS error_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -479,4 +485,50 @@ export function installProcessErrorHooks(source = "farmer"): void {
     const err = reason instanceof Error ? reason : new Error(String(reason));
     logError({ source: tag, level: "fatal", code: "unhandledRejection", message: err.message, err, dedupeSec: 5 });
   });
+}
+
+export type TokenMeta = {
+  mint: string;
+  symbol: string | null;
+  name: string | null;
+  icon_url: string | null;
+  meta_updated_ts: number | null;
+};
+
+/** Upsert display metadata (symbol/name/icon) — never clears existing non-null fields with null. */
+export function upsertTokenMeta(
+  mint: string,
+  meta: { symbol?: string | null; name?: string | null; icon_url?: string | null },
+): void {
+  if (!mint) return;
+  const symbol = meta.symbol?.trim() || null;
+  const name = meta.name?.trim() || null;
+  const icon = meta.icon_url?.trim() || null;
+  if (!symbol && !name && !icon) return;
+  const ts = now();
+  getDb()
+    .prepare(
+      `INSERT INTO tokens (mint, symbol, name, icon_url, meta_updated_ts, first_seen)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(mint) DO UPDATE SET
+         symbol = COALESCE(excluded.symbol, tokens.symbol),
+         name = COALESCE(excluded.name, tokens.name),
+         icon_url = COALESCE(excluded.icon_url, tokens.icon_url),
+         meta_updated_ts = excluded.meta_updated_ts`,
+    )
+    .run(mint, symbol, name, icon, ts, ts);
+}
+
+export function getTokenMetaMap(mints: string[]): Record<string, TokenMeta> {
+  const uniq = [...new Set(mints.filter(Boolean))];
+  if (!uniq.length) return {};
+  const out: Record<string, TokenMeta> = {};
+  const stmt = getDb().prepare(
+    `SELECT mint, symbol, name, icon_url, meta_updated_ts FROM tokens WHERE mint = ?`,
+  );
+  for (const mint of uniq) {
+    const row = stmt.get(mint) as TokenMeta | undefined;
+    if (row) out[mint] = row;
+  }
+  return out;
 }

@@ -10,14 +10,15 @@ import {
 import {
   Bug, Check, ChevronDown, ChevronRight, Copy, ExternalLink, OctagonX,
 } from "lucide-react";
+import { TokenSymbol } from "@/components/TokenSymbol";
 
 type Filter = "all" | "error" | "warn" | "fatal";
 
-function levelTone(level: string): "danger" | "warn" | "accent" | "muted" {
+function levelTone(level: string): "danger" | "warn" | "accent" | "fg" {
   if (level === "fatal") return "danger";
   if (level === "error") return "danger";
   if (level === "warn") return "warn";
-  return "muted";
+  return "fg";
 }
 
 function ErrorRow({
@@ -50,9 +51,14 @@ function ErrorRow({
             <span className="text-[10px] tracking-wider text-muted uppercase">
               {e.source}{e.code ? `/${e.code}` : ""}
             </span>
-            {e.symbol && (
-              <span className="text-[11px] text-accent">{e.symbol}</span>
-            )}
+            {e.symbol || e.mint ? (
+              <TokenSymbol
+                symbol={e.symbol}
+                mint={e.mint}
+                name={e.name}
+                iconUrl={e.icon_url}
+              />
+            ) : null}
             <span className="ml-auto shrink-0 text-[10px] text-dim tabular-nums">
               {shortTime(e.at)} · {timeAgo(e.at)}
             </span>
@@ -198,7 +204,7 @@ export function ErrorsPage({ watch }: { watch: LiveWatch | null }) {
       <div className="flex flex-wrap gap-2 text-[11px]">
         <Badge tone="danger">1h {stats?.count_1h ?? 0}</Badge>
         <Badge tone="warn">24h {stats?.count_24h ?? 0}</Badge>
-        <Badge tone="muted">{all.length} loaded</Badge>
+        <Badge tone="fg">{all.length} loaded</Badge>
         {(["all", "fatal", "error", "warn"] as Filter[]).map((f) => (
           <button
             key={f}

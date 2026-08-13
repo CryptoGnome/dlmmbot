@@ -54,6 +54,8 @@ export interface LiveWatch {
     /** meme | micro | majors */
     sleeve?: string | null;
     follow?: boolean;
+    name?: string | null;
+    icon_url?: string | null;
     entry_sol: number; entry_price?: number; open_cost_sol?: number | null;
     opened: string;     fees_claimed_sol?: number;
     min_bin_id?: number; max_bin_id?: number; range_status?: string;
@@ -156,6 +158,13 @@ export interface LiveWatch {
     last_id: number | null;
     last_ts: number | null;
   };
+  /** Mint → display metadata (icon/name/symbol) for TokenSymbol + client cache. */
+  token_meta?: Record<string, {
+    mint: string;
+    symbol: string | null;
+    name: string | null;
+    icon_url: string | null;
+  }>;
 }
 
 export interface ErrorLogEntry {
@@ -172,6 +181,8 @@ export interface ErrorLogEntry {
   symbol: string | null;
   mint: string | null;
   pool: string | null;
+  name?: string | null;
+  icon_url?: string | null;
   build: string | null;
   host: string | null;
   pid: number | null;
@@ -183,6 +194,8 @@ export interface ActivityEvent {
   symbol?: string | null;
   mint?: string | null;
   pool?: string | null;
+  name?: string | null;
+  icon_url?: string | null;
   score?: number | null;
   size?: number | null;
   sleeve?: string | null;

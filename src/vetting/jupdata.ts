@@ -9,7 +9,7 @@ import { config } from "../config.js";
 // missing/renamed fields read as "no data", never NaN.
 
 export interface JupAssetSnapshot {
-  organicScore: number;          // 0-100, Jupiter's wash-trade-filtered activity score
+  organicScore: number | null;   // 0-100; null if Jupiter omitted it
   organicScoreLabel: string;     // "low" | "medium" | "high"
   holderCount: number | null;
   topHoldersPct: number | null;  // top holders' supply share (may include pool accounts)
@@ -20,6 +20,10 @@ export interface JupAssetSnapshot {
   sellVol24h: number | null;
   organicBuyVol24h: number | null;
   organicSellVol24h: number | null;
+  /** Display fields from the same search payload (for dashboard icons). */
+  symbol: string | null;
+  name: string | null;
+  icon: string | null;
 }
 
 const CACHE_MS = 55_000;       // one scan cycle — never re-hit a mint within a sweep
@@ -74,7 +78,11 @@ async function fetchAsset(mint: string): Promise<JupAssetSnapshot | null> {
     if (!a) return null; // token not indexed (yet) — normal for very fresh mints
 
     const organicScore = num(a.organicScore);
-    if (organicScore === null) return null; // schema drift — treat as no data
+    const symbol = typeof a.symbol === "string" ? a.symbol : null;
+    const name = typeof a.name === "string" ? a.name : null;
+    const icon = typeof a.icon === "string" ? a.icon : null;
+    // Display-only hit is still useful even when organicScore is missing.
+    if (organicScore === null && !symbol && !name && !icon) return null;
     const audit = (typeof a.audit === "object" && a.audit !== null ? a.audit : {}) as Record<string, unknown>;
     const s24 = (typeof a.stats24h === "object" && a.stats24h !== null ? a.stats24h : {}) as Record<string, unknown>;
 
@@ -90,6 +98,9 @@ async function fetchAsset(mint: string): Promise<JupAssetSnapshot | null> {
       sellVol24h: num(s24.sellVolume),
       organicBuyVol24h: num(s24.buyOrganicVolume),
       organicSellVol24h: num(s24.sellOrganicVolume),
+      symbol,
+      name,
+      icon,
     };
   } catch {
     return bumpFailure();

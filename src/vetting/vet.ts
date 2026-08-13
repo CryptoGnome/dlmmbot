@@ -236,7 +236,7 @@ export async function vetToken(mint: string, poolCreatedAtMs: number | null): Pr
     soft += Math.min(traderTags.smartCount, 5) * 2;
     soft = Math.max(0, Math.min(100, soft));
   }
-  if (jup) {
+  if (jup && jup.organicScore != null) {
     soft -= clamp01((50 - jup.organicScore) / 50) * 15;
     if (jup.organicScoreLabel === "high") soft += 5;
     if (jup.botHoldersPct !== null) soft -= clamp01(jup.botHoldersPct / 50) * 10;
@@ -246,10 +246,27 @@ export async function vetToken(mint: string, poolCreatedAtMs: number | null): Pr
 
   const db = getDb();
   db.prepare(
-    `INSERT INTO tokens (mint, symbol, creator, launchpad, first_seen, last_vet_json)
-     VALUES (?, NULL, ?, ?, ?, ?)
-     ON CONFLICT(mint) DO UPDATE SET creator=excluded.creator, launchpad=excluded.launchpad, last_vet_json=excluded.last_vet_json`
-  ).run(mint, facts.creatorAddress, facts.launchpad, now(), JSON.stringify(facts));
+    `INSERT INTO tokens (mint, symbol, creator, launchpad, first_seen, last_vet_json, name, icon_url, meta_updated_ts)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(mint) DO UPDATE SET
+       creator=excluded.creator,
+       launchpad=excluded.launchpad,
+       last_vet_json=excluded.last_vet_json,
+       symbol=COALESCE(excluded.symbol, tokens.symbol),
+       name=COALESCE(excluded.name, tokens.name),
+       icon_url=COALESCE(excluded.icon_url, tokens.icon_url),
+       meta_updated_ts=COALESCE(excluded.meta_updated_ts, tokens.meta_updated_ts)`
+  ).run(
+    mint,
+    jup?.symbol ?? null,
+    facts.creatorAddress,
+    facts.launchpad,
+    now(),
+    JSON.stringify(facts),
+    jup?.name ?? null,
+    jup?.icon ?? null,
+    (jup?.symbol || jup?.name || jup?.icon) ? now() : null,
+  );
 
   const verdict = hard.length === 0 ? "pass" : "fail";
   if (verdict === "fail" && hard.some((h) => h.gate !== "age_min")) {

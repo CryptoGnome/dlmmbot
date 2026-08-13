@@ -84,6 +84,8 @@ export function ActivityFeedList({
                   <TokenSymbol
                     symbol={it.symbol && it.symbol !== "?" ? it.symbol : (it.mint?.slice(0, 6) ?? "?")}
                     mint={it.mint}
+                    name={it.name}
+                    iconUrl={it.icon_url}
                   />
                 ) : null}
                 <span className={cn(dense ? "text-[12px]" : "text-[13px]", tone === "text-muted" ? "text-fg" : tone)}>

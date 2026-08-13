@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { cachedHistory, cachedWatch, connectLive, fetchSetupStatus } from "@/lib/api";
 import type { HistorySnap, LiveWatch, RangeKey } from "@/lib/types";
 import { clockTime, tokenFromUrl } from "@/lib/utils";
+import { mergeTokenMetaMap } from "@/lib/tokenMetaCache";
 import { useActivityToasts, useBuildToasts, useErrorToasts } from "@/lib/useActivityToasts";
 import { RangeTabs } from "@/components/ui";
 import { Shell, parseTab, type TabId } from "@/components/Shell";
@@ -78,6 +79,7 @@ export default function App() {
     const conn = connectLive({
       onWatch(w) {
         setWatch(w);
+        mergeTokenMetaMap(w.token_meta);
         hasWatch.current = true;
         setErr(null);
         setUpdated(Date.now());

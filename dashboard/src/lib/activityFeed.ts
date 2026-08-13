@@ -13,6 +13,8 @@ export type FeedItem = {
   tone: "ok" | "danger" | "warn" | "accent" | "muted";
   mint?: string | null;
   symbol?: string | null;
+  name?: string | null;
+  icon_url?: string | null;
   gate?: string | null;
 };
 
@@ -77,17 +79,23 @@ export function buildActivityFeed(watch: LiveWatch | null, limit = 80): FeedItem
   if (!watch) return [];
 
   if (watch.recent_activity?.length) {
-    return watch.recent_activity.slice(0, limit).map((e) => ({
-      at: e.at,
-      kind: e.kind,
-      label: labelFor(e),
-      detail: detailFor(e),
-      sol: solFor(e),
-      tone: toneFor(e.kind, e.pnl),
-      mint: e.mint,
-      symbol: e.symbol,
-      gate: e.gate,
-    }));
+    const meta = watch.token_meta ?? {};
+    return watch.recent_activity.slice(0, limit).map((e) => {
+      const m = e.mint ? meta[e.mint] : null;
+      return {
+        at: e.at,
+        kind: e.kind,
+        label: labelFor(e),
+        detail: detailFor(e),
+        sol: solFor(e),
+        tone: toneFor(e.kind, e.pnl),
+        mint: e.mint,
+        symbol: e.symbol ?? m?.symbol,
+        name: e.name ?? m?.name,
+        icon_url: e.icon_url ?? m?.icon_url,
+        gate: e.gate,
+      };
+    });
   }
 
   // Legacy fallback before dashboard-server redeploy

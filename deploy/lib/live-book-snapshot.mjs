@@ -10,6 +10,9 @@ import { promisify } from "node:util";
 import { runtimePaths } from "./runtime-paths.mjs";
 import { readDeployPrefs, shouldAutoDeploy } from "./deploy-prefs.mjs";
 import { listRecentErrors, errorStats } from "./error-log.mjs";
+import {
+  decorateWithMeta, loadTokenMetaMap, scheduleTokenMetaBackfill,
+} from "./token-meta.mjs";
 
 const execAsync = promisify(exec);
 
@@ -964,6 +967,22 @@ export function buildLiveBookSnapshot(root) {
       ?? process.env.PUBLIC_WALLET
       ?? "9DTThTbggnp2P2ZGLFRfN1A3j5JUsXez1dRJak3TixB2");
 
+    const recentErrors = listRecentErrors(db, 80);
+    const metaMints = [
+      ...open.map((r) => r.mint),
+      ...recentActivity.map((r) => r.mint),
+      ...recentPasses.map((r) => r.mint),
+      ...p3Missed.map((r) => r.mint),
+      ...recentErrors.map((r) => r.mint),
+    ].filter(Boolean);
+    const tokenMeta = loadTokenMetaMap(db, metaMints);
+    decorateWithMeta(open, tokenMeta);
+    decorateWithMeta(recentActivity, tokenMeta);
+    decorateWithMeta(recentPasses, tokenMeta);
+    decorateWithMeta(p3Missed, tokenMeta);
+    decorateWithMeta(recentErrors, tokenMeta);
+    scheduleTokenMetaBackfill(root, metaMints);
+
     return {
       ts: now,
       at: new Date(now * 1000).toISOString(),
@@ -1045,8 +1064,9 @@ export function buildLiveBookSnapshot(root) {
       },
       recent_passes: recentPasses,
       recent_activity: recentActivity,
-      recent_errors: listRecentErrors(db, 80),
+      recent_errors: recentErrors,
       error_stats: errorStats(db, now),
+      token_meta: tokenMeta,
     };
   } finally {
     db.close();

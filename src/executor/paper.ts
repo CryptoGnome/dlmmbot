@@ -1,4 +1,4 @@
-import { getDb, now } from "../db/db.js";
+import { getDb, now, upsertTokenMeta } from "../db/db.js";
 import { fetchPool } from "../scanner/meteora.js";
 import { binIdToPrice, priceToBinId } from "../ranges/planner.js";
 import type { ExitReason, Position, RangeShape } from "../types.js";
@@ -52,6 +52,7 @@ export class PaperExecutor implements Executor {
     );
     const id = Number(res.lastInsertRowid);
     this.rangeShapeByPos.set(id, params.range.shape ?? "bidask");
+    upsertTokenMeta(params.tokenMint, { symbol: params.symbol });
     return {
       id,
       mode: "paper",
