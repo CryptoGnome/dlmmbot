@@ -52,7 +52,8 @@ function buildGitInfo(root) {
   const head = git(root, "git rev-parse --short HEAD");
   const message = git(root, "git log -1 --pretty=%s");
   const describe = git(root, "git describe --always --dirty") || head;
-  const dirty = !!(git(root, "git status --porcelain"));
+  // Ignore untracked clutter from SCP/deploy — only tracked diffs are "dirty".
+  const dirty = !!(git(root, "git status --porcelain --untracked-files=no"));
   const originFull = git(root, `git rev-parse refs/remotes/origin/${branch}`);
   const origin = originFull
     ? (git(root, `git rev-parse --short refs/remotes/origin/${branch}`) || originFull.slice(0, 7))
@@ -67,9 +68,17 @@ function buildGitInfo(root) {
   }
 
   let version = "0.0.0";
+  let repoUrl = "https://github.com/CryptoGnome/meteora-farmer";
   try {
-    version = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")).version || version;
+    const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
+    version = pkg.version || version;
+    const raw = pkg.repository?.url ?? pkg.repository;
+    if (typeof raw === "string") {
+      repoUrl = raw.replace(/^git\+/, "").replace(/\.git$/, "").replace(/^git@github\.com:/, "https://github.com/");
+    }
   } catch { /* */ }
+
+  const releaseUrl = `${repoUrl}/releases`;
 
   return {
     version,
@@ -80,6 +89,8 @@ function buildGitInfo(root) {
     dirty,
     origin,
     sync,
+    repo_url: repoUrl,
+    release_url: releaseUrl,
     fetched_at: lastOriginFetchAt ? Math.floor(lastOriginFetchAt / 1000) : null,
     fetch_ok: lastOriginFetchOk,
   };
@@ -743,6 +754,8 @@ export function buildLiveBookSnapshot(root) {
         dirty: gitInfo.dirty,
         origin: gitInfo.origin,
         sync: gitInfo.sync,
+        repo_url: gitInfo.repo_url,
+        release_url: gitInfo.release_url,
         running: hb?.build ?? null,
         fetched_at: gitInfo.fetched_at,
         fix_sha: fixSha,

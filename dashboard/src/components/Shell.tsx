@@ -38,18 +38,27 @@ function BuildPill({ build }: { build: LiveWatch["build"] }) {
     build.running && build.running !== build.describe ? `running ${build.running}` : null,
     build.origin ? `github ${build.origin}` : "github ?",
     sync,
-    build.dirty ? "working tree dirty" : null,
+    build.dirty ? "tracked working tree dirty" : null,
+    "click → GitHub releases",
   ].filter(Boolean).join(" · ");
   const cls =
     syncTone === "ok" ? "border-ok/70 text-ok"
       : syncTone === "warn" ? "border-warn/70 text-warn"
         : syncTone === "accent" ? "border-accent/70 text-accent"
           : "border-grid text-muted";
+  const href = build.release_url
+    ?? (build.repo_url ? `${build.repo_url.replace(/\/$/, "")}/releases` : "https://github.com/CryptoGnome/meteora-farmer/releases");
   return (
-    <span title={tip} className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10px] tracking-widest ${cls}`}>
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      title={tip}
+      className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10px] tracking-widest no-underline hover:border-hover hover:text-hover ${cls}`}
+    >
       v{build.version ?? "?"} {build.describe ?? build.head ?? "—"} · {syncLabel}
       {sync === "behind" && build.origin ? ` → ${build.origin}` : ""}
-    </span>
+    </a>
   );
 }
 
