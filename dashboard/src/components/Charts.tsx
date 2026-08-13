@@ -5,8 +5,8 @@ import {
 import type { HistorySnap } from "@/lib/types";
 import { fmtRet, fmtSol, fmtUsd } from "@/lib/format";
 
-const axis = { stroke: "#5c6b7f", fontSize: 11, tick: { fill: "#5c6b7f" } };
-const grid = { stroke: "#1e2633", strokeDasharray: "3 5" };
+const axis = { stroke: "#6B6B6B", fontSize: 11, tick: { fill: "#6B6B6B" } };
+const grid = { stroke: "#2A2A2A", strokeDasharray: "3 5" };
 
 function Empty({ msg }: { msg: string }) {
   return (
@@ -51,8 +51,8 @@ export function EquityChart({ data }: { data: HistorySnap["equity"] }) {
   if (!data.length) return <Empty msg="No profit history yet" />;
   const last = data[data.length - 1]!;
   return (
-    <div className="flex h-full flex-col">
-      <div className="mb-1 flex flex-wrap gap-4 px-1 text-[12px]">
+    <div className="flex h-full min-h-[280px] flex-col">
+      <div className="mb-1 flex shrink-0 flex-wrap gap-4 px-1 text-[12px]">
         <div>
           <span className="text-dim">Total SOL </span>
           <span className={last.cum_sol >= 0 ? "text-ok font-semibold" : "text-danger font-semibold"}>
@@ -71,85 +71,88 @@ export function EquityChart({ data }: { data: HistorySnap["equity"] }) {
           </span>
         </div>
       </div>
-      <div className="min-h-0 flex-1">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data} margin={{ top: 8, right: 48, left: 4, bottom: 4 }}>
-            <defs>
-              <linearGradient id="solFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#3ecf8e" stopOpacity={0.3} />
-                <stop offset="100%" stopColor="#3ecf8e" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid {...grid} />
-            <XAxis dataKey="day" {...axis} tickFormatter={(d: string) => d.slice(5)} />
-            <YAxis
-              yAxisId="sol"
-              {...axis}
-              width={56}
-              tickFormatter={(v: number) => `${v.toFixed(2)}`}
-              label={{ value: "SOL", angle: -90, position: "insideLeft", fill: "#5c6b7f", fontSize: 10 }}
-            />
-            <YAxis
-              yAxisId="usd"
-              orientation="right"
-              {...axis}
-              width={52}
-              tickFormatter={(v: number) => `$${v.toFixed(0)}`}
-              label={{ value: "USD", angle: 90, position: "insideRight", fill: "#5c6b7f", fontSize: 10 }}
-            />
-            <Tooltip
-              cursor={{ stroke: "#5c6b7f", strokeDasharray: "3 3" }}
-              content={({ active, label, payload }) => {
-                if (!active || !payload?.length) return null;
-                const row = payload[0]?.payload as {
-                  cum_sol?: number; cum_usd?: number; sol?: number; usd?: number; day_pct?: number | null;
-                };
-                const pct = row?.day_pct;
-                return (
-                  <ChartTip
-                    title={String(label)}
-                    rows={[
-                      {
-                        label: "Cum SOL",
-                        value: fmtSol(row?.cum_sol),
-                        tone: (row?.cum_sol ?? 0) >= 0 ? "ok" : "danger",
-                      },
-                      {
-                        label: "Cum USD",
-                        value: fmtUsd(row?.cum_usd),
-                        tone: (row?.cum_usd ?? 0) >= 0 ? "accent" : "danger",
-                      },
-                      {
-                        label: "Day",
-                        value: withPct(fmtSol(row?.sol), pct),
-                        tone: (row?.sol ?? 0) >= 0 ? "ok" : "danger",
-                      },
-                    ]}
-                  />
-                );
-              }}
-            />
-            <Area
-              yAxisId="sol"
-              type="monotone"
-              dataKey="cum_sol"
-              name="SOL"
-              stroke="#3ecf8e"
-              fill="url(#solFill)"
-              strokeWidth={2}
-            />
-            <Area
-              yAxisId="usd"
-              type="monotone"
-              dataKey="cum_usd"
-              name="USD"
-              stroke="#5b9fd4"
-              fill="transparent"
-              strokeWidth={2}
-              strokeDasharray="4 3"
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+      {/* Absolute fill — ResponsiveContainer needs a real pixel box, not % of flex-0 */}
+      <div className="relative min-h-0 w-full flex-1" style={{ minHeight: 260 }}>
+        <div className="absolute inset-0">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data} margin={{ top: 8, right: 48, left: 4, bottom: 4 }}>
+              <defs>
+                <linearGradient id="solFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#00FF85" stopOpacity={0.35} />
+                  <stop offset="100%" stopColor="#00FF85" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid {...grid} />
+              <XAxis dataKey="day" {...axis} tickFormatter={(d: string) => d.slice(5)} />
+              <YAxis
+                yAxisId="sol"
+                {...axis}
+                width={56}
+                tickFormatter={(v: number) => `${v.toFixed(2)}`}
+                label={{ value: "SOL", angle: -90, position: "insideLeft", fill: "#6B6B6B", fontSize: 10 }}
+              />
+              <YAxis
+                yAxisId="usd"
+                orientation="right"
+                {...axis}
+                width={52}
+                tickFormatter={(v: number) => `$${v.toFixed(0)}`}
+                label={{ value: "USD", angle: 90, position: "insideRight", fill: "#6B6B6B", fontSize: 10 }}
+              />
+              <Tooltip
+                cursor={{ stroke: "#6B6B6B", strokeDasharray: "3 3" }}
+                content={({ active, label, payload }) => {
+                  if (!active || !payload?.length) return null;
+                  const row = payload[0]?.payload as {
+                    cum_sol?: number; cum_usd?: number; sol?: number; usd?: number; day_pct?: number | null;
+                  };
+                  const pct = row?.day_pct;
+                  return (
+                    <ChartTip
+                      title={String(label)}
+                      rows={[
+                        {
+                          label: "Cum SOL",
+                          value: fmtSol(row?.cum_sol),
+                          tone: (row?.cum_sol ?? 0) >= 0 ? "ok" : "danger",
+                        },
+                        {
+                          label: "Cum USD",
+                          value: fmtUsd(row?.cum_usd),
+                          tone: (row?.cum_usd ?? 0) >= 0 ? "accent" : "danger",
+                        },
+                        {
+                          label: "Day",
+                          value: withPct(fmtSol(row?.sol), pct),
+                          tone: (row?.sol ?? 0) >= 0 ? "ok" : "danger",
+                        },
+                      ]}
+                    />
+                  );
+                }}
+              />
+              <Area
+                yAxisId="sol"
+                type="monotone"
+                dataKey="cum_sol"
+                name="SOL"
+                stroke="#00FF85"
+                fill="url(#solFill)"
+                strokeWidth={2}
+              />
+              <Area
+                yAxisId="usd"
+                type="monotone"
+                dataKey="cum_usd"
+                name="USD"
+                stroke="#1E90FF"
+                fill="transparent"
+                strokeWidth={2}
+                strokeDasharray="4 3"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
       </div>
     </div>
   );
@@ -192,7 +195,7 @@ export function ExitsChart({ data }: { data: HistorySnap["exits"] }) {
         />
         <Bar dataKey="pnl" name="Day PnL" radius={[2, 2, 0, 0]}>
           {data.map((row, i) => (
-            <Cell key={i} fill={(row.pnl as number) >= 0 ? "#3ecf8e" : "#e06c75"} />
+            <Cell key={i} fill={(row.pnl as number) >= 0 ? "#00FF85" : "#FF4D6A"} />
           ))}
         </Bar>
       </BarChart>

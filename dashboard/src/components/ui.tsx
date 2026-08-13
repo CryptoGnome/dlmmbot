@@ -2,21 +2,21 @@ import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 
 export function Panel({
-  title, children, className, right,
+  title, children, className, right, bodyClassName,
 }: {
-  title?: string; children: ReactNode; className?: string; right?: ReactNode;
+  title?: string; children: ReactNode; className?: string; right?: ReactNode; bodyClassName?: string;
 }) {
   return (
     <section className={cn("panel flex flex-col", className)}>
       {title && (
-        <header className="flex items-center justify-between border-b border-grid px-3 py-1.5">
+        <header className="flex shrink-0 items-center justify-between border-b border-grid px-3 py-1.5">
           <h2 className="text-[11px] font-semibold tracking-[0.14em] text-muted uppercase">
             {title}
           </h2>
           {right}
         </header>
       )}
-      <div className="flex-1 p-3">{children}</div>
+      <div className={cn("min-h-0 flex-1 p-3", bodyClassName)}>{children}</div>
     </section>
   );
 }
@@ -87,7 +87,7 @@ export function RangeTabs({
           onClick={() => onChange(o)}
           className={cn(
             "px-2.5 py-1 text-[10px] tracking-wider uppercase transition-colors",
-            value === o ? "bg-accent text-bg" : "text-muted hover:text-fg",
+            value === o ? "bg-ok text-bg" : "text-muted hover:text-hover",
           )}
         >
           {o}

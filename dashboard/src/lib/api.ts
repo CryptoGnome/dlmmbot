@@ -60,6 +60,44 @@ export async function fetchHistory(range: RangeKey): Promise<HistorySnap> {
   return data;
 }
 
+export type FlatConfig = Record<string, string | number | boolean | string[] | null>;
+
+export async function fetchConfig(): Promise<FlatConfig> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/config${q}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`config ${res.status}`);
+  const data = await res.json() as { config: FlatConfig };
+  return data.config;
+}
+
+export async function patchConfig(updates: Record<string, unknown>): Promise<{
+  applied: string[];
+  config: FlatConfig;
+}> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/config${q}`, {
+    method: "PATCH",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ updates }),
+  });
+  const data = await res.json() as { applied?: string[]; config?: FlatConfig; error?: string };
+  if (!res.ok) throw new Error(data.error ?? `config patch ${res.status}`);
+  return { applied: data.applied ?? [], config: data.config ?? {} };
+}
+
+export type EnvRow = { key: string; set: boolean; secret: boolean; value: string | null };
+
+export async function fetchEnv(): Promise<EnvRow[]> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/env${q}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`env ${res.status}`);
+  const data = await res.json() as { env: EnvRow[] };
+  return data.env;
+}
+
 export type LiveStatus = "connecting" | "open" | "closed";
 
 type LiveHandlers = {

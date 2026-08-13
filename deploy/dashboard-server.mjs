@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * LAN ops dashboard — static SPA + read-only JSON API + live WebSocket.
+ * LAN ops dashboard — static SPA + JSON API + live WebSocket.
  *   DASH_TOKEN=… node deploy/dashboard-server.mjs
  *   http://HOST:8787/?token=…
  *   ws://HOST:8787/ws?token=…
@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { buildLiveBookSnapshot } from "./lib/live-book-snapshot.mjs";
 import { buildHistorySnapshot } from "./lib/history-snapshot.mjs";
+import { applyConfigUpdates, flattenConfig, parseConfig, readEnvMasked } from "./lib/config-edit.mjs";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const root = resolve(process.env.FARMER_ROOT ?? resolve(__dir, ".."));
@@ -60,6 +61,22 @@ function sendJson(res, status, body) {
   res.end(raw);
 }
 
+function readBody(req) {
+  return new Promise((resolveBody, reject) => {
+    const chunks = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => {
+      try {
+        const raw = Buffer.concat(chunks).toString("utf8");
+        resolveBody(raw ? JSON.parse(raw) : {});
+      } catch (e) {
+        reject(e);
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
 function sendFile(res, path) {
   try {
     const data = readFileSync(path);
@@ -75,14 +92,14 @@ function allowRange(range) {
   return range === "7d" || range === "30d" || range === "all" ? range : "30d";
 }
 
-const server = createServer((req, res) => {
+const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Headers": "Authorization, Content-Type",
-      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, PATCH, OPTIONS",
     });
     res.end();
     return;
@@ -107,6 +124,36 @@ const server = createServer((req, res) => {
     const allowed = allowRange(url.searchParams.get("range") ?? "30d");
     try {
       sendJson(res, 200, buildHistorySnapshot(root, allowed));
+    } catch (e) {
+      sendJson(res, 500, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/config" && req.method === "GET") {
+    try {
+      sendJson(res, 200, { config: flattenConfig(parseConfig(root)) });
+    } catch (e) {
+      sendJson(res, 500, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/config" && req.method === "PATCH") {
+    try {
+      const body = await readBody(req);
+      const updates = body?.updates ?? body;
+      const result = applyConfigUpdates(root, updates);
+      sendJson(res, 200, result);
+    } catch (e) {
+      sendJson(res, 400, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/env" && req.method === "GET") {
+    try {
+      sendJson(res, 200, { env: readEnvMasked() });
     } catch (e) {
       sendJson(res, 500, { error: e.message ?? String(e) });
     }
