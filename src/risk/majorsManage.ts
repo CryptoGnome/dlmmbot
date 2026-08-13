@@ -14,6 +14,7 @@ export function manageForSleeve(sleeve: Sleeve) {
     above_range_missed_sustain_min: mj.above_range_missed_sustain_min,
     rotation_fee_daily_min_pct: mj.rotation_fee_daily_min_pct,
     rotation_vol_30m_min_usd: mj.rotation_vol_30m_min_usd,
+    rotation_polls: mj.rotation_polls ?? m.rotation_polls,
     below_range_grace_min: mj.below_range_grace_min,
     claim_min_sol: mj.claim_min_sol,
     profit_lock_enabled: mj.profit_lock_enabled,

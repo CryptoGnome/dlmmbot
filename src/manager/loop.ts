@@ -411,12 +411,12 @@ export async function managePositions(exec: Executor): Promise<void> {
       const decayed = feeDaily < pm.rotation_fee_daily_min_pct || mark.vol30mUsd < pm.rotation_vol_30m_min_usd;
       const streak = decayed ? (decayStreak.get(pos.id) ?? 0) + 1 : 0;
       decayStreak.set(pos.id, streak);
-      if (streak >= m.rotation_polls) {
+      if (streak >= pm.rotation_polls) {
         clearRangeTimers(pos.id);
-        const { exitSol } = await closeAndReport(exec, pos, "P2_rotation", config().exec.exit_slippage_bps, "close", `rotation: fee/volume decay (fee ${feeDaily.toFixed(1)}%/d, vol30m $${mark.vol30mUsd.toFixed(0)})`);
+        const { exitSol } = await closeAndReport(exec, pos, "P2_rotation", config().exec.exit_slippage_bps, "close", `rotation: fee/volume decay (fee ${feeDaily.toFixed(3)}%/d, vol30m $${mark.vol30mUsd.toFixed(0)})`);
         bankProfit(pos, exitSol, "P2 rotation");
         recordDecision(pos.tokenMint, pos.poolAddress, "exited", "P2_rotation_decay", null, { feeDaily, vol30m: mark.vol30mUsd, streak });
-        console.log(`[manager] pos#${pos.id} ${pos.symbol}: rotated out (fee ${feeDaily.toFixed(1)}%/d, vol30m $${mark.vol30mUsd.toFixed(0)})`);
+        console.log(`[manager] pos#${pos.id} ${pos.symbol}: rotated out (fee ${feeDaily.toFixed(3)}%/d, vol30m $${mark.vol30mUsd.toFixed(0)})`);
         continue;
       }
 

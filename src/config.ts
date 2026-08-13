@@ -108,6 +108,8 @@ export interface Config {
     claim_min_sol: number; fee_compound: boolean; profit_lock_enabled: boolean;
     max_age_h: number; above_range_sustain_min: number; above_range_missed_sustain_min: number;
     rotation_fee_daily_min_pct: number; rotation_vol_30m_min_usd: number;
+    /** Consecutive decay polls before P2 (defaults to manage.rotation_polls if unset). */
+    rotation_polls: number;
   };
   rotation: {
     alpha_slots: number; alpha_score_min: number;
