@@ -8,13 +8,21 @@ Scans hot SOL-quoted meme pools, vets the token, opens a **one-sided SOL** LP be
 
 ## Setup guide (recommended)
 
-The full, easy-to-follow install walkthrough is hosted as a web page:
+A proper HTML setup walkthrough lives in [`docs/`](docs/) (step cards, sticky TOC, copy buttons).
 
-**[Open the Setup Guide →](https://cryptognome.github.io/meteora-farmer/)**
+**View it**
 
-(Private key export, RPC, Jupiter, paper → live — all there.)
+1. **Locally (works now):** open [`docs/index.html`](docs/index.html) in your browser  
+   (or from the repo root: `start docs/index.html` on Windows / `open docs/index.html` on Mac).
+2. **GitHub Pages** (nice public URL): this repo is **private**, and free GitHub plans only offer Pages on **public** repos. Either:
+   - make the repo public, then **Settings → Pages → Source: GitHub Actions**, or  
+   - keep it private and use a free host (Cloudflare Pages / Netlify / Vercel) pointed at the `docs/` folder.
 
-If Pages isn’t live yet: repo **Settings → Pages → Source: GitHub Actions**, then re-run the **Deploy docs** workflow (or push any change under `docs/`).
+Once Pages is on, the URL will be:
+
+`https://cryptognome.github.io/meteora-farmer/`
+
+The **Deploy docs** workflow (`.github/workflows/pages.yml`) is already in the repo.
 
 ---
 
