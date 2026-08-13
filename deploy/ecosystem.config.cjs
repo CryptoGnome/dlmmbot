@@ -19,6 +19,11 @@ module.exports = {
       interpreter: "bash",
       autorestart: true,
       restart_delay: 10000,
+      // Keep pm2 on PATH even when PM2 restarts this watcher with a stripped env.
+      env: {
+        PATH: `${process.env.HOME}/.npm-global/bin:${process.env.HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin`,
+        PM2_BIN: `${process.env.HOME}/.npm-global/bin/pm2`,
+      },
     },
   ],
 };

@@ -24,7 +24,29 @@ POLL_SECONDS="${DEPLOY_POLL_SECONDS:-30}"
 APP_NAME="${DEPLOY_APP_NAME:-meteora-farmer}"
 BRANCH="${DEPLOY_BRANCH:-master}"
 
-echo "[deploy] watching origin/$BRANCH every ${POLL_SECONDS}s (app: $APP_NAME)"
+# PM2 under a stripped PATH (common after `pm2 restart meteora-deploy`) used to
+# print "deployed" while never restarting the farmer. Resolve an absolute binary
+# up front; prefer explicit PM2_BIN, then PATH, then known install locations.
+resolve_pm2() {
+  if [ -n "${PM2_BIN:-}" ] && [ -x "$PM2_BIN" ]; then printf '%s\n' "$PM2_BIN"; return 0; fi
+  if command -v pm2 >/dev/null 2>&1; then command -v pm2; return 0; fi
+  local c
+  for c in \
+    "${HOME}/.npm-global/bin/pm2" \
+    "${HOME}/.local/share/pnpm/pm2" \
+    /usr/local/bin/pm2 \
+    /usr/bin/pm2
+  do
+    if [ -x "$c" ]; then printf '%s\n' "$c"; return 0; fi
+  done
+  return 1
+}
+
+PM2=$(resolve_pm2) || {
+  echo "[deploy] FATAL: pm2 not found (set PM2_BIN or install pm2 on PATH) — exiting so PM2 can restart this watcher"
+  exit 1
+}
+echo "[deploy] watching origin/$BRANCH every ${POLL_SECONDS}s (app: $APP_NAME, pm2: $PM2)"
 
 # Skips are steady states, not events: log a reason only when it changes, so a
 # day on a feature branch leaves one line instead of 2,880.
@@ -38,6 +60,22 @@ note_skip() {
 # Origin head whose build failed. Held so a broken push is retried when a fix
 # lands on top of it, not re-typechecked every poll forever.
 last_failed=""
+# Tests passed + pull applied but pm2 restart failed — keep retrying while idle.
+pending_restart=""
+
+restart_app() {
+  echo "[deploy] typecheck + tests passed — restarting $APP_NAME via $PM2"
+  if "$PM2" restart "$APP_NAME" --update-env; then
+    echo "[deploy] deployed $(git rev-parse --short HEAD): $(git log -1 --pretty=%s)"
+    pending_restart=""
+    last_failed=""
+    last_skip=""
+    return 0
+  fi
+  echo "[deploy] ERROR: $PM2 restart $APP_NAME failed — will retry every ${POLL_SECONDS}s (checkout stays on $(git rev-parse --short HEAD))"
+  pending_restart=1
+  return 1
+}
 
 while true; do
   if ! git fetch origin "$BRANCH" --quiet 2>/dev/null; then
@@ -55,6 +93,10 @@ while true; do
   REMOTE=$(git rev-parse "origin/$BRANCH")
 
   if [ "$LOCAL" = "$REMOTE" ]; then
+    if [ -n "$pending_restart" ]; then
+      restart_app || true
+      sleep "$POLL_SECONDS"; continue
+    fi
     last_skip=""
     sleep "$POLL_SECONDS"; continue
   fi
@@ -112,10 +154,7 @@ while true; do
   fi
 
   if [ -z "$FAILURE" ]; then
-    echo "[deploy] typecheck + tests passed — restarting $APP_NAME"
-    pm2 restart "$APP_NAME" --update-env
-    echo "[deploy] deployed $(git rev-parse --short HEAD): $(git log -1 --pretty=%s)"
-    last_failed=""
+    restart_app || true
   else
     # `pm2 restart` runs the WORKING TREE, and the pull above already moved it
     # onto the bad commit. Leaving it there means the next restart from ANY
