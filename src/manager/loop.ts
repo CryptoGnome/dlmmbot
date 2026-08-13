@@ -28,8 +28,7 @@ import { vetToken } from "../vetting/vet.js";
 
 // STRATEGY.md §4 — P0–P5 state machine. Live: P0 (TVL/price/rugcheck + GMGN
 // holder-watch), P1–P5, escape hatch, follow, micro/majors sleeves, residual
-// sweep, heartbeat. Not implemented: Zap SDK (manual Jupiter path), second
-// tranche, meme compound/hybrid fee dest.
+// sweep, heartbeat. Not implemented: second tranche, meme compound/hybrid fee dest.
 
 const HALT_FILE = resolve(process.cwd(), "HALT");
 const LOCK_FILE = resolve(process.cwd(), "data", "farmer.lock");
@@ -46,6 +45,17 @@ const decayStreak = new Map<number, number>();        // P2 consecutive decay po
 const rugcheckLastCheck = new Map<number, number>();  // P0 rugcheck-flip throttle
 const everInRange = new Set<number>();                // P3 win-vs-missed classification
 const fellDeep = new Set<number>();                   // escape hatch armed (also persisted)
+
+/** Clear in-memory per-position timers for unit tests (ids reuse across memory DB resets). */
+export function resetManagerStateForTests(): void {
+  aboveRangeSince.clear();
+  belowRangeSince.clear();
+  tvlHistory.clear();
+  decayStreak.clear();
+  rugcheckLastCheck.clear();
+  everInRange.clear();
+  fellDeep.clear();
+}
 
 // Watchdog / breaker state.
 let lastHealthyTick = Date.now();
@@ -462,10 +472,24 @@ export async function managePositions(exec: Executor): Promise<void> {
             (getDb().prepare("SELECT fell_deep AS f FROM positions WHERE id = ?").get(pos.id) as { f: number } | undefined)?.f === 1;
           if (armed) {
             clearRangeTimers(pos.id);
+            let rebalanced = false;
+            if (exec.escapeRebalance) {
+              try {
+                rebalanced = (await exec.escapeRebalance(pos, config().exec.exit_slippage_bps)).ok;
+              } catch (e) {
+                console.error(`[manager] pos#${pos.id} escape rebalance failed:`, (e as Error).message);
+              }
+            }
+            if (rebalanced) {
+              getDb().prepare("UPDATE positions SET fell_deep = 0 WHERE id = ?").run(pos.id);
+              await alert("close", `${pos.symbol} pos#${pos.id}: escape hatch rebalance — range reset in place`);
+              recordDecision(pos.tokenMint, pos.poolAddress, "exited", "escape_rebalance", null, { frac, mark, sleeve });
+              continue;
+            }
             const { exitSol } = await closeAndReport(exec, pos, "escape", config().exec.exit_slippage_bps, "close",
-              "escape hatch: deep dip recovered to range top — reset");
+              "escape hatch: deep dip recovered to range top — reset (close fallback)");
             bankProfit(pos, exitSol, "escape hatch");
-            recordDecision(pos.tokenMint, pos.poolAddress, "exited", "escape_hatch", null, { frac, mark });
+            recordDecision(pos.tokenMint, pos.poolAddress, "exited", "escape_hatch", null, { frac, mark, sleeve });
             continue;
           }
         }

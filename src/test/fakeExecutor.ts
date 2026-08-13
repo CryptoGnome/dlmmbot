@@ -7,6 +7,8 @@ export class FakeExecutor implements Executor {
   readonly mode: "paper" | "live";
   marks = new Map<number, PositionMark>();
   closed: Array<{ id: number; reason: ExitReason }> = [];
+  escapeRebalanced: number[] = [];
+  withdrawn: Array<{ id: number; bps: number }> = [];
   opens: OpenParams[] = [];
   wallet = 20;
   openError: Error | null = null;
@@ -70,8 +72,16 @@ export class FakeExecutor implements Executor {
     return { claimedSol: 0, txCostSol: 0 };
   }
 
-  async withdraw(): Promise<{ withdrawnSol: number; txCostSol: number }> {
-    return { withdrawnSol: 0, txCostSol: 0 };
+  async withdraw(position: Position, bps: number): Promise<{ withdrawnSol: number; txCostSol: number }> {
+    this.withdrawn.push({ id: position.id, bps });
+    getDb().prepare("UPDATE positions SET profit_lock_fires = profit_lock_fires + 1 WHERE id = ?").run(position.id);
+    return { withdrawnSol: 0.09, txCostSol: 0.001 };
+  }
+
+  async escapeRebalance(position: Position, _slippageBps: number): Promise<{ ok: boolean }> {
+    this.escapeRebalanced.push(position.id);
+    getDb().prepare("UPDATE positions SET fell_deep = 0 WHERE id = ?").run(position.id);
+    return { ok: true };
   }
 
   async close(position: Position, reason: ExitReason, _slippageBps: number): Promise<{ exitSol: number; txCostSol: number }> {

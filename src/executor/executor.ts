@@ -37,6 +37,8 @@ export interface Executor {
   withdraw(position: Position, bps: number): Promise<{ withdrawnSol: number; txCostSol: number }>;
   /** Full exit: withdraw 100%, zap token side to SOL, close accounts. */
   close(position: Position, reason: ExitReason, slippageBps: number): Promise<{ exitSol: number; txCostSol: number }>;
+  /** In-place escape hatch reshape (live: Zap rebalance; paper: simulated). */
+  escapeRebalance?(position: Position, slippageBps: number): Promise<{ ok: boolean }>;
   walletSol(): Promise<number>;
   /**
    * Cheapest possible "is the RPC answering" check — returns the current slot.

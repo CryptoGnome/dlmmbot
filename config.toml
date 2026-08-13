@@ -271,7 +271,7 @@ displacement_max_per_6h = 2
 
 [exec]                     # STRATEGY.md §3.6/§8
 mode = "live"                    # paper | live (live also requires FARMER_MODE=live env)
-use_zap = false                  # not wired — live uses manual remove + Jupiter swap
+use_zap = true                   # Meteora Zap SDK (Jupiter V6); falls back to lite swap on failure
 exit_slippage_bps = 50
 safety_exit_slippage_bps = 1000
 tx_retries = 3

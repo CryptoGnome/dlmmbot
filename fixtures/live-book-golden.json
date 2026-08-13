@@ -35,7 +35,7 @@
       "id": "escape_winner_value_frac_floor",
       "symbol": "ESC",
       "exit_reason": "escape",
-      "notes": "Deep traversal then recovery to top slice; value_frac stayed above P1 floor.",
+      "notes": "Deep traversal then recovery to top slice; value_frac stayed above P1 floor — in-place rebalance, no close.",
       "entry": {
         "entry_sol": 0.3,
         "entry_price": 1.0,
@@ -59,7 +59,7 @@
           "vol_30m_usd": 90000
         }
       ],
-      "expect": { "exit_reason": "escape" }
+      "expect": { "escape_rebalance": true, "fell_deep": 0 }
     },
     {
       "id": "p3_missed_10m_churn",

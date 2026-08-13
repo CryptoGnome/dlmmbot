@@ -8,12 +8,14 @@ import BN from "bn.js";
 import { createRequire } from "node:module";
 import type * as DLMMTypes from "@meteora-ag/dlmm";
 import type { LbPosition } from "@meteora-ag/dlmm";
-import { config, env, isLive } from "../config.js";
+import { config, env, isLive, SOL_MINT } from "../config.js";
 import { getDb, now } from "../db/db.js";
 import { fetchPool } from "../scanner/meteora.js";
 import type { ExitReason, Position } from "../types.js";
 import type { Executor, OpenParams, PositionMark } from "./executor.js";
 import { quoteToSolLamports, swapToSolEscalating } from "./jupiter.js";
+import { zapToSolEscalating } from "./zap.js";
+import { runEscapeRebalance } from "./rebalance.js";
 import { loadKeypair } from "./wallet.js";
 
 // CJS require (see reconcile.ts): the SDK's ESM build crashes on anchor's
@@ -61,9 +63,8 @@ const StrategyType = dlmmMod.StrategyType;
 //  - Ranges wider than 69 bins split across multiple position accounts, SOL
 //    allocated per chunk by the same linear bid-ask weighting the paper
 //    executor simulates.
-//  - Exits: removeLiquidity(100%, shouldClaimAndClose) then Jupiter-swap any
-//    token-side proceeds to SOL (manual zap; @meteora-ag/zap-sdk optional
-//    upgrade later).
+//  - Exits: removeLiquidity(100%, shouldClaimAndClose) then token→SOL via Zap
+//    SDK (Jupiter V6) when use_zap=true, else manual Jupiter lite swap.
 //  - exitSol / claim values are recorded from pre-close marks and quotes —
 //    good ledger accuracy; exact fill audit belongs to the tx history.
 // ============================================================================
@@ -237,6 +238,28 @@ export class LiveExecutor implements Executor {
       }
     }
     throw lastErr ?? new Error("tx failed");
+  }
+
+  /** Token-side → SOL after remove/claim. Zap SDK first when enabled; manual Jupiter fallback. */
+  private async tokenToSol(
+    mint: string, amountRaw: bigint, slippageBps: number,
+  ): Promise<{ signature: string } | null> {
+    if (amountRaw <= 0n || mint === SOL_MINT) return null;
+    const sendTx = (tx: Transaction) => this.send(tx);
+    if (config().exec.use_zap) {
+      try {
+        const zap = await zapToSolEscalating(this.wallet, mint, amountRaw, slippageBps, sendTx);
+        if (zap) return { signature: zap.signature };
+      } catch (e) {
+        console.error("[live] zap path failed, falling back to manual jupiter:", (e as Error).message.split("\n")[0]);
+      }
+    }
+    const manual = await swapToSolEscalating(this.connection, this.wallet, mint, amountRaw, slippageBps)
+      .catch((e) => {
+        console.error("[live] manual swap failed:", (e as Error).message.split("\n")[0]);
+        return null;
+      });
+    return manual ? { signature: manual.signature } : null;
   }
 
   /** Our stored on-chain position accounts for a DB position row. */
@@ -517,12 +540,7 @@ export class LiveExecutor implements Executor {
 
     // Bank policy: token-side fees -> SOL immediately (§4 P4).
     if (feeXRaw > 0n) {
-      const swap = await swapToSolEscalating(
-        this.connection, this.wallet, position.tokenMint, feeXRaw, config().exec.exit_slippage_bps
-      ).catch((e) => {
-        console.error("[live] fee swap failed (residual sweep will retry):", (e as Error).message);
-        return null;
-      });
+      const swap = await this.tokenToSol(position.tokenMint, feeXRaw, config().exec.exit_slippage_bps);
       if (swap) sigs.push(swap.signature);
     }
 
@@ -549,7 +567,12 @@ export class LiveExecutor implements Executor {
     const { priceYperX, positions } = await this.ourLbPositions(position);
     const xDecimals = pool.tokenX.mint.decimals;
     const before = this.valueOf(positions, priceYperX, xDecimals);
+    let xToSwap = 0n;
+    for (const p of positions) {
+      xToSwap += BigInt(Math.floor(Number(p.positionData.totalXAmount) * bps / 10_000));
+    }
 
+    const sigs: string[] = [];
     for (const p of positions) {
       const txs = await pool.removeLiquidity({
         user: this.wallet.publicKey,
@@ -559,15 +582,49 @@ export class LiveExecutor implements Executor {
         bps: new BN(bps),
         shouldClaimAndClose: false,
       });
-      for (const tx of txs) await this.send(tx);
+      for (const tx of txs) sigs.push(await this.send(tx));
     }
+    if (xToSwap > 0n) {
+      const swap = await this.tokenToSol(position.tokenMint, xToSwap, config().exec.exit_slippage_bps);
+      if (swap) sigs.push(swap.signature);
+    }
+
     const withdrawn = (before.valueSol - before.feesSol) * (bps / 10_000);
+    const measured = sigs.length ? await this.walletDelta(sigs) : null;
     const db = getDb();
     db.prepare("INSERT INTO events (position_id, ts, type, sol_delta, tx_cost_sol, detail_json) VALUES (?, ?, 'profit_lock', ?, ?, ?)")
-      .run(position.id, now(), withdrawn, 0.001, JSON.stringify({ bps }));
+      .run(position.id, now(), withdrawn, 0.001, JSON.stringify({ bps, xToSwapRaw: xToSwap.toString(), measuredSol: measured, sigs }));
     db.prepare("UPDATE positions SET entry_sol = entry_sol * (1 - ? / 10000.0), profit_lock_fires = profit_lock_fires + 1 WHERE id = ?")
       .run(bps, position.id);
-    return { withdrawnSol: withdrawn, txCostSol: 0.001 };
+    return { withdrawnSol: measured ?? withdrawn, txCostSol: 0.001 };
+  }
+
+  async escapeRebalance(position: Position, slippageBps: number): Promise<{ ok: boolean }> {
+    const { active, positions } = await this.ourLbPositions(position);
+    const res = await runEscapeRebalance({
+      connection: this.connection,
+      wallet: this.wallet,
+      poolAddress: position.poolAddress,
+      minBinId: position.minBinId,
+      maxBinId: position.maxBinId,
+      activeBinId: active,
+      lbPositions: positions,
+      swapSlippageBps: slippageBps,
+      send: (tx) => this.send(tx),
+    });
+    if (!res.ok) return { ok: false };
+
+    const db = getDb();
+    db.prepare("UPDATE positions SET min_bin_id = ?, max_bin_id = ?, fell_deep = 0 WHERE id = ?")
+      .run(res.newMinBinId, res.newMaxBinId, position.id);
+    db.prepare(
+      "UPDATE position_accounts SET min_bin_id = ?, max_bin_id = ? WHERE position_id = ?"
+    ).run(res.newMinBinId, res.newMaxBinId, position.id);
+    db.prepare(
+      "INSERT INTO events (position_id, ts, type, tx_sig, detail_json) VALUES (?, ?, 'rebalance', ?, ?)"
+    ).run(position.id, now(), res.sigs[0] ?? null, JSON.stringify({ kind: "escape_rebalance", sigs: res.sigs, bins: [res.newMinBinId, res.newMaxBinId] }));
+    console.log(`[live] pos#${position.id} ${position.symbol}: escape rebalance bins [${res.newMinBinId},${res.newMaxBinId}]`);
+    return { ok: true };
   }
 
   async close(position: Position, reason: ExitReason, slippageBps: number): Promise<{ exitSol: number; txCostSol: number }> {
@@ -600,12 +657,7 @@ export class LiveExecutor implements Executor {
     // rent — so its signature must reach the delta or the close reads as a
     // total loss.
     if (xToSwap > 0n) {
-      const swap = await swapToSolEscalating(
-        this.connection, this.wallet, position.tokenMint, xToSwap, slippageBps
-      ).catch((e) => {
-        console.error("[live] close swap failed — residual sweep will retry:", (e as Error).message);
-        return null;
-      });
+      const swap = await this.tokenToSol(position.tokenMint, xToSwap, slippageBps);
       if (swap) sigs.push(swap.signature);
     }
 
@@ -726,16 +778,9 @@ export class LiveExecutor implements Executor {
         ).get(info.mint) as { id: number; symbol: string } | undefined;
         const symbol = owner?.symbol ?? info.mint.slice(0, 8);
         try {
-          const res = await swapToSolEscalating(
-            this.connection, this.wallet, info.mint, raw, config().exec.exit_slippage_bps
-          );
+          const res = await this.tokenToSol(info.mint, raw, config().exec.exit_slippage_bps);
           if (!res) continue;
-          // Credit it back to the position that stranded it. A sweep is a
-          // failed claim/close zap-out arriving late, not found money: BUTTHOLE
-          // pos#10's failed exit swap came back as 0.0254 SOL, 7% of that
-          // position's entire return, and used to land in `ledger` attributed
-          // to nothing. Measured, not quoted — the quote is what we asked for.
-          const soldSol = (await this.walletDelta([res.signature])) ?? res.outLamports / 1e9;
+          const soldSol = (await this.walletDelta([res.signature])) ?? 0;
           if (owner) {
             db.prepare("UPDATE positions SET recovered_sol = recovered_sol + ? WHERE id = ?")
               .run(soldSol, owner.id);

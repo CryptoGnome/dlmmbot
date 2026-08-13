@@ -56,8 +56,9 @@ src/
 ├── executor/
 │   ├── executor.ts    Executor interface (manager is mode-blind)
 │   ├── paper.ts       simulated fills/fees vs live pool data      (§8)
-│   ├── live.ts        @meteora-ag/dlmm + Jupiter manual zap-out   (§3.6)
-│   ├── jupiter.ts     swap-to-SOL + residual sweep helper
+│   ├── live.ts        @meteora-ag/dlmm + Zap SDK / Jupiter zap-out   (§3.6)
+│   ├── jupiter.ts     manual Jupiter lite swap (fallback)
+│   ├── zap.ts         Meteora Zap SDK → Jupiter V6 when use_zap
 │   └── wallet.ts      keypair load
 ├── manager/
 │   ├── loop.ts        P0–P5 + entry pipeline + majors entry        (§4)
@@ -84,7 +85,7 @@ src/
 Live on `gn0meserver` since 2026-08-07. Paper promotion is historical; do not
 run a second loop against the same wallet. Full checklist: [STRATEGY.md §10](STRATEGY.md#10-roadmap-checklist-2026-08-13).
 
-**Built:** live DLMM executor (manual Jupiter zap-out), wallet-delta PnL, P0–P5,
+**Built:** live DLMM executor (Zap SDK + manual fallback), wallet-delta PnL, P0–P5,
 escape hatch, follow mode, GMGN holder-watch P0, smart-money scoring, funding-
 cluster/sniper vetting, cluster brake, open slippage fix, range-shape
 instrumentation, three-tier sleeves (micro / meme / majors), residual sweep,
@@ -93,7 +94,7 @@ Telegram + heartbeat, auto-deploy.
 **Do not ship (decided):** meme BidAsk→Spot/Curve ([RANGE-SHAPE-DECISION.md](RANGE-SHAPE-DECISION.md)),
 SOL-USDC/stable pairs, weaken P1, house-money, more slots.
 
-**Deferred:** `@meteora-ag/zap-sdk` (`use_zap` unused), second tranche,
+**Deferred:** second tranche,
 meme compound/hybrid fee dest, local dashboard, weight auto-tuning, RugCheck
 paid WS, multi-wallet sharding, majors continuous Kelly.
 

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { managePositions } from "../manager/loop.js";
+import { managePositions, resetManagerStateForTests } from "../manager/loop.js";
 import { txErrorDetail } from "../executor/live.js";
 import { FakeExecutor } from "../test/fakeExecutor.js";
 import { installConfig, restoreConfig } from "../test/config.js";
@@ -30,6 +30,7 @@ const fixtures = JSON.parse(
 describe("live-book golden fixtures", () => {
   beforeEach(() => {
     useMemoryDb();
+    resetManagerStateForTests();
     installConfig((c) => {
       c.manage.stop_loss_frac = 0.75;
       c.manage.above_range_sustain_min = 10;
@@ -90,7 +91,17 @@ describe("live-book golden fixtures", () => {
         await managePositions(exec);
       }
 
-      expect(exec.closed[0]?.reason).toBe(c.expect.exit_reason);
+      if (c.expect.exit_reason) {
+        expect(exec.closed[0]?.reason).toBe(c.expect.exit_reason);
+      }
+      if (c.expect.escape_rebalance) {
+        expect(exec.escapeRebalanced).toEqual([id]);
+        expect(exec.closed).toEqual([]);
+      }
+      if (c.expect.fell_deep !== undefined) {
+        const row = getDb().prepare("SELECT fell_deep FROM positions WHERE id = ?").get(id) as { fell_deep: number };
+        expect(row.fell_deep).toBe(c.expect.fell_deep);
+      }
       if (c.expect.state) {
         const row = getDb().prepare("SELECT state FROM positions WHERE id = ?").get(id) as { state: string };
         expect(row.state).toBe(c.expect.state);

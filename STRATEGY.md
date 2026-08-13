@@ -83,10 +83,11 @@ Default shape — **Tux entry**: one-sided SOL, bid-ask, below current price.
 5. `initializePositionAndAddLiquidityByStrategy` with `StrategyType.BidAsk`, `totalXAmount = 0` (SOL side only).
 6. Tx policy: active-bin slippage `[5%]` — maps to `ceil(pct / (binStep/100))` bins (5 bins at step 100). Was `[1%]` (=1 bin at step 100), which produced 100% of live `ExceededBinSlippageTolerance` open failures. Prefer a failed tx over a bad fill still holds for *swap* exits; for LP open, rebuild-on-slippage + a few bins of tolerance is correct. Priority fee auto from recent fees; program sim failures do not resend the same tx; `[3]` network retries, then abandon and re-quote.
 6b. **Exit/rebalance execution — Zap SDK vs manual path**
-   - **Live today:** manual `removeLiquidity(shouldClaimAndClose)` + Jupiter swap-to-SOL (`use_zap = false`; Zap SDK not wired).
-   - **Planned (deferred):** `@meteora-ag/zap-sdk` — `zapOutThroughJupiter` for exits, `rebalanceDlmmPosition` for P3 re-entries and escape hatch.
+   - **Live (`use_zap = true`):** after `removeLiquidity`, token-side → SOL via `@meteora-ag/zap-sdk` `buildJupiterSwapTransaction` (Jupiter V6 instruction API on `api.jup.ag`). Falls back to lite Jupiter swap on failure.
+   - **Manual fallback (`use_zap = false`):** `removeLiquidity(shouldClaimAndClose)` + lite Jupiter swap.
    - Normal exits `[50 bps]` swap slippage; P0 safety exits `[1000 bps]` (speed over price).
-   - Partial profit locks use plain `removeLiquidity(bps)` (no close) — DLMM supports fractional withdrawal.
+   - Partial profit locks: `removeLiquidity(bps)` then zap withdrawn token side → SOL via Zap SDK (same swap path as exits).
+   - **Escape hatch:** `rebalanceDlmmPosition` reshapes in place (preserve width, anchor top at active bin). Falls back to close + re-enter if Zap fails or `use_zap = false`.
 7. **Second tranche** `[off by default]`: for score ≥ `[85]`, an additional wider "worst-case" range (Gmet's dual-range), sized at `[50%]` of the primary, down to fib 0.786-below-the-low.
 
 ## 4. Position management — the state machine
@@ -227,6 +228,8 @@ Tables:
 - Range-shape instrumentation (`position_marks`, per-bin open/claim/close snapshots)
 - Three-tier sleeves: micro loss-budget caps, meme (main), majors discovery + spot + TA entry + separate manage
 - Residual token sweep, Telegram alerts, out-of-process heartbeat, config hot-reload, auto-deploy watcher
+- Zap SDK token→SOL on close/claim/sweep/profit-lock (`use_zap`, manual lite-Jupiter fallback)
+- Escape hatch in-place rebalance via `rebalanceDlmmPosition` (close fallback if Zap fails)
 - Kelly on measured wallet PnL (n≥50 on live book); fee banking only (`fee_destination = bank`, `majors.fee_compound = false`)
 
 ### Active monitoring (operational — not new builds)
@@ -246,7 +249,6 @@ Tables:
 
 ### Deferred (future build, if ever)
 
-- `@meteora-ag/zap-sdk` — config has `use_zap` but code uses manual remove + Jupiter swap today
 - Second tranche (`tranche_enabled = false`)
 - Meme `compound` / `hybrid` fee destination (only `bank` implemented)
 - Local dashboard (Express UI) — CLI `status` + live-book watch script for now

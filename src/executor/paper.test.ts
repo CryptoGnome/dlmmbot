@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { PaperExecutor } from "./paper.js";
+import { escapeRebalanceDeltas } from "./rebalance.js";
 import { installConfig, restoreConfig } from "../test/config.js";
 import { useMemoryDb, resetTestDb, insertOpenPosition } from "../test/db.js";
+import { getDb } from "../db/db.js";
 import { SOL_MINT } from "../config.js";
 import { now } from "../db/db.js";
 
@@ -94,5 +96,69 @@ describe("sweepPools / fetchPool fixtures", () => {
     expect(p?.price).toBe(0.002);
     expect(p?.extras.freezeAuthorityDisabled).toBe(true);
     restoreConfig();
+  });
+});
+
+describe("PaperExecutor profit lock + escape rebalance", () => {
+  beforeEach(() => {
+    useMemoryDb();
+    installConfig();
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      json: async () => fixturePoolJson({ current_price: 0.001 }),
+    })));
+  });
+  afterEach(() => {
+    resetTestDb();
+    restoreConfig();
+    vi.unstubAllGlobals();
+  });
+
+  function openPos(minBinId: number, maxBinId: number, entrySol = 0.4) {
+    const id = insertOpenPosition({ entrySol, minBinId, maxBinId, entryPrice: 0.001 });
+    return {
+      id, mode: "paper" as const, poolAddress: "pool1", tokenMint: "mint1", symbol: "TST",
+      trancheOf: null, entryTs: now() - 120, entryPrice: 0.001, entrySol,
+      minBinId, maxBinId, state: "open" as const, feesClaimedSol: 0, rentPaidSol: 0,
+      profitLockFires: 0, exitTs: null, exitSol: null, exitReason: null,
+    };
+  }
+
+  it("withdraw records profit_lock event and scales entry_sol", async () => {
+    const exec = new PaperExecutor();
+    const { priceToBinId } = await import("../ranges/planner.js");
+    const top = priceToBinId(0.001, 100, 6);
+    const p = openPos(top - 40, top);
+    vi.spyOn(exec, "mark").mockResolvedValue({
+      valueSol: 0.52, unclaimedFeesSol: 0, activeBinId: top, price: 0.001,
+      inRange: true, aboveRange: false, belowRange: false,
+      tvlUsd: 50_000, feeTvl30mPct: 1, vol30mUsd: 80_000,
+    });
+    const { withdrawnSol } = await exec.withdraw(p, 3000);
+    expect(withdrawnSol).toBeCloseTo(0.52 * 0.3, 5);
+    const row = getDb().prepare("SELECT entry_sol, profit_lock_fires FROM positions WHERE id = ?").get(p.id) as { entry_sol: number; profit_lock_fires: number };
+    expect(row.entry_sol).toBeCloseTo(0.4 * 0.7, 5);
+    expect(row.profit_lock_fires).toBe(1);
+    const ev = getDb().prepare("SELECT type FROM events WHERE position_id = ?").get(p.id) as { type: string };
+    expect(ev.type).toBe("profit_lock");
+  });
+
+  it("escapeRebalance reshapes bins in place", async () => {
+    const exec = new PaperExecutor();
+    const pos = openPos(100, 200);
+    vi.spyOn(exec, "mark").mockResolvedValue({
+      valueSol: 0.4, unclaimedFeesSol: 0, activeBinId: 500, price: 0.001,
+      inRange: true, aboveRange: false, belowRange: false,
+      tvlUsd: 50_000, feeTvl30mPct: 1, vol30mUsd: 80_000,
+    });
+    const { newMinBinId, newMaxBinId } = escapeRebalanceDeltas(100, 200, 500);
+    expect(await exec.escapeRebalance(pos, 50)).toEqual({ ok: true });
+    const row = getDb().prepare("SELECT min_bin_id, max_bin_id, fell_deep FROM positions WHERE id = ?").get(pos.id) as { min_bin_id: number; max_bin_id: number; fell_deep: number };
+    expect(row.min_bin_id).toBe(newMinBinId);
+    expect(row.max_bin_id).toBe(newMaxBinId);
+    expect(row.fell_deep).toBe(0);
+    const ev = getDb().prepare("SELECT type, detail_json FROM events WHERE position_id = ?").get(pos.id) as { type: string; detail_json: string };
+    expect(ev.type).toBe("rebalance");
+    expect(JSON.parse(ev.detail_json).kind).toBe("escape_rebalance");
   });
 });

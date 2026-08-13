@@ -3,6 +3,7 @@ import { fetchPool } from "../scanner/meteora.js";
 import { binIdToPrice, priceToBinId } from "../ranges/planner.js";
 import type { ExitReason, Position, RangeShape } from "../types.js";
 import type { Executor, OpenParams, PositionMark } from "./executor.js";
+import { escapeRebalanceDeltas } from "./rebalance.js";
 
 // Paper executor (STRATEGY.md §8): simulates a one-sided SOL bid-ask position
 // against LIVE pool data. Fees are estimated from the pool's realized
@@ -180,6 +181,19 @@ export class PaperExecutor implements Executor {
       "UPDATE positions SET entry_sol = entry_sol * (1 - ? / 10000.0), profit_lock_fires = profit_lock_fires + 1 WHERE id = ?"
     ).run(bps, position.id);
     return { withdrawnSol: withdrawn, txCostSol: PAPER_TX_COST_SOL };
+  }
+
+  async escapeRebalance(position: Position, _slippageBps: number): Promise<{ ok: boolean }> {
+    const mark = await this.mark(position);
+    const { newMinBinId, newMaxBinId } = escapeRebalanceDeltas(
+      position.minBinId, position.maxBinId, mark.activeBinId,
+    );
+    getDb().prepare("UPDATE positions SET min_bin_id = ?, max_bin_id = ?, fell_deep = 0 WHERE id = ?")
+      .run(newMinBinId, newMaxBinId, position.id);
+    getDb().prepare(
+      "INSERT INTO events (position_id, ts, type, detail_json) VALUES (?, ?, 'rebalance', ?)"
+    ).run(position.id, now(), JSON.stringify({ kind: "escape_rebalance", bins: [newMinBinId, newMaxBinId] }));
+    return { ok: true };
   }
 
   async close(position: Position, reason: ExitReason, _slippageBps: number): Promise<{ exitSol: number; txCostSol: number }> {

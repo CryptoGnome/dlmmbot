@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { managePositions, pollSleepMs } from "./loop.js";
+import { managePositions, pollSleepMs, resetManagerStateForTests } from "./loop.js";
 import { FakeExecutor } from "../test/fakeExecutor.js";
 import { installConfig, restoreConfig } from "../test/config.js";
 import { useMemoryDb, resetTestDb, insertOpenPosition } from "../test/db.js";
@@ -19,6 +19,7 @@ describe("managePositions contracts", () => {
 
   beforeEach(() => {
     useMemoryDb();
+    resetManagerStateForTests();
     installConfig((c) => {
       c.manage.stop_loss_frac = 0.75;
       c.manage.above_range_sustain_min = 10;
@@ -91,7 +92,43 @@ describe("managePositions contracts", () => {
       inRange: true,
     });
     await managePositions(exec);
+    expect(exec.escapeRebalanced).toEqual([id]);
+    expect(exec.closed).toEqual([]);
+  });
+
+  it("escape hatch falls back to close when rebalance fails", async () => {
+    const id = insertOpenPosition({ entrySol: 0.4, minBinId: 100, maxBinId: 200, fellDeep: 1 });
+    exec.setMark(id, {
+      valueSol: 0.42,
+      price: 1.05,
+      activeBinId: 180,
+      inRange: true,
+    });
+    exec.escapeRebalance = async () => ({ ok: false });
+    await managePositions(exec);
+    expect(exec.escapeRebalanced).toEqual([]);
     expect(exec.closed).toEqual([{ id, reason: "escape" }]);
+  });
+
+  it("profit lock withdraws at configured threshold", async () => {
+    installConfig((c) => {
+      c.manage.profit_lock_enabled = true;
+      c.manage.profit_lock_at_frac = 1.30;
+      c.manage.profit_lock_withdraw_pct = 30;
+      c.manage.profit_lock_max_fires = 1;
+    });
+    const id = insertOpenPosition({ entrySol: 0.4, minBinId: 100, maxBinId: 200 });
+    exec.setMark(id, {
+      valueSol: 0.52,
+      price: 1.3,
+      activeBinId: 150,
+      inRange: true,
+    });
+    await managePositions(exec);
+    expect(exec.withdrawn).toEqual([{ id, bps: 3000 }]);
+    expect(exec.closed).toEqual([]);
+    const row = getDb().prepare("SELECT profit_lock_fires FROM positions WHERE id = ?").get(id) as { profit_lock_fires: number };
+    expect(row.profit_lock_fires).toBe(1);
   });
 
   it("P3 missed waits longer sustain than wins", async () => {
