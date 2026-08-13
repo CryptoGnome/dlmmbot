@@ -14,13 +14,4 @@ export function tokenFromUrl(): string {
   return sessionStorage.getItem("dash_token") ?? "";
 }
 
-export function fmtSol(n: number | null | undefined, digits = 4): string {
-  if (n == null || Number.isNaN(n)) return "—";
-  const sign = n > 0 ? "+" : "";
-  return `${sign}${n.toFixed(digits)}`;
-}
-
-export function fmtPct(n: number | null | undefined): string {
-  if (n == null || Number.isNaN(n)) return "—";
-  return `${(n * 100).toFixed(1)}%`;
-}
+export { fmtSol, fmtUsd, fmtPct, fmtRet, gmgnUrl, exitLabel, gateLabel, shortTime } from "./format";

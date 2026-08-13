@@ -79,7 +79,7 @@ Default shape — **Tux entry**: one-sided SOL, bid-ask, below current price.
 1. Compute swing high/low from 5m OHLCV over the pool's life (max 24h lookback).
 2. Range top = active bin. Range bottom = the *shallower* of: fib `[0.786]` retracement of the swing, or `[-65%]` from current price. Floor of `[-40%]` minimum depth — never a thin sliver.
 3. Translate to bin IDs. A DLMM position account spans ≤ 69 bins: if the range needs more, either widen bin-step choice (§2.1) or split into `[max 2]` position accounts.
-4. Bin rent budget: unrecoverable new-bin initialization cost ≤ `[0.05 SOL]` per position, else shrink range.
+4. Bin rent: soft budget `[0.075 SOL]` (one bin array) — shrink range first. If still over, quote **actual** uninitialized arrays on-chain; allow when actual ≤ soft, or ≤ `[0.15 SOL]` (two arrays) when score ≥ `[80]`. Never more than two arrays. RPC quote failure falls back to worst-case estimate (fail closed).
 5. `initializePositionAndAddLiquidityByStrategy` with `StrategyType.BidAsk`, `totalXAmount = 0` (SOL side only).
 6. Tx policy: active-bin slippage `[5%]` — maps to `ceil(pct / (binStep/100))` bins (5 bins at step 100). Was `[1%]` (=1 bin at step 100), which produced 100% of live `ExceededBinSlippageTolerance` open failures. Prefer a failed tx over a bad fill still holds for *swap* exits; for LP open, rebuild-on-slippage + a few bins of tolerance is correct. Priority fee auto from recent fees; program sim failures do not resend the same tx; `[3]` network retries, then abandon and re-quote.
 6b. **Exit/rebalance execution — Zap SDK vs manual path**
@@ -213,7 +213,7 @@ Tables:
 
 ## 9. Known costs & failure modes we accept
 
-- Bin rent partially unrecoverable on first-funded bins (budgeted §3.4); position rent (~0.057 SOL) refunded on close.
+- Bin rent: soft one-array budget + on-chain quote; hard two-array only at high score (budgeted §3.4); position rent (~0.057 SOL) refunded on close.
 - Meme-mode expectancy comes from many small fee wins + rare full losses on rugs that beat our safety triggers. The vetting engine cannot catch a well-executed slow rug; sizing caps (§5) are the real defense.
 - Free RugCheck reports are cached — our own RPC checks are the fresh layer; RugCheck is a veto, not a green light.
 - RPC outage → manager can't see. The blind close-all was **removed 2026-08-10**: `close()`'s RPC set is a superset of `mark()`'s, so it could only finish when firing it was a mistake. Liveness is the out-of-process heartbeat, not in-process liquidation.
@@ -279,7 +279,7 @@ Tables:
 
 | Key | Spec default | Live |
 |---|---|---|
-| `max_positions` | 7 | **3** |
+| `max_positions` | 7 | **5** (was 3; raised 2026-08-13 for more concurrent meme opportunities) |
 | `kelly_fraction` | 0.5 (half-Kelly) | **0.25** |
 | `kelly_block_negative` | on | **off** (clamp to min size instead of hard stop) |
 | `house_money_rule` | on | **off** |

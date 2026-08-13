@@ -9,7 +9,8 @@ import type { Executor } from "../executor/executor.js";
 import { PaperExecutor } from "../executor/paper.js";
 import { rollupDaily } from "../pnl/rollup.js";
 import { fetchSummary } from "../vetting/rugcheck.js";
-import { planRange, fitPlanToRentBudget } from "../ranges/planner.js";
+import { planRange } from "../ranges/planner.js";
+import { applyBinRentGate } from "../ranges/binRent.js";
 import { fetchCandles, fetchPool } from "../scanner/meteora.js";
 import { trendingByMint } from "../scanner/gmgn.js";
 import { feeMomentumPart, opportunityScore, structurePart, turnoverPart } from "../scanner/score.js";
@@ -81,13 +82,18 @@ let buildSha = "unknown";
  * Never throws: a monitoring write must not be able to kill the thing it
  * monitors.
  */
-function writeHeartbeat(exec: Executor, openCount: number): void {
+async function writeHeartbeat(exec: Executor, openCount: number): Promise<void> {
   try {
+    let walletSol: number | null = null;
+    try {
+      walletSol = await exec.walletSol();
+    } catch { /* keep null */ }
     getDb().prepare(
       "INSERT INTO meta (key, value) VALUES ('heartbeat', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
     ).run(JSON.stringify({
       ts: now(), pid: process.pid, build: buildSha, mode: exec.mode,
       open: openCount, probeFailures, entriesFrozen: entriesFrozen(),
+      walletSol,
     }));
   } catch (e) {
     console.error("[farmer] heartbeat write failed:", (e as Error).message);
@@ -363,18 +369,25 @@ export async function managePositions(exec: Executor): Promise<void> {
       const pm = manageForSleeve(sleeve);
 
       // --- P0 SAFETY: pool death, price crash, TVL drain, rugcheck flip, holder watch ---
+      // Majors are allowlisted / discovery-gated at entry — RugCheck "Danger" is often a
+      // permanent score on established tokens (PUMP etc.), not a flip. Applying the meme
+      // veto here false-closed pos#61 in 7s. Keep hard P0 (dead/crash/TVL) for majors.
       const crashed = mark.price > 0 && pos.entryPrice > 0 &&
         ((mark.price - pos.entryPrice) / pos.entryPrice) * 100 <= m.safety_price_crash_pct;
       const tvlDrained = mark.tvlUsd > 0 && tvlDropTriggered(pos.id, mark.tvlUsd);
-      const rugFlip = !crashed && !tvlDrained && mark.valueSol > 0 && await rugcheckFlipped(pos.id, pos.tokenMint);
-      const holderTrig = exec.mode === "live" && !crashed && !tvlDrained && !rugFlip
+      const rugFlip = sleeve !== "majors" && !crashed && !tvlDrained && mark.valueSol > 0
+        && await rugcheckFlipped(pos.id, pos.tokenMint);
+      const holderTrig = sleeve !== "majors" && exec.mode === "live" && !crashed && !tvlDrained && !rugFlip
         ? await holderCheck(pos.id, pos.tokenMint) : null;
       if (mark.valueSol === 0 || crashed || tvlDrained || rugFlip || holderTrig) {
         const trigger = mark.valueSol === 0 ? "pool_dead" : crashed ? "price_crash" : tvlDrained ? "tvl_drain" : rugFlip ? "rugcheck_flip" : `${holderTrig!.kind} (${holderTrig!.detail})`;
         clearRangeTimers(pos.id);
         await closeAndReport(exec, pos, "P0_safety", config().exec.safety_exit_slippage_bps, "safety_exit", `P0 safety (${trigger})`);
-        blacklist(pos.tokenMint, "token", `P0 safety exit (${trigger})`);
-        recordDecision(pos.tokenMint, pos.poolAddress, "exited", `P0_safety_${trigger}`, null, { mark, pos });
+        // Don't permanent-blacklist majors allowlist tokens on soft P0 signals.
+        if (sleeve !== "majors" || trigger === "pool_dead" || trigger === "price_crash" || trigger === "tvl_drain") {
+          blacklist(pos.tokenMint, "token", `P0 safety exit (${trigger})`);
+        }
+        recordDecision(pos.tokenMint, pos.poolAddress, "exited", `P0_safety_${trigger}`, null, { mark, pos, sleeve });
         continue;
       }
 
@@ -867,22 +880,34 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     }
 
     const candles = await fetchCandles(cand.pool.address, "5m").catch(() => []);
-    let range = planRange(cand.pool.price, cand.pool.binStep, candles, cand.pool.decimalsX);
-    const rentBudget = config().entry.bin_rent_budget_sol;
-    if (range.estBinRentSol > rentBudget) {
-      const fitted = fitPlanToRentBudget(
-        range, rentBudget, cand.pool.price, cand.pool.binStep, cand.pool.decimalsX, config().entry.min_down_pct
-      );
-      if (!fitted) {
-        recordDecision(cand.tokenMint, cand.pool.address, "skipped", "bin_rent", score, { range, rentBudget });
-        continue;
-      }
-      console.log(
-        `[enter] ${cand.symbol}: shrunk range for rent ${range.estBinRentSol.toFixed(3)}→${fitted.estBinRentSol.toFixed(3)} SOL ` +
-        `(${range.binCount}→${fitted.binCount} bins, depth ${range.bottomPricePct.toFixed(0)}%→${fitted.bottomPricePct.toFixed(0)}%)`
-      );
-      range = fitted;
+    const planned = planRange(cand.pool.price, cand.pool.binStep, candles, cand.pool.decimalsX);
+    const rent = await applyBinRentGate({
+      range: planned,
+      score,
+      poolAddress: cand.pool.address,
+      price: cand.pool.price,
+      binStep: cand.pool.binStep,
+      decimalsX: cand.pool.decimalsX,
+      minDownPct: config().entry.min_down_pct,
+    });
+    if (!rent.ok) {
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "bin_rent", score, {
+        range: rent.range, rent: rent.meta,
+      });
+      continue;
     }
+    if (rent.meta.shrunk) {
+      console.log(
+        `[enter] ${cand.symbol}: shrunk range for rent ${rent.meta.est.toFixed(3)}→${rent.range.estBinRentSol.toFixed(3)} SOL ` +
+        `(depth → ${rent.range.bottomPricePct.toFixed(0)}%)`
+      );
+    } else if (rent.meta.actual != null && rent.meta.actual < rent.meta.est) {
+      console.log(
+        `[enter] ${cand.symbol}: actual bin rent ${rent.meta.actual.toFixed(3)} SOL ` +
+        `(est ${rent.meta.est.toFixed(3)}, ${rent.meta.tier} budget ${rent.meta.budget})`
+      );
+    }
+    const range = rent.range;
 
     // A failed open used to throw straight past recordDecision to the tick
     // handler, so 121 bounced entries left no row at all and the funnel could
@@ -1043,7 +1068,7 @@ export async function runLoop(): Promise<void> {
     } catch (e) {
       console.error("[farmer] tick error:", (e as Error).message);
     }
-    writeHeartbeat(exec, loadOpenPositions().length);
+    await writeHeartbeat(exec, loadOpenPositions().length);
     await new Promise((r) => setTimeout(r, pollSleepMs(Date.now() - tickStart, pollMs)));
   }
 }

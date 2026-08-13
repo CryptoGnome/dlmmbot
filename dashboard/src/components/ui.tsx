@@ -22,9 +22,11 @@ export function Panel({
 }
 
 export function Kpi({
-  label, value, sub, tone = "fg",
+  label, value, sub, tone = "fg", pct,
 }: {
-  label: string; value: string; sub?: string; tone?: "fg" | "accent" | "warn" | "danger" | "ok" | "muted";
+  label: string; value: string; sub?: string;
+  tone?: "fg" | "accent" | "warn" | "danger" | "ok" | "muted";
+  pct?: number | null;
 }) {
   const toneClass = {
     fg: "text-fg",
@@ -34,10 +36,18 @@ export function Kpi({
     ok: "text-ok",
     muted: "text-muted",
   }[tone];
+  const pctTone = pct == null ? "text-dim" : pct >= 0 ? "text-ok" : "text-danger";
   return (
     <div className="panel px-3 py-2.5">
       <div className="text-[10px] tracking-[0.16em] text-dim uppercase">{label}</div>
-      <div className={cn("mt-1 text-xl font-semibold tabular-nums", toneClass)}>{value}</div>
+      <div className="mt-1 flex flex-wrap items-baseline gap-2">
+        <span className={cn("text-xl font-semibold tabular-nums", toneClass)}>{value}</span>
+        {pct != null && (
+          <span className={cn("text-sm font-semibold tabular-nums", pctTone)}>
+            {pct > 0 ? "+" : ""}{(pct * 100).toFixed(1)}%
+          </span>
+        )}
+      </div>
       {sub && <div className="mt-0.5 text-[10px] text-dim">{sub}</div>}
     </div>
   );

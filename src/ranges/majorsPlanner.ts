@@ -1,7 +1,7 @@
 import { config } from "../config.js";
 import type { Candle } from "../scanner/meteora.js";
 import type { RangePlan } from "../types.js";
-import { binIdToPrice, fitPlanToRentBudget, priceToBinId, swing } from "./planner.js";
+import { binIdToPrice, priceToBinId, swing } from "./planner.js";
 
 const BINS_PER_POSITION = 69;
 const BIN_ARRAY_RENT_SOL = 0.075;
@@ -82,13 +82,6 @@ export function majorsEntryTiming(candles: Candle[], price: number): MajorsEntry
 
 export function majorsRangeForPool(
   price: number, binStep: number, decimalsX: number,
-): RangePlan | null {
-  const mj = config().majors;
-  let plan = planMajorsSpotRange(price, binStep, decimalsX);
-  const rentBudget = config().entry.bin_rent_budget_sol;
-  if (plan.estBinRentSol > rentBudget) {
-    plan = fitPlanToRentBudget(plan, rentBudget, price, binStep, decimalsX, mj.range_below_pct) ?? plan;
-    if (plan.estBinRentSol > rentBudget) return null;
-  }
-  return plan;
+): RangePlan {
+  return planMajorsSpotRange(price, binStep, decimalsX);
 }

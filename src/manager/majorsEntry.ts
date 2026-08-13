@@ -4,6 +4,7 @@ import type { Executor } from "../executor/executor.js";
 import { alert } from "../alerts.js";
 import { solUsdPrice } from "../market.js";
 import { majorsEntryTiming, majorsRangeForPool } from "../ranges/majorsPlanner.js";
+import { applyBinRentGate } from "../ranges/binRent.js";
 import { majorsPositionSize, majorsPoolSharePct, majorsSleeveExposure } from "../risk/majors.js";
 import { type Bankroll, openPositionCount, tokenExposureSol } from "../risk/limits.js";
 import { majorsSlotBudget } from "../risk/sleeve.js";
@@ -39,11 +40,23 @@ export async function enterMajorsPositions(exec: Executor, bankroll: Bankroll): 
       continue;
     }
 
-    const range = majorsRangeForPool(cand.pool.price, cand.pool.binStep, cand.pool.decimalsX);
-    if (!range) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "majors_bin_rent", cand.score, { sleeve: "majors" });
+    const planned = majorsRangeForPool(cand.pool.price, cand.pool.binStep, cand.pool.decimalsX);
+    const rent = await applyBinRentGate({
+      range: planned,
+      score: cand.score,
+      poolAddress: cand.pool.address,
+      price: cand.pool.price,
+      binStep: cand.pool.binStep,
+      decimalsX: cand.pool.decimalsX,
+      minDownPct: mj.range_below_pct,
+    });
+    if (!rent.ok) {
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "majors_bin_rent", cand.score, {
+        sleeve: "majors", range: rent.range, rent: rent.meta,
+      });
       continue;
     }
+    const range = rent.range;
 
     let size = majorsPositionSize(bankroll.deployableSol);
     const exp = majorsSleeveExposure();

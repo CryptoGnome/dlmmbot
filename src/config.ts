@@ -41,6 +41,7 @@ export interface Config {
   entry: {
     fib_bottom: number; max_down_pct: number; min_down_pct: number;
     max_position_accounts: number; bin_rent_budget_sol: number;
+    bin_rent_hard_sol: number; bin_rent_hard_score_min: number;
     liquidity_slippage_pct: number;
     tranche_enabled: boolean; tranche_score_min: number; tranche_size_pct: number;
   };

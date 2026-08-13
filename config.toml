@@ -81,7 +81,12 @@ max_down_pct = 50                # 2026-08-10: was 65, against a -60% P0 exit. T
                                  # of the position in bins P0 guaranteed would never trade.
 min_down_pct = 40
 max_position_accounts = 2
-bin_rent_budget_sol = 0.05
+# Bin-array rent (~0.075 SOL each) is non-refundable when arrays are new.
+# Soft budget = one array (shrink target). Hard = two arrays only if score ≥ min.
+# Entry also quotes on-chain uninitialized arrays; if actual ≤ tier budget, allow.
+bin_rent_budget_sol = 0.075
+bin_rent_hard_sol = 0.15
+bin_rent_hard_score_min = 80
 # Bin slippage at open: SDK maps pct -> bins via ceil(pct / (binStep/100)).
 # At bin_step=100 (meme default), 1% = 1 bin — every active-bin tick fails
 # ExceededBinSlippageTolerance (6004). That was 100% of 3255 sim failures in
@@ -148,9 +153,9 @@ profit_lock_max_fires = 1
 below_range_grace_min = 15
 
 [sizing]                   # STRATEGY.md §5
-max_positions = 3        # 2026-08-09: 7 slots x 10% cap allows 70% of the wallet in correlated
-                         # memecoin LP. Max ever held concurrently is 2, so the displacement /
-                         # alpha-slot / per-token-cap paths are untested. Hold at 3 until they are.
+max_positions = 5        # 2026-08-13: raised 3→5 so concurrent meme opportunities aren't
+                         # left on the table. Still well under the old 7 (70% wallet at 10%
+                         # Kelly cap). Majors still keep meme_reserve_slots=2 free; micro ≤1.
 min_position_sol = 0.3   # 0.5 made the 0.75x re-entry ladder unreachable at ~6.5 SOL bankroll (10% cap * 0.75 < 0.5)
 min_reentry_sol = 0.2    # 2026-08-09: viability floor for a re-entry, checked AFTER the ladder
                          # multiplier. The 0.3 floor exists to cover per-position overhead, but

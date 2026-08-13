@@ -62,26 +62,126 @@ export function buildLiveBookSnapshot(root) {
     let hb = null;
     try { hb = heartbeat ? JSON.parse(heartbeat) : null; } catch { /* */ }
 
+    const featStmt = db.prepare(
+      `SELECT features_json FROM decisions
+       WHERE action='entered' AND mint = ? ORDER BY ts DESC LIMIT 1`
+    );
+
+    function priceAtBin(refPrice, refBin, targetBin, binStep) {
+      if (!(refPrice > 0) || refBin == null || targetBin == null || !(binStep > 0)) return null;
+      return refPrice * Math.pow(1 + binStep / 10_000, targetBin - refBin);
+    }
+
     const open = db.prepare(
-      `SELECT id, symbol, mode, state, round(entry_sol,4) entry_sol,
-              datetime(entry_ts,'unixepoch') opened
-       FROM positions WHERE state IN ('open','pending','closing') ORDER BY id`
-    ).all();
+      `SELECT p.id, p.symbol, p.token_mint AS mint, p.mode, p.state, p.pool,
+              round(p.entry_sol,4) entry_sol, round(p.entry_price,12) entry_price,
+              p.min_bin_id, p.max_bin_id,
+              round(p.fees_claimed_sol,6) fees_claimed_sol,
+              datetime(p.entry_ts,'unixepoch') opened,
+              m.value_sol, m.value_frac, m.unclaimed_fees_sol, m.in_range,
+              m.active_bin_id, m.price AS mark_price, m.ts AS mark_ts,
+              datetime(m.ts,'unixepoch') marked
+       FROM positions p
+       LEFT JOIN position_marks m ON m.id = (
+         SELECT id FROM position_marks WHERE position_id = p.id ORDER BY ts DESC LIMIT 1
+       )
+       WHERE p.state IN ('open','pending','closing')
+       ORDER BY p.id`
+    ).all().map((r) => {
+      const value = r.value_sol != null ? Number(r.value_sol) : null;
+      const entry = Number(r.entry_sol) || 0;
+      const unclaimed = r.unclaimed_fees_sol != null ? Number(r.unclaimed_fees_sol) : null;
+      const claimed = Number(r.fees_claimed_sol) || 0;
+      const pnl = value != null ? value - entry : null;
+      const pct = value != null && entry > 0 ? (value / entry) - 1 : null;
+      const minBin = r.min_bin_id;
+      const maxBin = r.max_bin_id;
+      const activeBin = r.active_bin_id;
+      let status = "unknown";
+      if (activeBin != null && minBin != null && maxBin != null) {
+        if (activeBin > maxBin) status = "above";
+        else if (activeBin < minBin) status = "below";
+        else status = "in";
+      } else if (r.in_range != null) {
+        status = r.in_range ? "in" : "out";
+      }
 
-    const closesSince = (since) => db.prepare(
-      `SELECT exit_reason,
-              COUNT(*) n,
-              ROUND(SUM(${REALIZED_PNL}), 6) pnl,
-              ROUND(AVG(${REALIZED_PNL}), 6) avg_pnl
-       FROM positions
-       WHERE mode='live' AND exit_ts IS NOT NULL AND exit_ts > ?
-       GROUP BY exit_reason ORDER BY n DESC`
-    ).all(since);
+      let binStep = 100;
+      try {
+        const feat = featStmt.get(r.mint);
+        const j = feat?.features_json ? JSON.parse(feat.features_json) : {};
+        if (j.pool?.binStep) binStep = j.pool.binStep;
+      } catch { /* */ }
 
-    const allLive = db.prepare(
-      `SELECT COUNT(*) n, ROUND(SUM(${REALIZED_PNL}), 6) pnl
+      const markPrice = r.mark_price != null ? Number(r.mark_price) : null;
+      const lowPx = priceAtBin(markPrice, activeBin, minBin, binStep);
+      const highPx = priceAtBin(markPrice, activeBin, maxBin, binStep);
+
+      return {
+        id: r.id,
+        symbol: r.symbol,
+        mint: r.mint,
+        mode: r.mode,
+        state: r.state,
+        entry_sol: entry,
+        entry_price: r.entry_price,
+        opened: r.opened,
+        fees_claimed_sol: claimed,
+        min_bin_id: minBin,
+        max_bin_id: maxBin,
+        range_status: status,
+        range: {
+          min_bin: minBin,
+          max_bin: maxBin,
+          active_bin: activeBin,
+          min_price: lowPx,
+          max_price: highPx,
+          price: markPrice,
+          status,
+        },
+        mark: value != null ? {
+          value_sol: Math.round(value * 1e6) / 1e6,
+          pnl_sol: Math.round((pnl ?? 0) * 1e6) / 1e6,
+          pct: pct != null ? Math.round(pct * 1e6) / 1e6 : null,
+          unclaimed_fees_sol: unclaimed != null ? Math.round(unclaimed * 1e6) / 1e6 : null,
+          fees_claimed_sol: claimed,
+          in_range: status === "in",
+          status,
+          active_bin_id: activeBin,
+          price: markPrice,
+          age_s: r.mark_ts != null ? now - r.mark_ts : null,
+          at: r.marked,
+        } : null,
+      };
+    });
+
+    const closesSince = (since) => {
+      const byReason = db.prepare(
+        `SELECT exit_reason,
+                COUNT(*) n,
+                ROUND(SUM(${REALIZED_PNL}), 6) pnl,
+                ROUND(AVG(${REALIZED_PNL}), 6) avg_pnl,
+                ROUND(SUM(entry_sol), 6) entry_sol
+         FROM positions
+         WHERE mode='live' AND exit_ts IS NOT NULL AND exit_ts > ?
+         GROUP BY exit_reason ORDER BY n DESC`
+      ).all(since);
+      return byReason.map((r) => ({
+        ...r,
+        pct: r.entry_sol > 0 ? Math.round((r.pnl / r.entry_sol) * 1e6) / 1e6 : null,
+      }));
+    };
+
+    const allLiveRow = db.prepare(
+      `SELECT COUNT(*) n, ROUND(SUM(${REALIZED_PNL}), 6) pnl, ROUND(SUM(entry_sol), 6) entry_sol
        FROM positions WHERE mode='live' AND exit_ts IS NOT NULL`
     ).get();
+    const allLive = {
+      ...allLiveRow,
+      pct: allLiveRow.entry_sol > 0
+        ? Math.round((allLiveRow.pnl / allLiveRow.entry_sol) * 1e6) / 1e6
+        : null,
+    };
 
     const kellyRows = db.prepare(
       `SELECT (${REALIZED_PNL}) / entry_sol AS ret
@@ -203,13 +303,17 @@ export function buildLiveBookSnapshot(root) {
     ).all(fixTs);
 
     const p3Missed = db.prepare(
-      `SELECT id, symbol, datetime(exit_ts,'unixepoch') at,
+      `SELECT id, symbol, token_mint AS mint, datetime(exit_ts,'unixepoch') at,
               ROUND((${REALIZED_PNL}),4) pnl,
+              ROUND(entry_sol, 4) entry_sol,
               ROUND((exit_ts - entry_ts)/60.0,1) hold_min
        FROM positions
        WHERE mode='live' AND exit_reason='P3_above' AND state='closed_missed' AND exit_ts > ?
        ORDER BY exit_ts DESC LIMIT 10`
-    ).all(fixTs);
+    ).all(fixTs).map((r) => ({
+      ...r,
+      pct: r.entry_sol > 0 ? Math.round((r.pnl / r.entry_sol) * 1e6) / 1e6 : null,
+    }));
 
     const BIN_RENT_SCORE_MIN = 70;
     const BIN_RENT_GATES = ["bin_rent", "majors_bin_rent"];
@@ -243,33 +347,78 @@ export function buildLiveBookSnapshot(root) {
       ).all(...BIN_RENT_GATES, BIN_RENT_SCORE_MIN, since);
       const n = byGate.reduce((s, r) => s + r.n, 0);
       const recent = db.prepare(
-        `SELECT datetime(ts,'unixepoch') at, mint, pool, failed_gate g, ROUND(score,1) score,
-                substr(features_json,1,500) feat
-         FROM decisions
-         WHERE action='skipped' AND failed_gate IN (${gates}) AND score >= ? AND ts > ?
-         ORDER BY ts DESC LIMIT 8`
+        `SELECT datetime(d.ts,'unixepoch') at, d.mint, d.pool, d.failed_gate g, ROUND(d.score,1) score,
+                COALESCE(NULLIF(t.symbol,''), NULLIF(
+                  (SELECT p.symbol FROM positions p WHERE p.token_mint = d.mint ORDER BY p.id DESC LIMIT 1),
+                  ''), '?') AS symbol,
+                substr(d.features_json,1,500) feat
+         FROM decisions d
+         LEFT JOIN tokens t ON t.mint = d.mint
+         WHERE d.action='skipped' AND d.failed_gate IN (${gates}) AND d.score >= ? AND d.ts > ?
+         ORDER BY d.ts DESC LIMIT 8`
       ).all(...BIN_RENT_GATES, BIN_RENT_SCORE_MIN, since);
       const best = db.prepare(
-        `SELECT datetime(ts,'unixepoch') at, mint, pool, failed_gate g, ROUND(score,1) score,
-                substr(features_json,1,500) feat
-         FROM decisions
-         WHERE action='skipped' AND failed_gate IN (${gates}) AND score >= ? AND ts > ?
-         ORDER BY score DESC LIMIT 1`
+        `SELECT datetime(d.ts,'unixepoch') at, d.mint, d.pool, d.failed_gate g, ROUND(d.score,1) score,
+                COALESCE(NULLIF(t.symbol,''), NULLIF(
+                  (SELECT p.symbol FROM positions p WHERE p.token_mint = d.mint ORDER BY p.id DESC LIMIT 1),
+                  ''), '?') AS symbol,
+                substr(d.features_json,1,500) feat
+         FROM decisions d
+         LEFT JOIN tokens t ON t.mint = d.mint
+         WHERE d.action='skipped' AND d.failed_gate IN (${gates}) AND d.score >= ? AND d.ts > ?
+         ORDER BY d.score DESC LIMIT 1`
       ).get(...BIN_RENT_GATES, BIN_RENT_SCORE_MIN, since);
-      const mapRow = (r) => r ? {
-        at: r.at,
-        mint: r.mint?.slice(0, 8),
-        pool: r.pool?.slice(0, 8),
-        gate: r.g,
-        score: r.score,
-        ...parseBinRentNearMiss(r.feat),
-      } : null;
+      const mapRow = (r) => {
+        if (!r) return null;
+        const feat = parseBinRentNearMiss(r.feat);
+        return {
+          at: r.at,
+          mint: r.mint || null,
+          pool: r.pool || feat.pool || null,
+          gate: r.g,
+          score: r.score,
+          ...feat,
+          symbol: r.symbol || feat.symbol || "?",
+        };
+      };
       return { n, score_min: BIN_RENT_SCORE_MIN, by_gate: byGate, best: mapRow(best),
         recent: recent.map(mapRow) };
     }
 
     const sinceFix = closesSince(fixTs);
     const last24 = closesSince(dayAgo);
+    const bookAgg = (rows) => {
+      const n = rows.reduce((s, r) => s + r.n, 0);
+      const pnl = rows.reduce((s, r) => s + (r.pnl ?? 0), 0);
+      const entry_sol = rows.reduce((s, r) => s + (r.entry_sol ?? 0), 0);
+      return {
+        by_reason: rows,
+        n,
+        pnl,
+        entry_sol,
+        pct: entry_sol > 0 ? Math.round((pnl / entry_sol) * 1e6) / 1e6 : null,
+      };
+    };
+
+    const deployedSol = open.reduce((s, p) => s + (p.entry_sol ?? 0), 0);
+    const walletSol = typeof hb?.walletSol === "number" ? hb.walletSol : null;
+    const solUsdRow = db.prepare(
+      `SELECT sol_usd FROM pnl_daily WHERE mode='live' AND sol_usd > 0 ORDER BY day DESC LIMIT 1`
+    ).get();
+    const solUsd = solUsdRow?.sol_usd ?? null;
+    const totalSol = walletSol != null ? walletSol + deployedSol : null;
+    const balance = {
+      wallet_sol: walletSol != null ? Math.round(walletSol * 1e6) / 1e6 : null,
+      deployed_sol: Math.round(deployedSol * 1e6) / 1e6,
+      total_sol: totalSol != null ? Math.round(totalSol * 1e6) / 1e6 : null,
+      sol_usd: solUsd,
+      total_usd: totalSol != null && solUsd
+        ? Math.round(totalSol * solUsd * 100) / 100
+        : null,
+      wallet_usd: walletSol != null && solUsd
+        ? Math.round(walletSol * solUsd * 100) / 100
+        : null,
+    };
 
     return {
       ts: now,
@@ -291,19 +440,12 @@ export function buildLiveBookSnapshot(root) {
       },
       heartbeat: hb,
       heartbeat_age_s: hb?.ts ? now - hb.ts : null,
+      balance,
       open,
       book: {
         all_time_live: allLive,
-        since_fix: {
-          by_reason: sinceFix,
-          n: sinceFix.reduce((s, r) => s + r.n, 0),
-          pnl: sinceFix.reduce((s, r) => s + (r.pnl ?? 0), 0),
-        },
-        last_24h: {
-          by_reason: last24,
-          n: last24.reduce((s, r) => s + r.n, 0),
-          pnl: last24.reduce((s, r) => s + (r.pnl ?? 0), 0),
-        },
+        since_fix: bookAgg(sinceFix),
+        last_24h: bookAgg(last24),
       },
       kelly: kellyFrom(kellyRows),
       cluster,
@@ -311,7 +453,7 @@ export function buildLiveBookSnapshot(root) {
         n: openFailed.length,
         by_code: openFailCodes,
         recent: openFailed.slice(0, 5).map((r) => ({
-          at: r.at, mint: r.mint.slice(0, 8), ...parseOpenFail(r.feat),
+          at: r.at, mint: r.mint, ...parseOpenFail(r.feat),
         })),
       },
       integrity: {
