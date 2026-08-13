@@ -1,0 +1,21 @@
+---
+description: After every commit/push, wait for GitHub Actions and fix failures before moving on
+alwaysApply: true
+---
+
+# Post-commit CI gate
+
+Whenever you **create a git commit** (and especially after **push** to `origin`):
+
+1. **Watch CI** with `gh run list` / `gh run watch` for the commit SHA (or latest `master` push).
+2. Wait until **all workflows for that commit** finish — not only `CI`. Treat red checks as blockers.
+3. On **failure**: pull logs (`gh run view <id> --log-failed`), fix the root cause, commit again, and re-watch until green.
+4. Do **not** declare the task done while Actions for that push are still failing or still running (unless the user explicitly says to ignore CI).
+5. Ignore known-disabled / manual-only workflows only if the workflow file itself is `workflow_dispatch`-only and was not triggered.
+
+Typical check:
+
+```bash
+gh run list --commit $(git rev-parse HEAD) --limit 10
+gh run watch <run-id> --exit-status
+```

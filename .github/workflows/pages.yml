@@ -1,11 +1,10 @@
+# Deploy docs to GitHub Pages (manual only).
+# Free Pages needs a public repo (or paid private Pages). Don't auto-run on push
+# while the repo is private — it fails configure-pages and reds the commit checks.
+
 name: Deploy docs
 
 on:
-  push:
-    branches: [master]
-    paths:
-      - "docs/**"
-      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
