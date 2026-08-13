@@ -8,6 +8,7 @@ import { Badge, Panel } from "@/components/ui";
 import { Icon } from "@/lib/icons";
 import { toast } from "@/lib/toast";
 import { WalletCreateModal } from "@/components/WalletCreateModal";
+import { walletPresence } from "@/lib/walletStatus";
 import {
   Settings as SettingsIcon, Save, RefreshCw, Lock, Unlock, KeyRound, Wallet,
 } from "lucide-react";
@@ -682,12 +683,11 @@ export function SettingsPage() {
     );
   };
 
-  const walletBadgeTone = setup?.wallet.unlocked || setup?.wallet.ready
-    ? "ok"
-    : setup?.wallet.encrypted ? "warn" : "fg";
-  const walletBadgeLabel = setup?.wallet.unlocked || setup?.wallet.source === "env"
-    ? "ready"
-    : setup?.wallet.encrypted ? "locked" : "needed";
+  const presence = walletPresence(setup, secretEnv);
+  const walletBadgeTone = presence.ready
+    ? (presence.how === "encrypted_locked" ? "warn" : "ok")
+    : "fg";
+  const walletBadgeLabel = presence.label;
 
   return (
     <div className="space-y-3">
@@ -765,28 +765,22 @@ export function SettingsPage() {
       {!loading && pageTab === "wallet" && (
       <>
       {(() => {
-        const ready = !!(setup?.wallet.ready ?? (setup?.wallet.encrypted || setup?.wallet.unlocked));
-        const unlocked = !!setup?.wallet.unlocked;
-        const encrypted = !!setup?.wallet.encrypted;
-        const source = setup?.wallet.source;
         const rpcOk = secretEnv.find((r) => r.key === "RPC_URL")?.set
           || setup?.hasRpc;
         const modeLive = (safeEnv.find((r) => r.key === "FARMER_MODE")?.value ?? "").toLowerCase() === "live"
           || (setup?.farmerMode ?? "").toLowerCase() === "live";
-        const walletLine = !ready
-          ? "not set yet"
-          : source === "env" || (unlocked && !encrypted)
-            ? "ready in .env (bot can trade)"
-            : unlocked
-              ? "unlocked (bot can trade)"
-              : "locked on disk — unlock below if you want the bot to use it";
+        const howLabel =
+          presence.how === "env" ? "set in .env"
+            : presence.how === "unlocked" ? "encrypted + unlocked"
+              : presence.how === "encrypted_locked" ? "encrypted (locked)"
+                : "not set";
         return (
           <Panel title="Quick status">
             <p className="mb-3 text-[12px] text-fg">
-              Two jobs here: <span className="text-ok">1)</span> burner wallet,{" "}
-              <span className="text-ok">2)</span> RPC / API keys. Nothing fancy.
+              Two jobs here: <span className="text-ok">1)</span> wallet,{" "}
+              <span className="text-ok">2)</span> RPC / API keys.
             </p>
-            <ul className="space-y-2 text-[12px]">
+            <ul className="space-y-2.5 text-[12px]">
               <li className="flex items-start gap-2">
                 <span className={rpcOk ? "text-ok" : "text-warn"}>{rpcOk ? "✓" : "○"}</span>
                 <span>
@@ -795,10 +789,17 @@ export function SettingsPage() {
                 </span>
               </li>
               <li className="flex items-start gap-2">
-                <span className={ready ? "text-ok" : "text-warn"}>{ready ? "✓" : "○"}</span>
-                <span>
-                  <span className="text-fg">Burner wallet</span>
-                  <span className="text-dim"> — {walletLine}</span>
+                <span className={presence.ready ? (presence.how === "encrypted_locked" ? "text-warn" : "text-ok") : "text-warn"}>
+                  {presence.ready && presence.how !== "encrypted_locked" ? "✓" : "○"}
+                </span>
+                <span className="min-w-0">
+                  <span className="text-fg">Wallet</span>
+                  <span className="text-dim"> — {presence.detail}</span>
+                  <span className="mt-0.5 block text-[10px] text-dim">
+                    How: {howLabel}
+                    {presence.envKey ? " · WALLET_PRIVATE_KEY present" : ""}
+                    {presence.encrypted ? " · wallet.enc.json on disk" : ""}
+                  </span>
                 </span>
               </li>
               <li className="flex items-start gap-2">
@@ -821,11 +822,17 @@ export function SettingsPage() {
         }
       >
         <p className="mb-3 text-[12px] leading-snug text-dim">
-          {(setup?.wallet.unlocked || setup?.wallet.source === "env") ? (
+          {presence.how === "env" || presence.how === "unlocked" ? (
             <>
-              Your bot already has a private key in <span className="text-fg">.env</span> — you’re good.
-              Encrypted wallet below is optional (extra lock / backup). Still use a{" "}
+              Wallet is already usable
+              {presence.how === "env" ? <> via <span className="text-fg">.env</span></> : <> (unlocked)</>}.
+              Encrypted create/import below is optional. Still use a{" "}
               <span className="text-warn">burner only</span>.
+            </>
+          ) : presence.how === "encrypted_locked" ? (
+            <>
+              Encrypted wallet is on disk but <span className="text-warn">locked</span>.
+              Unlock below so the bot can trade. Burner only.
             </>
           ) : (
             <>
@@ -834,15 +841,15 @@ export function SettingsPage() {
             </>
           )}
         </p>
-        {setup?.wallet.publicKey && (
+        {presence.publicKey && (
           <div className="mb-3 border border-grid bg-bg px-2 py-2">
             <div className="text-[10px] tracking-wider text-dim uppercase">Address</div>
-            <p className="mt-0.5 break-all font-mono text-[11px] text-ok">{setup.wallet.publicKey}</p>
+            <p className="mt-0.5 break-all font-mono text-[11px] text-ok">{presence.publicKey}</p>
           </div>
         )}
-        {(setup?.wallet.unlocked || setup?.wallet.source === "env") && !setup?.wallet.encrypted && (
+        {(presence.how === "env" || presence.how === "unlocked") && (
           <p className="mb-3 text-[11px] text-ok">
-            No action required. Only use Make new / Import if you want to replace this key with an encrypted one.
+            No action required. Only use Make new / Import if you want to replace this key.
           </p>
         )}
         <div className="mb-3 flex gap-1 border border-grid p-0.5">
