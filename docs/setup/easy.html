@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Easy setup (Railway) — DLMM Bot</title>
+  <meta name="description" content="Deploy DLMM Bot on Railway. Paper first, then live with a burner wallet." />
+  <link rel="canonical" href="https://dlmmbot.com/setup/easy.html" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,650;1,500&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <header class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="../">dlmm<span>bot</span></a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="./">Docs</a>
+        <a href="easy.html">Easy</a>
+        <a href="advanced.html">Advanced</a>
+        <a href="https://github.com/CryptoGnome/dlmmbot">GitHub</a>
+      </nav>
+      <div class="nav-actions">
+        <a class="btn btn-primary btn-sm" href="https://railway.com?referralCode=SCj9lN" target="_blank" rel="noreferrer">
+          Sign up <span class="arrow" aria-hidden="true">→</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <header class="doc-hero">
+      <h1>Easy setup (Railway)</h1>
+      <p class="lede">
+        No VPS, no PM2. Start in <strong>paper mode</strong> (no wallet). Go live later with a burner.
+      </p>
+      <div class="hero-cta" style="justify-content:flex-start;margin-bottom:0">
+        <a class="btn btn-primary" href="https://railway.com?referralCode=SCj9lN" target="_blank" rel="noreferrer">
+          Sign up on Railway <span class="arrow" aria-hidden="true">→</span>
+        </a>
+        <a class="linkish" href="#railway">Jump to deploy steps</a>
+      </div>
+      <p class="warn">
+        Memecoin LP can wipe a wallet. Not financial advice. Burner only. Never put rent money in it.
+      </p>
+    </header>
+
+    <div class="doc-layout">
+      <aside class="toc" aria-label="On this page">
+        <h2>On this page</h2>
+        <ol>
+          <li><a href="#why">Why Railway</a></li>
+          <li><a href="#railway">Deploy (paper)</a></li>
+          <li><a href="#dash">Dashboard</a></li>
+          <li><a href="#updates">Auto-updates</a></li>
+          <li><a href="#keys">Keys &amp; APIs</a></li>
+          <li><a href="#live">Going live</a></li>
+          <li><a href="#cost">Cost</a></li>
+          <li><a href="#troubleshoot">Troubleshooting</a></li>
+        </ol>
+      </aside>
+
+      <div class="doc-main">
+        <section id="why">
+          <h2>Why Railway</h2>
+          <p>
+            Click deploy, set a few secrets, get a public HTTPS link for the dashboard.
+            Railway restarts crashes and can redeploy when GitHub updates.
+          </p>
+          <p class="note">
+            Already have a VPS or prefer local?
+            Use the <a href="advanced.html">Advanced guide</a>.
+          </p>
+        </section>
+
+        <section id="railway">
+          <h2>Deploy on Railway (paper)</h2>
+          <ol class="steps">
+            <li>
+              <h3>Create a Railway account</h3>
+              <p>
+                Sign up with this link (supports the project):
+                <a href="https://railway.com?referralCode=SCj9lN" target="_blank" rel="noreferrer">railway.com?referralCode=SCj9lN</a>.
+                GitHub login is easiest.
+              </p>
+            </li>
+            <li>
+              <h3>New project from GitHub</h3>
+              <p>
+                <strong>New Project → Deploy from GitHub</strong> → pick
+                <code>CryptoGnome/dlmmbot</code> (or your fork).
+                Private repos need Railway access granted.
+              </p>
+            </li>
+            <li>
+              <h3>Two services, same repo</h3>
+              <table class="req">
+                <thead>
+                  <tr><th>Service</th><th>Start command</th><th>Public?</th></tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><strong>farmer</strong></td>
+                    <td><code>npm run run</code></td>
+                    <td>No</td>
+                  </tr>
+                  <tr>
+                    <td><strong>dash</strong></td>
+                    <td><code>npm run dash:build &amp;&amp; npm run dash</code></td>
+                    <td>Yes — generate a domain</td>
+                  </tr>
+                </tbody>
+              </table>
+              <p class="note">Both need Node 20+. Railway runs <code>npm install</code> on deploy.</p>
+            </li>
+            <li>
+              <h3>Shared variables (paper-safe)</h3>
+              <pre><button type="button" class="copy" data-copy>Copy</button><code>FARMER_MODE=paper
+RPC_URL=https://api.mainnet-beta.solana.com
+DASH_TOKEN=pick-a-long-random-password
+DASH_PORT=8787</code></pre>
+              <p>
+                Leave <code>WALLET_PRIVATE_KEY</code> empty for paper.
+                <code>FARMER_MODE=paper</code> will not live-trade even if config says live.
+              </p>
+              <p class="note danger">Never paste keys into Discord or screenshots. Never use your main wallet.</p>
+            </li>
+            <li>
+              <h3>Attach a volume</h3>
+              <p>
+                SQLite lives under <code>data/</code>. Mount a volume at <code>/app/data</code>
+                (or app root + <code>/data</code>) so redeploys don’t wipe history.
+              </p>
+            </li>
+            <li>
+              <h3>Deploy</h3>
+              <p>
+                Wait for green. On <strong>dash</strong>: Settings → Networking → Generate domain.
+              </p>
+            </li>
+          </ol>
+        </section>
+
+        <section id="dash">
+          <h2>Open the dashboard</h2>
+          <p>
+            Use the dash HTTPS URL (<code>https://….up.railway.app</code>).
+            Enter the same <code>DASH_TOKEN</code>. Works from your phone — token still required.
+          </p>
+        </section>
+
+        <section id="updates">
+          <h2>Auto-updates</h2>
+          <p>Connect Railway to GitHub so pushes to <code>master</code> redeploy.</p>
+          <ul>
+            <li><strong>Paper:</strong> auto-deploy is fine.</li>
+            <li><strong>Live:</strong> prefer deploying after CI is green, or deploy manually.</li>
+          </ul>
+        </section>
+
+        <section id="keys">
+          <h2>Keys &amp; APIs</h2>
+          <h3>Burner wallet — Phantom</h3>
+          <ol>
+            <li>Install <a href="https://phantom.app" target="_blank" rel="noreferrer">Phantom</a>.</li>
+            <li>Create a <strong>new</strong> account.</li>
+            <li>Fund only SOL you’re willing to lose.</li>
+            <li>Export Private Key (base58) → Railway <code>WALLET_PRIVATE_KEY</code>.</li>
+          </ol>
+          <p class="note danger">Close the export screen. Don’t screenshot it.</p>
+          <h3>Private RPC</h3>
+          <p>
+            Live needs a private endpoint
+            (<a href="https://www.helius.dev" target="_blank" rel="noreferrer">Helius</a>,
+            <a href="https://www.quicknode.com" target="_blank" rel="noreferrer">QuickNode</a>, etc.).
+          </p>
+          <pre><button type="button" class="copy" data-copy>Copy</button><code>RPC_URL=https://your-provider-url-here</code></pre>
+          <h3>Jupiter</h3>
+          <p><a href="https://portal.jup.ag" target="_blank" rel="noreferrer">portal.jup.ag</a></p>
+          <pre><button type="button" class="copy" data-copy>Copy</button><code>JUPITER_API_KEY=your_key_here</code></pre>
+        </section>
+
+        <section id="live">
+          <h2>Going live</h2>
+          <p class="note danger">Real SOL. Burner only. One farmer process per wallet.</p>
+          <ul class="checklist">
+            <li>Paper looked sane</li>
+            <li>Burner + private RPC + Jupiter in Railway vars</li>
+            <li><code>FARMER_MODE=live</code></li>
+            <li><code>[exec] mode = "live"</code> in config</li>
+            <li>Redeploy so both switches are live</li>
+          </ul>
+          <p class="note">Live requires <strong>both</strong> env and config. One alone stays safe.</p>
+        </section>
+
+        <section id="cost">
+          <h2>Cost</h2>
+          <p>
+            Trial credits, then Hobby (~$5) + usage is the realistic always-on floor.
+            <a href="https://railway.com/pricing?referralCode=SCj9lN" target="_blank" rel="noreferrer">Pricing</a>.
+            Own hardware can be cheaper — <a href="advanced.html">Advanced</a>.
+          </p>
+        </section>
+
+        <section id="troubleshoot">
+          <h2>Troubleshooting</h2>
+          <table class="req">
+            <thead><tr><th>Symptom</th><th>Fix</th></tr></thead>
+            <tbody>
+              <tr><td>Native module build fail</td><td>Node 20; check <code>better-sqlite3</code> logs</td></tr>
+              <tr><td>Dash unauthorized</td><td>Same <code>DASH_TOKEN</code> in vars and browser</td></tr>
+              <tr><td>History wiped</td><td>Persistent volume on <code>data/</code></td></tr>
+              <tr><td>RPC spam / failed opens</td><td>Private <code>RPC_URL</code></td></tr>
+              <tr><td>Thought paper, it traded</td><td>Check both <code>FARMER_MODE</code> and <code>[exec].mode</code></td></tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="wrap footer-row">
+      <a class="brand" href="../">dlmm<span>bot</span></a>
+      <div class="footer-links">
+        <a href="./">Docs hub</a>
+        <a href="advanced.html">Advanced</a>
+        <a href="https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md">Strategy</a>
+      </div>
+    </div>
+    <div class="wrap footer-note">Paper first. Burner only.</div>
+  </footer>
+  <script src="../assets/site.js"></script>
+</body>
+</html>

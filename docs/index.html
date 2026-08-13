@@ -3,329 +3,202 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>DLMM Bot — Setup Guide</title>
-  <meta name="description" content="Easiest setup: deploy DLMM Bot on Railway. Paper first, then live with a burner wallet." />
+  <title>DLMM Bot — Automated Meteora DLMM LP for Solana</title>
+  <meta name="description" content="Run a DLMM bot that farms fees for you 24/7. Scans hot Meteora pools, vets tokens, opens one-sided SOL LP, exits by rules. Paper first." />
+  <link rel="canonical" href="https://dlmmbot.com/" />
+  <meta property="og:title" content="DLMM Bot" />
+  <meta property="og:description" content="Automated Meteora DLMM liquidity bot for Solana. Paper first. Burner only." />
+  <meta property="og:url" content="https://dlmmbot.com/" />
+  <meta property="og:type" content="website" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;650&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,650;1,500&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/site.css" />
 </head>
 <body>
-  <header class="top">
-    <div class="top-inner">
+  <header class="nav">
+    <div class="nav-inner">
       <a class="brand" href="./">dlmm<span>bot</span></a>
-      <nav class="top-nav" aria-label="Site">
-        <a href="./">Easy setup</a>
-        <a href="advanced.html">Advanced</a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#how">How it works</a>
+        <a href="#features">Features</a>
+        <a href="setup/">Docs</a>
         <a href="https://github.com/CryptoGnome/dlmmbot">GitHub</a>
-        <a href="https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md">Strategy</a>
       </nav>
+      <div class="nav-actions">
+        <a class="ghost" href="setup/">Docs</a>
+        <a class="btn btn-primary btn-sm" href="https://railway.com?referralCode=SCj9lN" target="_blank" rel="noreferrer">
+          Deploy <span class="arrow" aria-hidden="true">→</span>
+        </a>
+      </div>
     </div>
   </header>
 
-  <div class="wrap">
-    <header class="hero">
-      <h1>Easy setup (Railway)</h1>
+  <main>
+    <section class="hero wrap">
+      <div class="pill"><span class="dot" aria-hidden="true"></span> Paper first · live is double-locked</div>
+      <h1>Run a DLMM bot that farms fees for you, <em>24/7.</em></h1>
       <p class="lede">
-        Most people should run this on <strong>Railway</strong> — no VPS, no PM2, no fighting Node installs.
-        Start in <strong>paper mode</strong> (no wallet). Go live later with a burner.
+        DLMM Bot scans hot Solana Meteora pools, vets the token, opens one-sided SOL liquidity below price,
+        and exits by fixed rules — with a live ops dashboard you can halt anytime.
       </p>
-      <div class="hero-actions">
-        <a class="btn btn-primary" href="https://railway.com?referralCode=SCj9lN" target="_blank" rel="noreferrer">Sign up on Railway</a>
-        <a class="btn" href="#railway">Deploy steps</a>
-        <a class="btn" href="#live">Going live</a>
-        <a class="btn" href="advanced.html">Advanced (local / VPS / PM2)</a>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="https://railway.com?referralCode=SCj9lN" target="_blank" rel="noreferrer">
+          Deploy on Railway <span class="arrow" aria-hidden="true">→</span>
+        </a>
+        <a class="linkish" href="#how">See how it works</a>
       </div>
-      <p class="warn">
-        Memecoin LP can wipe a wallet. This software can lose every SOL you give it.
-        Not financial advice. Use a burner. Never put rent money in it.
-      </p>
-    </header>
 
-    <div class="layout">
-      <aside class="toc" aria-label="On this page">
-        <h2>On this page</h2>
-        <ol>
-          <li><a href="#what">What it does</a></li>
-          <li><a href="#why">Why Railway</a></li>
-          <li><a href="#railway">Deploy (paper)</a></li>
-          <li><a href="#dash">Open the dashboard</a></li>
-          <li><a href="#updates">Auto-updates</a></li>
-          <li><a href="#keys">Keys &amp; APIs</a></li>
-          <li><a href="#live">Going live</a></li>
-          <li><a href="#cost">Cost</a></li>
-          <li><a href="#troubleshoot">Troubleshooting</a></li>
-        </ol>
-      </aside>
-
-      <main>
-        <section id="what">
-          <h2>What it does</h2>
-          <div class="flow" aria-hidden="true">
-every ~60s                 every ~15s
-─────────────              ──────────
-scan pools          →      manage open LPs
-filter + score                   ↓
-vet token                claim / reclaim / exit
-size + open LP                   ↓
-                         record PnL in SQLite
+      <div class="mock-stage reveal">
+        <div class="mock" aria-hidden="true">
+          <div class="mock-bar">
+            <i></i><i></i><i></i>
+            <span>dlmmbot · overview</span>
           </div>
-          <div class="cards">
-            <div class="card">
-              <h3>Scan &amp; vet</h3>
-              <p>Finds hot SOL-quoted Meteora pools and skips obvious rugs.</p>
+          <div class="mock-body">
+            <div class="mock-side">
+              <button class="on" type="button">Overview</button>
+              <button type="button">Book</button>
+              <button type="button">Activity</button>
+              <button type="button">Settings</button>
             </div>
-            <div class="card">
-              <h3>Open LP</h3>
-              <p>One-sided SOL bid-ask below price (meme/micro) or spot (majors).</p>
-            </div>
-            <div class="card">
-              <h3>Manage</h3>
-              <p>Mechanical exits — stop, safety, above/below range, escape.</p>
+            <div class="mock-main">
+              <div class="mock-kpis">
+                <div class="mock-kpi">
+                  <div class="lab">Wallet</div>
+                  <div class="val">12.40</div>
+                </div>
+                <div class="mock-kpi">
+                  <div class="lab">24h PnL</div>
+                  <div class="val ok">+0.182</div>
+                </div>
+                <div class="mock-kpi">
+                  <div class="lab">Open</div>
+                  <div class="val">3</div>
+                </div>
+              </div>
+              <div class="mock-feed">
+                <div class="mock-row">
+                  <span class="t">14:02</span>
+                  <span>BONK · entered</span>
+                  <span class="bad">−0.500 SOL</span>
+                </div>
+                <div class="mock-row">
+                  <span class="t">13:41</span>
+                  <span>WIF · fee claim</span>
+                  <span class="ok">+0.014 SOL</span>
+                </div>
+                <div class="mock-row">
+                  <span class="t">13:18</span>
+                  <span>POPCAT · closed · Stop</span>
+                  <span class="bad">−0.062 SOL</span>
+                </div>
+                <div class="mock-row">
+                  <span class="t">12:55</span>
+                  <span>rent reclaim</span>
+                  <span class="ok">+0.008 SOL</span>
+                </div>
+              </div>
             </div>
           </div>
-          <p>
-            <strong>Paper</strong> fakes fills. <strong>Live</strong> uses your burner.
-            Live needs <em>two</em> switches on purpose (env + config).
-          </p>
-        </section>
+        </div>
+      </div>
+    </section>
 
-        <section id="why">
-          <h2>Why Railway (for most people)</h2>
-          <p>
-            You click deploy, set a few secrets, and get a public HTTPS link for the dashboard.
-            Railway restarts crashes and can redeploy when GitHub updates — that’s the “PM2 + auto-update”
-            story without owning a server.
-          </p>
-          <p class="note">
-            Already comfortable with a VPS, PM2, or running on your PC?
-            Use the <a href="advanced.html">Advanced setup guide</a> instead.
-          </p>
-        </section>
+    <section class="section" id="how">
+      <div class="wrap">
+        <div class="how-head reveal">
+          <h2>Launch in minutes. It watches pools so you don’t have to.</h2>
+          <p class="muted">Scan → vet → open LP → manage exits. Same loop on Railway or your own box.</p>
+        </div>
+        <div class="steps-grid">
+          <article class="step reveal">
+            <div class="n">01 · Scan</div>
+            <h3>Hot SOL pools</h3>
+            <p>Every ~60s it ranks Meteora DLMM pools on fee momentum and volume.</p>
+          </article>
+          <article class="step reveal">
+            <div class="n">02 · Vet</div>
+            <h3>Token safety</h3>
+            <p>Age, holders, insiders, RugCheck, creator history — skip the obvious rugs.</p>
+          </article>
+          <article class="step reveal">
+            <div class="n">03 · Enter</div>
+            <h3>One-sided SOL</h3>
+            <p>Bid-ask below price for memes; spot-style for majors. Sized from your wallet.</p>
+          </article>
+          <article class="step reveal">
+            <div class="n">04 · Exit</div>
+            <h3>Rules, not vibes</h3>
+            <p>Stop, safety, above/below range, claims, reclaim — PnL lands in SQLite.</p>
+          </article>
+        </div>
+      </div>
+    </section>
 
-        <section id="railway">
-          <h2>Deploy on Railway (paper)</h2>
-          <p>Do these in order. Stay on paper until you’re comfortable.</p>
+    <section class="section" id="features">
+      <div class="wrap">
+        <div class="feat-head reveal">
+          <h2>Everything is observable, rule-bound, and reversible.</h2>
+          <p class="muted">Live feed, hard gates, paper mode — halt in one command when you want out.</p>
+        </div>
+        <div class="feat-grid">
+          <article class="feat reveal">
+            <h3>Live decision feed</h3>
+            <p>Entries, exits, claims, skips, and SOL flows — green in, red out.</p>
+          </article>
+          <article class="feat reveal">
+            <h3>Token safety gates</h3>
+            <p>Toggle and tune vetting from Settings: age, insiders, holders, RugCheck, more.</p>
+          </article>
+          <article class="feat reveal">
+            <h3>Paper first</h3>
+            <p>No wallet required to learn the loop. Live needs env + config — on purpose.</p>
+          </article>
+          <article class="feat reveal">
+            <h3>Railway or self-host</h3>
+            <p>One-click cloud for most people; PM2 + auto-deploy if you already have a box.</p>
+          </article>
+          <article class="feat reveal">
+            <h3>Your keys</h3>
+            <p>Non-custodial. Burner wallet only. Keys stay in your env — never in the repo.</p>
+          </article>
+          <article class="feat reveal">
+            <h3>Halt anytime</h3>
+            <p><code>npm run halt</code> (or dash controls) freezes new risk. You’re always in charge.</p>
+          </article>
+        </div>
+      </div>
+    </section>
 
-          <ol class="steps">
-            <li>
-              <h3>Create a Railway account</h3>
-              <p>
-                Sign up here (supports this project):
-                <a href="https://railway.com?referralCode=SCj9lN" target="_blank" rel="noreferrer">railway.com?referralCode=SCj9lN</a>
-                — GitHub login is easiest. New accounts usually get trial credits.
-              </p>
-            </li>
-            <li>
-              <h3>New project from this GitHub repo</h3>
-              <p>
-                <strong>New Project → Deploy from GitHub</strong> → pick
-                <code>CryptoGnome/dlmmbot</code>
-                (or your fork).
-              </p>
-              <p>
-                If the repo is private, grant Railway access to it (or fork to your account first).
-              </p>
-            </li>
-            <li>
-              <h3>Add two services in the same project</h3>
-              <p>Same repo, two start commands:</p>
-              <table class="req">
-                <thead>
-                  <tr><th>Service</th><th>Start command</th><th>Public?</th></tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td><strong>farmer</strong></td>
-                    <td><code>npm run run</code></td>
-                    <td>No (private)</td>
-                  </tr>
-                  <tr>
-                    <td><strong>dash</strong></td>
-                    <td><code>npm run dash:build &amp;&amp; npm run dash</code></td>
-                    <td>Yes — generate a public domain</td>
-                  </tr>
-                </tbody>
-              </table>
-              <p class="note">
-                Both need Node 20+. On first deploy, Railway runs <code>npm install</code> for you.
-              </p>
-            </li>
-            <li>
-              <h3>Set shared variables (paper-safe)</h3>
-              <p>Project → Variables (or each service). Start with:</p>
-              <pre><button type="button" class="copy" data-copy>Copy</button><code>FARMER_MODE=paper
-RPC_URL=https://api.mainnet-beta.solana.com
-DASH_TOKEN=pick-a-long-random-password
-DASH_PORT=8787</code></pre>
-              <p>
-                Leave <code>WALLET_PRIVATE_KEY</code> empty for paper.
-                As long as <code>FARMER_MODE=paper</code>, it will <strong>not</strong> live-trade even if config says live.
-              </p>
-              <p class="note danger">
-                Never paste keys into Discord or screenshots. Never use your main wallet.
-              </p>
-            </li>
-            <li>
-              <h3>Attach a volume (important)</h3>
-              <p>
-                SQLite lives under <code>data/</code>. Without a volume, redeploys can wipe history.
-              </p>
-              <p>
-                On the <strong>farmer</strong> service: add a volume mounted at <code>/app/data</code>
-                (or whatever Railway shows as the app root + <code>/data</code>).
-                Point both services at the same volume if they share the DB; otherwise keep dash
-                read-only against the farmer’s data path as you refine the template.
-              </p>
-              <p class="note">
-                Hobby plan (or trial credits) is the realistic floor for always-on + a volume.
-                Free-tier credit alone is usually too small for 24/7.
-              </p>
-            </li>
-            <li>
-              <h3>Deploy</h3>
-              <p>
-                Click deploy / wait for both services to go green.
-                Open the <strong>dash</strong> service → <strong>Settings → Networking → Generate domain</strong>.
-              </p>
-            </li>
-          </ol>
-        </section>
+    <section class="band" id="docs">
+      <h2 class="reveal">Read the docs. Then deploy paper.</h2>
+      <p class="reveal">Easy path on Railway. Advanced path for local / VPS / PM2. Same bot either way.</p>
+      <div class="hero-cta reveal">
+        <a class="btn btn-primary" href="setup/">Open docs <span class="arrow" aria-hidden="true">→</span></a>
+        <a class="linkish" href="https://railway.com?referralCode=SCj9lN" target="_blank" rel="noreferrer">Sign up on Railway</a>
+      </div>
+    </section>
+  </main>
 
-        <section id="dash">
-          <h2>Open the dashboard</h2>
-          <p>
-            Use the public HTTPS URL Railway gave the <strong>dash</strong> service
-            (something like <code>https://….up.railway.app</code>).
-          </p>
-          <p>Enter the same <code>DASH_TOKEN</code> you set in variables.</p>
-          <p>
-            That URL works from your phone or any network — no port forwarding.
-            Anyone with the link still needs the token.
-          </p>
-        </section>
-
-        <section id="updates">
-          <h2>Auto-updates</h2>
-          <p>
-            Connect the Railway project to GitHub so pushes to <code>master</code> redeploy.
-            That’s the cloud version of PM2 + <code>meteora-deploy</code> on a home server.
-          </p>
-          <ul>
-            <li><strong>Paper:</strong> auto-deploy on push is fine.</li>
-            <li><strong>Live:</strong> prefer deploying only after CI is green, or click Deploy manually when you mean it.</li>
-          </ul>
-        </section>
-
-        <section id="keys">
-          <h2>Keys &amp; APIs (when you’re ready)</h2>
-
-          <h3>Burner wallet — Phantom</h3>
-          <ol>
-            <li>Install <a href="https://phantom.app" target="_blank" rel="noreferrer">Phantom</a>.</li>
-            <li>Create a <strong>new</strong> account — not your life savings.</li>
-            <li>Send only SOL you’re willing to lose.</li>
-            <li>Settings → Security &amp; Privacy → Export Private Key → copy base58.</li>
-            <li>Paste into Railway variables as <code>WALLET_PRIVATE_KEY</code> (no quotes).</li>
-          </ol>
-          <p class="note danger">Close the export screen. Don’t screenshot it.</p>
-
-          <h3>Private RPC</h3>
-          <p>
-            Public RPC is ok for a short paper smoke test. Live needs a private endpoint
-            (<a href="https://www.helius.dev" target="_blank" rel="noreferrer">Helius</a>,
-            <a href="https://www.quicknode.com" target="_blank" rel="noreferrer">QuickNode</a>, etc.).
-          </p>
-          <pre><button type="button" class="copy" data-copy>Copy</button><code>RPC_URL=https://your-provider-url-here</code></pre>
-
-          <h3>Jupiter API key</h3>
-          <p>For live swaps / zap-out: <a href="https://portal.jup.ag" target="_blank" rel="noreferrer">portal.jup.ag</a></p>
-          <pre><button type="button" class="copy" data-copy>Copy</button><code>JUPITER_API_KEY=your_key_here</code></pre>
-
-          <h3>Optional Telegram</h3>
-          <pre><button type="button" class="copy" data-copy>Copy</button><code>TELEGRAM_BOT_TOKEN=…
-TELEGRAM_CHAT_ID=…</code></pre>
-        </section>
-
-        <section id="live">
-          <h2>Going live</h2>
-          <p class="note danger">Real SOL. Burner only. One farmer process per wallet.</p>
-          <ul class="checklist">
-            <li>Paper looked sane for a while</li>
-            <li>Burner key + private RPC + Jupiter key in Railway variables</li>
-            <li>Railway: <code>FARMER_MODE=live</code></li>
-            <li>
-              Config: set <code>[exec] mode = "live"</code>
-              (edit in a fork, or use the dashboard Settings once the dash can write config)
-            </li>
-            <li>Redeploy / restart so both switches are live</li>
-          </ul>
-          <p class="note">
-            Live requires <strong>both</strong> <code>FARMER_MODE=live</code> and
-            <code>config.toml</code> <code>mode = "live"</code>. One alone stays safe.
-          </p>
-        </section>
-
-        <section id="cost">
-          <h2>What it costs</h2>
-          <p>
-            Railway: trial credits to start, then a small monthly floor (often Hobby ~$5) plus usage.
-            Always-on + a volume usually won’t stay on the tiny Free credit alone.
-            Check
-            <a href="https://railway.com/pricing?referralCode=SCj9lN" target="_blank" rel="noreferrer">railway.com/pricing</a>
-            (same referral link as signup).
-          </p>
-          <p>
-            Running on your own PC or VPS can be cheaper — see
-            <a href="advanced.html">Advanced setup</a>.
-          </p>
-        </section>
-
-        <section id="troubleshoot">
-          <h2>Troubleshooting</h2>
-          <table class="req">
-            <thead>
-              <tr><th>Symptom</th><th>Fix</th></tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Deploy fails on native module</td>
-                <td>Confirm Node 20; check build logs for <code>better-sqlite3</code></td>
-              </tr>
-              <tr>
-                <td>Dash asks for token / unauthorized</td>
-                <td>Same <code>DASH_TOKEN</code> in Railway vars and the browser</td>
-              </tr>
-              <tr>
-                <td>History wiped after redeploy</td>
-                <td>Attach a persistent volume on <code>data/</code></td>
-              </tr>
-              <tr>
-                <td>RPC spam / failed opens</td>
-                <td>Switch <code>RPC_URL</code> to a private RPC</td>
-              </tr>
-              <tr>
-                <td>Thought paper, it traded</td>
-                <td>Check <strong>both</strong> <code>FARMER_MODE</code> and <code>[exec].mode</code></td>
-              </tr>
-              <tr>
-                <td>Want local / PM2 / VPS</td>
-                <td><a href="advanced.html">Advanced setup guide</a></td>
-              </tr>
-            </tbody>
-          </table>
-        </section>
-
-        <p class="footer">
-          <a href="advanced.html">Advanced setup</a>
-          · <a href="https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md">STRATEGY.md</a>
-          · <a href="https://github.com/CryptoGnome/dlmmbot">GitHub</a>
-          · Paper first. Burner only.
-        </p>
-      </main>
+  <footer class="site-footer">
+    <div class="wrap footer-row">
+      <a class="brand" href="./">dlmm<span>bot</span></a>
+      <div class="footer-links">
+        <a href="setup/">Docs</a>
+        <a href="setup/easy.html">Easy setup</a>
+        <a href="setup/advanced.html">Advanced</a>
+        <a href="https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md">Strategy</a>
+        <a href="https://railway.com?referralCode=SCj9lN" target="_blank" rel="noreferrer">Railway</a>
+        <a href="https://github.com/CryptoGnome/dlmmbot">GitHub</a>
+      </div>
     </div>
-  </div>
+    <div class="wrap footer-note">
+      Memecoin LP can wipe a wallet. Not financial advice. Paper first. Burner only.
+      You can lose 100% of funds under this bot’s control.
+    </div>
+  </footer>
 
-  <script src="copy.js"></script>
+  <script src="assets/site.js"></script>
 </body>
 </html>

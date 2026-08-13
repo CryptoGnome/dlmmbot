@@ -3,78 +3,73 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>DLMM Bot — Advanced Setup</title>
-  <meta name="description" content="Advanced setup: run DLMM Bot locally or on your own VPS with PM2 and auto-deploy." />
+  <title>Advanced setup — DLMM Bot</title>
+  <meta name="description" content="Run DLMM Bot locally or on a VPS with PM2 and auto-deploy." />
+  <link rel="canonical" href="https://dlmmbot.com/setup/advanced.html" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;650&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,650;1,500&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../assets/site.css" />
 </head>
 <body>
-  <header class="top">
-    <div class="top-inner">
-      <a class="brand" href="./">dlmm<span>bot</span></a>
-      <nav class="top-nav" aria-label="Site">
-        <a href="./">Easy setup</a>
+  <header class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="../">dlmm<span>bot</span></a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="./">Docs</a>
+        <a href="easy.html">Easy</a>
         <a href="advanced.html">Advanced</a>
         <a href="https://github.com/CryptoGnome/dlmmbot">GitHub</a>
-        <a href="https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md">Strategy</a>
       </nav>
+      <div class="nav-actions">
+        <a class="btn btn-primary btn-sm" href="easy.html">Easy setup</a>
+      </div>
     </div>
   </header>
 
   <div class="wrap">
-    <header class="hero">
+    <header class="doc-hero">
       <h1>Advanced setup</h1>
       <p class="lede">
-        For people who already have a server, want full control, or prefer running on their own PC.
-        Most newcomers should use the <a href="./">Easy setup (Railway)</a> instead.
+        For people with a server, or who want to run on their own PC.
+        Most newcomers should use <a href="easy.html">Easy setup (Railway)</a>.
       </p>
-      <div class="hero-actions">
-        <a class="btn btn-primary" href="#local">Local paper</a>
-        <a class="btn" href="#pm2">PM2 / VPS</a>
-        <a class="btn" href="./">← Easy setup</a>
-      </div>
-      <p class="warn">
-        Same risk rules: paper first, burner only, never commit <code>.env</code>.
-      </p>
+      <p class="warn">Same risk rules: paper first, burner only, never commit <code>.env</code>.</p>
     </header>
 
-    <div class="layout">
+    <div class="doc-layout">
       <aside class="toc" aria-label="On this page">
         <h2>On this page</h2>
         <ol>
-          <li><a href="#when">When to use this</a></li>
-          <li><a href="#local">Local install (paper)</a></li>
+          <li><a href="#when">When to use</a></li>
+          <li><a href="#local">Local paper</a></li>
           <li><a href="#commands">Commands</a></li>
-          <li><a href="#dash">Local dashboard</a></li>
+          <li><a href="#dash">Dashboard</a></li>
           <li><a href="#keys">Keys &amp; live</a></li>
-          <li><a href="#pm2">PM2 on a VPS</a></li>
+          <li><a href="#pm2">PM2 / VPS</a></li>
           <li><a href="#autodeploy">Auto-deploy</a></li>
-          <li><a href="#remote-dash">Dashboard from outside</a></li>
+          <li><a href="#remote-dash">Remote dash</a></li>
           <li><a href="#troubleshoot">Troubleshooting</a></li>
         </ol>
       </aside>
 
-      <main>
+      <div class="doc-main">
         <section id="when">
-          <h2>When to use this guide</h2>
+          <h2>When to use this</h2>
           <div class="cards">
             <div class="card">
               <h3>Easy (Railway)</h3>
-              <p>
-                No server. Public HTTPS dash. Auto-redeploy from GitHub. Best for most users.
+              <p>No server. Public HTTPS. Auto-redeploy.
                 <a href="https://railway.com?referralCode=SCj9lN" target="_blank" rel="noreferrer">Sign up</a>
-                · <a href="./">guide</a>
-              </p>
+                · <a href="easy.html">guide</a></p>
             </div>
             <div class="card">
               <h3>This guide</h3>
-              <p>You have a VPS / home box, know PM2, or want zero hosting bill on your PC.</p>
+              <p>VPS / home box / local PC with full control.</p>
             </div>
             <div class="card">
               <h3>Same bot</h3>
-              <p>Identical code, paper/live gates, and config. Only the host changes.</p>
+              <p>Identical code and paper/live gates.</p>
             </div>
           </div>
         </section>
@@ -82,9 +77,7 @@
         <section id="local">
           <h2>Local install (paper)</h2>
           <table class="req">
-            <thead>
-              <tr><th>Need</th><th>Get it</th><th>Check</th></tr>
-            </thead>
+            <thead><tr><th>Need</th><th>Get it</th><th>Check</th></tr></thead>
             <tbody>
               <tr>
                 <td><strong>Node.js 20+</strong></td>
@@ -98,14 +91,13 @@
               </tr>
             </tbody>
           </table>
-
           <ol class="steps">
             <li>
               <h3>Clone &amp; install</h3>
               <pre><button type="button" class="copy" data-copy>Copy</button><code>git clone https://github.com/CryptoGnome/dlmmbot.git
 cd dlmmbot
 npm install</code></pre>
-              <p><code>better-sqlite3</code> compiling is normal. On Windows you may need VS Build Tools (C++).</p>
+              <p><code>better-sqlite3</code> compiling is normal. Windows may need VS Build Tools.</p>
             </li>
             <li>
               <h3>Create <code>.env</code></h3>
@@ -122,7 +114,6 @@ mode = "paper"</code></pre>
             <li>
               <h3>Run</h3>
               <pre><button type="button" class="copy" data-copy>Copy</button><code>npm run run</code></pre>
-              <p>Other terminal:</p>
               <pre><button type="button" class="copy" data-copy>Copy</button><code>npm run status
 npm run halt</code></pre>
             </li>
@@ -146,7 +137,7 @@ npm run dash</code></pre>
 
         <section id="keys">
           <h2>Keys &amp; going live</h2>
-          <p>Same as the easy guide: Phantom burner → <code>WALLET_PRIVATE_KEY</code>, private RPC, Jupiter key.</p>
+          <p>Phantom burner → <code>WALLET_PRIVATE_KEY</code>, private RPC, Jupiter key.</p>
           <pre><button type="button" class="copy" data-copy>Copy</button><code># .env
 FARMER_MODE=live
 RPC_URL=https://your-private-rpc
@@ -159,8 +150,7 @@ mode = "live"</code></pre>
         </section>
 
         <section id="pm2">
-          <h2>PM2 on a VPS (always-on)</h2>
-          <p>This is how an operator box stays up without Railway.</p>
+          <h2>PM2 on a VPS</h2>
           <pre><button type="button" class="copy" data-copy>Copy</button><code>npm install -g pm2
 pm2 start deploy/ecosystem.config.cjs --only meteora-farmer
 pm2 start deploy/ecosystem.config.cjs --only meteora-dash
@@ -168,76 +158,59 @@ pm2 save
 pm2 startup
 pm2 logs meteora-farmer</code></pre>
           <p>
-            <code>deploy/ecosystem.config.cjs</code> also defines <code>meteora-deploy</code>
-            (git pull watcher) — start that only if you want auto-updates from <code>master</code>.
+            <code>meteora-deploy</code> in the same ecosystem is the git pull watcher —
+            start it only if you want auto-updates from <code>master</code>.
           </p>
         </section>
 
         <section id="autodeploy">
-          <h2>Auto-deploy on your server</h2>
+          <h2>Auto-deploy</h2>
           <pre><button type="button" class="copy" data-copy>Copy</button><code>pm2 start deploy/ecosystem.config.cjs --only meteora-deploy
 pm2 save</code></pre>
-          <p>
-            When <code>origin/master</code> advances, the watcher pulls, typechecks/tests,
-            rebuilds the dash if needed, and restarts apps — same idea as Railway’s
-            “deploy on push,” but you own the machine.
-          </p>
           <p class="note">
-            Don’t SCP over a dirty tree and expect the pill to say CURRENT — push + pull
-            (or let <code>meteora-deploy</code> do it).
+            Don’t SCP a dirty tree and expect CURRENT — push + pull (or let the watcher do it).
           </p>
         </section>
 
         <section id="remote-dash">
-          <h2>Dashboard from outside your LAN</h2>
-          <p>Unlike Railway’s public HTTPS URL, a home/VPS dash needs one of:</p>
+          <h2>Dashboard from outside</h2>
           <ul>
-            <li><strong>Tailscale / ZeroTier</strong> — easiest private access from your phone</li>
+            <li><strong>Tailscale / ZeroTier</strong> — private access from your phone</li>
             <li><strong>Cloudflare Tunnel</strong> — public HTTPS without opening ports</li>
-            <li><strong>Reverse proxy + HTTPS</strong> (Caddy/Nginx) on a VPS with a domain</li>
+            <li><strong>Reverse proxy + HTTPS</strong> on a VPS with a domain</li>
           </ul>
           <p class="note danger">
-            Don’t expose <code>:8787</code> raw to the internet without a strong
-            <code>DASH_TOKEN</code> (and preferably HTTPS).
+            Don’t expose <code>:8787</code> raw without a strong <code>DASH_TOKEN</code> (and HTTPS).
           </p>
         </section>
 
         <section id="troubleshoot">
           <h2>Troubleshooting</h2>
           <table class="req">
-            <thead>
-              <tr><th>Symptom</th><th>Fix</th></tr>
-            </thead>
+            <thead><tr><th>Symptom</th><th>Fix</th></tr></thead>
             <tbody>
-              <tr>
-                <td><code>better-sqlite3</code> build fail</td>
-                <td>Windows: VS Build Tools. Linux: <code>build-essential</code></td>
-              </tr>
-              <tr>
-                <td>Already running / lock</td>
-                <td>Only if sure: <code>npm run release</code></td>
-              </tr>
-              <tr>
-                <td>BEHIND on version pill</td>
-                <td>Server didn’t pull — start <code>meteora-deploy</code> or <code>git pull</code></td>
-              </tr>
-              <tr>
-                <td>Want the simple path</td>
-                <td><a href="./">Easy setup (Railway)</a></td>
-              </tr>
+              <tr><td><code>better-sqlite3</code> build fail</td><td>VS Build Tools / <code>build-essential</code></td></tr>
+              <tr><td>Already running / lock</td><td>Only if sure: <code>npm run release</code></td></tr>
+              <tr><td>BEHIND on version pill</td><td>Start <code>meteora-deploy</code> or <code>git pull</code></td></tr>
+              <tr><td>Want the simple path</td><td><a href="easy.html">Easy setup (Railway)</a></td></tr>
             </tbody>
           </table>
         </section>
-
-        <p class="footer">
-          <a href="./">Easy setup</a>
-          · <a href="https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md">STRATEGY.md</a>
-          · Paper first. Burner only.
-        </p>
-      </main>
+      </div>
     </div>
   </div>
 
-  <script src="copy.js"></script>
+  <footer class="site-footer">
+    <div class="wrap footer-row">
+      <a class="brand" href="../">dlmm<span>bot</span></a>
+      <div class="footer-links">
+        <a href="./">Docs hub</a>
+        <a href="easy.html">Easy</a>
+        <a href="https://github.com/CryptoGnome/dlmmbot">GitHub</a>
+      </div>
+    </div>
+    <div class="wrap footer-note">Paper first. Burner only.</div>
+  </footer>
+  <script src="../assets/site.js"></script>
 </body>
 </html>
