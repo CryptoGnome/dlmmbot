@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>meteora-farmer — Setup Guide</title>
-  <meta name="description" content="Idiot-proof setup guide for meteora-farmer: paper mode first, then live trading on Solana Meteora DLMM." />
+  <meta name="description" content="Easiest setup: deploy meteora-farmer on Railway. Paper first, then live with a burner wallet." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;650&display=swap" rel="stylesheet" />
@@ -14,25 +14,26 @@
   <header class="top">
     <div class="top-inner">
       <a class="brand" href="./">meteora<span>-farmer</span></a>
-      <nav class="top-nav" aria-label="External">
+      <nav class="top-nav" aria-label="Site">
+        <a href="./">Easy setup</a>
+        <a href="advanced.html">Advanced</a>
         <a href="https://github.com/CryptoGnome/meteora-farmer">GitHub</a>
         <a href="https://github.com/CryptoGnome/meteora-farmer/blob/master/STRATEGY.md">Strategy</a>
-        <a href="https://github.com/CryptoGnome/meteora-farmer/blob/master/config.toml">config.toml</a>
       </nav>
     </div>
   </header>
 
   <div class="wrap">
     <header class="hero">
-      <h1>Setup guide</h1>
+      <h1>Easy setup (Railway)</h1>
       <p class="lede">
-        Get the bot running in <strong>paper mode</strong> (no wallet, no real SOL),
-        then optionally go live with a burner wallet. Follow the steps in order.
+        Most people should run this on <strong>Railway</strong> — no VPS, no PM2, no fighting Node installs.
+        Start in <strong>paper mode</strong> (no wallet). Go live later with a burner.
       </p>
       <div class="hero-actions">
-        <a class="btn btn-primary" href="#paper">Start paper install</a>
+        <a class="btn btn-primary" href="#railway">Deploy on Railway</a>
         <a class="btn" href="#live">Going live</a>
-        <a class="btn" href="#troubleshoot">Troubleshooting</a>
+        <a class="btn" href="advanced.html">Advanced (local / VPS / PM2)</a>
       </div>
       <p class="warn">
         Memecoin LP can wipe a wallet. This software can lose every SOL you give it.
@@ -45,13 +46,13 @@
         <h2>On this page</h2>
         <ol>
           <li><a href="#what">What it does</a></li>
-          <li><a href="#before">Before you start</a></li>
-          <li><a href="#paper">Install (paper)</a></li>
-          <li><a href="#commands">Commands</a></li>
-          <li><a href="#dashboard">Dashboard</a></li>
+          <li><a href="#why">Why Railway</a></li>
+          <li><a href="#railway">Deploy (paper)</a></li>
+          <li><a href="#dash">Open the dashboard</a></li>
+          <li><a href="#updates">Auto-updates</a></li>
+          <li><a href="#keys">Keys &amp; APIs</a></li>
           <li><a href="#live">Going live</a></li>
-          <li><a href="#keys">Private key &amp; APIs</a></li>
-          <li><a href="#pm2">PM2</a></li>
+          <li><a href="#cost">Cost</a></li>
           <li><a href="#troubleshoot">Troubleshooting</a></li>
         </ol>
       </aside>
@@ -83,209 +84,197 @@ size + open LP                   ↓
             </div>
           </div>
           <p>
-            <strong>Paper</strong> simulates fills against live pool data.
-            <strong>Live</strong> uses your burner wallet. Same brain, two locks for live.
+            <strong>Paper</strong> fakes fills. <strong>Live</strong> uses your burner.
+            Live needs <em>two</em> switches on purpose (env + config).
           </p>
         </section>
 
-        <section id="before">
-          <h2>Before you start</h2>
-          <table class="req">
-            <thead>
-              <tr><th>Need</th><th>Get it</th><th>Check</th></tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><strong>Node.js 20+</strong></td>
-                <td><a href="https://nodejs.org" target="_blank" rel="noreferrer">nodejs.org</a> (LTS)</td>
-                <td><code>node -v</code></td>
-              </tr>
-              <tr>
-                <td><strong>Git</strong></td>
-                <td><a href="https://git-scm.com" target="_blank" rel="noreferrer">git-scm.com</a></td>
-                <td><code>git --version</code></td>
-              </tr>
-              <tr>
-                <td><strong>Terminal</strong></td>
-                <td>PowerShell, Terminal, or bash</td>
-                <td>—</td>
-              </tr>
-            </tbody>
-          </table>
-          <p class="note">Paper mode needs <strong>no wallet</strong>, no RPC key, and no Jupiter key.</p>
+        <section id="why">
+          <h2>Why Railway (for most people)</h2>
+          <p>
+            You click deploy, set a few secrets, and get a public HTTPS link for the dashboard.
+            Railway restarts crashes and can redeploy when GitHub updates — that’s the “PM2 + auto-update”
+            story without owning a server.
+          </p>
+          <p class="note">
+            Already comfortable with a VPS, PM2, or running on your PC?
+            Use the <a href="advanced.html">Advanced setup guide</a> instead.
+          </p>
         </section>
 
-        <section id="paper">
-          <h2>Install &amp; run (paper)</h2>
-          <p>Do these in order. Stay in paper until you’re comfortable.</p>
+        <section id="railway">
+          <h2>Deploy on Railway (paper)</h2>
+          <p>Do these in order. Stay on paper until you’re comfortable.</p>
 
           <ol class="steps">
             <li>
-              <h3>Download the repo</h3>
-              <pre><button type="button" class="copy" data-copy>Copy</button><code>git clone https://github.com/CryptoGnome/meteora-farmer.git
-cd meteora-farmer</code></pre>
-            </li>
-            <li>
-              <h3>Install packages</h3>
-              <pre><button type="button" class="copy" data-copy>Copy</button><code>npm install</code></pre>
-              <p>Wait until it finishes. A message about <code>better-sqlite3</code> compiling is normal.</p>
-            </li>
-            <li>
-              <h3>Create your <code>.env</code> file</h3>
-              <pre><button type="button" class="copy" data-copy>Copy</button><code>cp .env.example .env</code></pre>
-              <p>Open <code>.env</code> in a text editor. For paper, keep it simple:</p>
-              <pre><button type="button" class="copy" data-copy>Copy</button><code>FARMER_MODE=paper
-RPC_URL=https://api.mainnet-beta.solana.com</code></pre>
-              <p class="note danger">
-                Never commit <code>.env</code>. Never paste keys into chat or screenshots.
-                Never use your main wallet for this bot.
-              </p>
-            </li>
-            <li>
-              <h3>Force paper in <code>config.toml</code></h3>
-              <p>Open <code>config.toml</code>, find <code>[exec]</code>, set:</p>
-              <pre><button type="button" class="copy" data-copy>Copy</button><code>[exec]
-mode = "paper"</code></pre>
-              <p class="note">
-                Live only runs when <strong>both</strong> <code>config.toml</code> and <code>.env</code> say live.
-                One alone is not enough.
-              </p>
-            </li>
-            <li>
-              <h3>Smoke test (optional)</h3>
-              <pre><button type="button" class="copy" data-copy>Copy</button><code>npm run scan
-npm run vet -- PASTE_A_TOKEN_MINT_HERE</code></pre>
-            </li>
-            <li>
-              <h3>Start paper trading</h3>
-              <pre><button type="button" class="copy" data-copy>Copy</button><code>npm run run</code></pre>
-              <p>Leave that window open. In a <strong>second</strong> terminal (same folder):</p>
-              <pre><button type="button" class="copy" data-copy>Copy</button><code>npm run status</code></pre>
-            </li>
-            <li>
-              <h3>Stop</h3>
-              <pre><button type="button" class="copy" data-copy>Copy</button><code>npm run halt</code></pre>
-              <p>Or press <code>Ctrl+C</code> in the run window (fine for paper).</p>
-            </li>
-          </ol>
-        </section>
-
-        <section id="commands">
-          <h2>Commands you’ll use</h2>
-          <pre><button type="button" class="copy" data-copy>Copy</button><code>npm run scan                 # pools that pass gates right now
-npm run vet -- &lt;mint&gt;        # full vet report for one token
-npm run run                  # start the bot loop
-npm run status               # open positions + profit
-npm run halt                 # close all + stop
-npm run force-close -- &lt;id&gt;  # force-close one position
-npm test                     # run tests</code></pre>
-        </section>
-
-        <section id="dashboard">
-          <h2>Optional dashboard</h2>
-          <p>Local web UI for positions, activity, and settings.</p>
-          <ol class="steps">
-            <li>
-              <h3>Add a secret to <code>.env</code></h3>
-              <pre><button type="button" class="copy" data-copy>Copy</button><code>DASH_TOKEN=pick-a-long-random-password
-DASH_PORT=8787</code></pre>
-            </li>
-            <li>
-              <h3>Build once, then start</h3>
-              <pre><button type="button" class="copy" data-copy>Copy</button><code>npm run dash:build
-npm run dash</code></pre>
-            </li>
-            <li>
-              <h3>Open the UI</h3>
+              <h3>Create a Railway account</h3>
               <p>
-                Go to <a href="http://localhost:8787">http://localhost:8787</a>
-                and enter the same <code>DASH_TOKEN</code>.
-                On your LAN: <code>http://YOUR_PC_IP:8787</code>.
+                Go to <a href="https://railway.com" target="_blank" rel="noreferrer">railway.com</a>,
+                sign up (GitHub login is easiest). New accounts usually get trial credits.
+              </p>
+            </li>
+            <li>
+              <h3>New project from this GitHub repo</h3>
+              <p>
+                <strong>New Project → Deploy from GitHub</strong> → pick
+                <code>CryptoGnome/meteora-farmer</code>
+                (or your fork).
+              </p>
+              <p>
+                If the repo is private, grant Railway access to it (or fork to your account first).
+              </p>
+            </li>
+            <li>
+              <h3>Add two services in the same project</h3>
+              <p>Same repo, two start commands:</p>
+              <table class="req">
+                <thead>
+                  <tr><th>Service</th><th>Start command</th><th>Public?</th></tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><strong>farmer</strong></td>
+                    <td><code>npm run run</code></td>
+                    <td>No (private)</td>
+                  </tr>
+                  <tr>
+                    <td><strong>dash</strong></td>
+                    <td><code>npm run dash:build &amp;&amp; npm run dash</code></td>
+                    <td>Yes — generate a public domain</td>
+                  </tr>
+                </tbody>
+              </table>
+              <p class="note">
+                Both need Node 20+. On first deploy, Railway runs <code>npm install</code> for you.
+              </p>
+            </li>
+            <li>
+              <h3>Set shared variables (paper-safe)</h3>
+              <p>Project → Variables (or each service). Start with:</p>
+              <pre><button type="button" class="copy" data-copy>Copy</button><code>FARMER_MODE=paper
+RPC_URL=https://api.mainnet-beta.solana.com
+DASH_TOKEN=pick-a-long-random-password
+DASH_PORT=8787</code></pre>
+              <p>
+                Leave <code>WALLET_PRIVATE_KEY</code> empty for paper.
+                As long as <code>FARMER_MODE=paper</code>, it will <strong>not</strong> live-trade even if config says live.
+              </p>
+              <p class="note danger">
+                Never paste keys into Discord or screenshots. Never use your main wallet.
+              </p>
+            </li>
+            <li>
+              <h3>Attach a volume (important)</h3>
+              <p>
+                SQLite lives under <code>data/</code>. Without a volume, redeploys can wipe history.
+              </p>
+              <p>
+                On the <strong>farmer</strong> service: add a volume mounted at <code>/app/data</code>
+                (or whatever Railway shows as the app root + <code>/data</code>).
+                Point both services at the same volume if they share the DB; otherwise keep dash
+                read-only against the farmer’s data path as you refine the template.
+              </p>
+              <p class="note">
+                Hobby plan (or trial credits) is the realistic floor for always-on + a volume.
+                Free-tier credit alone is usually too small for 24/7.
+              </p>
+            </li>
+            <li>
+              <h3>Deploy</h3>
+              <p>
+                Click deploy / wait for both services to go green.
+                Open the <strong>dash</strong> service → <strong>Settings → Networking → Generate domain</strong>.
               </p>
             </li>
           </ol>
         </section>
 
-        <section id="live">
-          <h2>Going live</h2>
-          <p class="note danger">
-            Live spends <strong>real SOL</strong>. Use a burner funded only with money you can lose completely.
+        <section id="dash">
+          <h2>Open the dashboard</h2>
+          <p>
+            Use the public HTTPS URL Railway gave the <strong>dash</strong> service
+            (something like <code>https://….up.railway.app</code>).
           </p>
-          <ul class="checklist">
-            <li>Paper ran cleanly for a while</li>
-            <li>Fresh burner wallet (not your main)</li>
-            <li>Private RPC URL</li>
-            <li>Jupiter API key</li>
-            <li>Private key in <code>.env</code> (or keypair path)</li>
-            <li><code>config.toml</code> → <code>mode = "live"</code></li>
-            <li><code>.env</code> → <code>FARMER_MODE=live</code></li>
-            <li>Only <strong>one</strong> farmer process on that wallet</li>
+          <p>Enter the same <code>DASH_TOKEN</code> you set in variables.</p>
+          <p>
+            That URL works from your phone or any network — no port forwarding.
+            Anyone with the link still needs the token.
+          </p>
+        </section>
+
+        <section id="updates">
+          <h2>Auto-updates</h2>
+          <p>
+            Connect the Railway project to GitHub so pushes to <code>master</code> redeploy.
+            That’s the cloud version of PM2 + <code>meteora-deploy</code> on a home server.
+          </p>
+          <ul>
+            <li><strong>Paper:</strong> auto-deploy on push is fine.</li>
+            <li><strong>Live:</strong> prefer deploying only after CI is green, or click Deploy manually when you mean it.</li>
           </ul>
         </section>
 
         <section id="keys">
-          <h2>Private key, RPC, Jupiter</h2>
+          <h2>Keys &amp; APIs (when you’re ready)</h2>
 
-          <h3>Burner wallet — Phantom (easiest)</h3>
+          <h3>Burner wallet — Phantom</h3>
           <ol>
             <li>Install <a href="https://phantom.app" target="_blank" rel="noreferrer">Phantom</a>.</li>
-            <li>Create a <strong>new</strong> wallet / account — not your life savings.</li>
-            <li>Send only the SOL you’re willing to lose.</li>
-            <li>
-              Export key: Settings → Security &amp; Privacy → Export Private Key → copy the long base58 string.
-            </li>
-            <li>Paste into <code>.env</code>:</li>
+            <li>Create a <strong>new</strong> account — not your life savings.</li>
+            <li>Send only SOL you’re willing to lose.</li>
+            <li>Settings → Security &amp; Privacy → Export Private Key → copy base58.</li>
+            <li>Paste into Railway variables as <code>WALLET_PRIVATE_KEY</code> (no quotes).</li>
           </ol>
-          <pre><button type="button" class="copy" data-copy>Copy</button><code>WALLET_PRIVATE_KEY=paste_the_key_here_with_no_quotes_no_spaces</code></pre>
-          <p class="note danger">Close the export screen. Don’t screenshot it. Don’t share it.</p>
-
-          <h3>Or Solana CLI keypair</h3>
-          <pre><button type="button" class="copy" data-copy>Copy</button><code>solana-keygen new --outfile ./burner.json</code></pre>
-          <pre><button type="button" class="copy" data-copy>Copy</button><code>WALLET_KEYPAIR_PATH=./burner.json</code></pre>
-          <p>If both key fields are set, <code>WALLET_PRIVATE_KEY</code> wins.</p>
+          <p class="note danger">Close the export screen. Don’t screenshot it.</p>
 
           <h3>Private RPC</h3>
           <p>
-            Public RPC is fine for a paper smoke test. Live needs a private endpoint
-            (e.g. <a href="https://www.helius.dev" target="_blank" rel="noreferrer">Helius</a>,
-            <a href="https://www.quicknode.com" target="_blank" rel="noreferrer">QuickNode</a>).
+            Public RPC is ok for a short paper smoke test. Live needs a private endpoint
+            (<a href="https://www.helius.dev" target="_blank" rel="noreferrer">Helius</a>,
+            <a href="https://www.quicknode.com" target="_blank" rel="noreferrer">QuickNode</a>, etc.).
           </p>
-          <pre><button type="button" class="copy" data-copy>Copy</button><code>RPC_URL=https://your-provider-url-here
-RPC_URL_FALLBACK=https://optional-backup-url</code></pre>
+          <pre><button type="button" class="copy" data-copy>Copy</button><code>RPC_URL=https://your-provider-url-here</code></pre>
 
           <h3>Jupiter API key</h3>
-          <p>Needed for live swaps / zap-out. Create one at <a href="https://portal.jup.ag" target="_blank" rel="noreferrer">portal.jup.ag</a>.</p>
+          <p>For live swaps / zap-out: <a href="https://portal.jup.ag" target="_blank" rel="noreferrer">portal.jup.ag</a></p>
           <pre><button type="button" class="copy" data-copy>Copy</button><code>JUPITER_API_KEY=your_key_here</code></pre>
 
-          <h3>Optional Telegram alerts</h3>
-          <ol>
-            <li><a href="https://t.me/BotFather" target="_blank" rel="noreferrer">@BotFather</a> → <code>/newbot</code> → copy token</li>
-            <li><a href="https://t.me/userinfobot" target="_blank" rel="noreferrer">@userinfobot</a> → copy chat id</li>
-            <li>Message your bot once, then:</li>
-          </ol>
-          <pre><button type="button" class="copy" data-copy>Copy</button><code>TELEGRAM_BOT_TOKEN=123456:ABC...
-TELEGRAM_CHAT_ID=987654321</code></pre>
-
-          <h3>Flip both live switches</h3>
-          <pre><button type="button" class="copy" data-copy>Copy</button><code># .env
-FARMER_MODE=live
-RPC_URL=https://your-private-rpc
-JUPITER_API_KEY=your_key
-WALLET_PRIVATE_KEY=your_burner_key</code></pre>
-          <pre><button type="button" class="copy" data-copy>Copy</button><code># config.toml
-[exec]
-mode = "live"</code></pre>
-          <pre><button type="button" class="copy" data-copy>Copy</button><code>npm run run</code></pre>
+          <h3>Optional Telegram</h3>
+          <pre><button type="button" class="copy" data-copy>Copy</button><code>TELEGRAM_BOT_TOKEN=…
+TELEGRAM_CHAT_ID=…</code></pre>
         </section>
 
-        <section id="pm2">
-          <h2>Keep it running (PM2)</h2>
-          <p>Only after <code>npm run run</code> works by hand.</p>
-          <pre><button type="button" class="copy" data-copy>Copy</button><code>npm install -g pm2
-pm2 start deploy/ecosystem.config.cjs --only meteora-farmer
-pm2 save
-pm2 logs meteora-farmer</code></pre>
-          <p>Same file can also start <code>meteora-dash</code> (dashboard) and <code>meteora-deploy</code> (auto-pull).</p>
+        <section id="live">
+          <h2>Going live</h2>
+          <p class="note danger">Real SOL. Burner only. One farmer process per wallet.</p>
+          <ul class="checklist">
+            <li>Paper looked sane for a while</li>
+            <li>Burner key + private RPC + Jupiter key in Railway variables</li>
+            <li>Railway: <code>FARMER_MODE=live</code></li>
+            <li>
+              Config: set <code>[exec] mode = "live"</code>
+              (edit in a fork, or use the dashboard Settings once the dash can write config)
+            </li>
+            <li>Redeploy / restart so both switches are live</li>
+          </ul>
+          <p class="note">
+            Live requires <strong>both</strong> <code>FARMER_MODE=live</code> and
+            <code>config.toml</code> <code>mode = "live"</code>. One alone stays safe.
+          </p>
+        </section>
+
+        <section id="cost">
+          <h2>What it costs</h2>
+          <p>
+            Railway: trial credits to start, then a small monthly floor (often Hobby ~$5) plus usage.
+            Always-on + a volume usually won’t stay on the tiny Free credit alone.
+            Check <a href="https://railway.com/pricing" target="_blank" rel="noreferrer">railway.com/pricing</a>.
+          </p>
+          <p>
+            Running on your own PC or VPS can be cheaper — see
+            <a href="advanced.html">Advanced setup</a>.
+          </p>
         </section>
 
         <section id="troubleshoot">
@@ -296,56 +285,43 @@ pm2 logs meteora-farmer</code></pre>
             </thead>
             <tbody>
               <tr>
-                <td><code>node -v</code> too old</td>
-                <td>Install Node 20+, reopen the terminal</td>
+                <td>Deploy fails on native module</td>
+                <td>Confirm Node 20; check build logs for <code>better-sqlite3</code></td>
               </tr>
               <tr>
-                <td><code>better-sqlite3</code> build fail</td>
-                <td>Windows: VS Build Tools (C++). Linux: <code>build-essential</code></td>
+                <td>Dash asks for token / unauthorized</td>
+                <td>Same <code>DASH_TOKEN</code> in Railway vars and the browser</td>
               </tr>
               <tr>
-                <td>RPC errors</td>
-                <td>Put a private RPC in <code>RPC_URL</code></td>
+                <td>History wiped after redeploy</td>
+                <td>Attach a persistent volume on <code>data/</code></td>
               </tr>
               <tr>
-                <td>Already running / lock</td>
-                <td>No other <code>run</code> open? Only if sure: <code>npm run release</code></td>
-              </tr>
-              <tr>
-                <td>Dashboard unauthorized</td>
-                <td>Set <code>DASH_TOKEN</code>, <code>dash:build</code>, <code>dash</code>, same token in browser</td>
+                <td>RPC spam / failed opens</td>
+                <td>Switch <code>RPC_URL</code> to a private RPC</td>
               </tr>
               <tr>
                 <td>Thought paper, it traded</td>
-                <td>Check <strong>both</strong> <code>[exec].mode</code> and <code>FARMER_MODE</code></td>
+                <td>Check <strong>both</strong> <code>FARMER_MODE</code> and <code>[exec].mode</code></td>
+              </tr>
+              <tr>
+                <td>Want local / PM2 / VPS</td>
+                <td><a href="advanced.html">Advanced setup guide</a></td>
               </tr>
             </tbody>
           </table>
         </section>
 
         <p class="footer">
-          Full strategy: <a href="https://github.com/CryptoGnome/meteora-farmer/blob/master/STRATEGY.md">STRATEGY.md</a>
-          · Source: <a href="https://github.com/CryptoGnome/meteora-farmer">GitHub</a>
-          · Provided as-is. Paper first. Burner only.
+          <a href="advanced.html">Advanced setup</a>
+          · <a href="https://github.com/CryptoGnome/meteora-farmer/blob/master/STRATEGY.md">STRATEGY.md</a>
+          · <a href="https://github.com/CryptoGnome/meteora-farmer">GitHub</a>
+          · Paper first. Burner only.
         </p>
       </main>
     </div>
   </div>
 
-  <script>
-    document.querySelectorAll("[data-copy]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const code = btn.parentElement.querySelector("code");
-        if (!code) return;
-        try {
-          await navigator.clipboard.writeText(code.innerText);
-          btn.textContent = "Copied";
-          setTimeout(() => { btn.textContent = "Copy"; }, 1200);
-        } catch {
-          btn.textContent = "Select & copy";
-        }
-      });
-    });
-  </script>
+  <script src="copy.js"></script>
 </body>
 </html>

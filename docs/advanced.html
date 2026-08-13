@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>meteora-farmer — Advanced Setup</title>
+  <meta name="description" content="Advanced setup: run meteora-farmer locally or on your own VPS with PM2 and auto-deploy." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;650&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="top-inner">
+      <a class="brand" href="./">meteora<span>-farmer</span></a>
+      <nav class="top-nav" aria-label="Site">
+        <a href="./">Easy setup</a>
+        <a href="advanced.html">Advanced</a>
+        <a href="https://github.com/CryptoGnome/meteora-farmer">GitHub</a>
+        <a href="https://github.com/CryptoGnome/meteora-farmer/blob/master/STRATEGY.md">Strategy</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <header class="hero">
+      <h1>Advanced setup</h1>
+      <p class="lede">
+        For people who already have a server, want full control, or prefer running on their own PC.
+        Most newcomers should use the <a href="./">Easy setup (Railway)</a> instead.
+      </p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="#local">Local paper</a>
+        <a class="btn" href="#pm2">PM2 / VPS</a>
+        <a class="btn" href="./">← Easy setup</a>
+      </div>
+      <p class="warn">
+        Same risk rules: paper first, burner only, never commit <code>.env</code>.
+      </p>
+    </header>
+
+    <div class="layout">
+      <aside class="toc" aria-label="On this page">
+        <h2>On this page</h2>
+        <ol>
+          <li><a href="#when">When to use this</a></li>
+          <li><a href="#local">Local install (paper)</a></li>
+          <li><a href="#commands">Commands</a></li>
+          <li><a href="#dash">Local dashboard</a></li>
+          <li><a href="#keys">Keys &amp; live</a></li>
+          <li><a href="#pm2">PM2 on a VPS</a></li>
+          <li><a href="#autodeploy">Auto-deploy</a></li>
+          <li><a href="#remote-dash">Dashboard from outside</a></li>
+          <li><a href="#troubleshoot">Troubleshooting</a></li>
+        </ol>
+      </aside>
+
+      <main>
+        <section id="when">
+          <h2>When to use this guide</h2>
+          <div class="cards">
+            <div class="card">
+              <h3>Easy (Railway)</h3>
+              <p>No server. Public HTTPS dash. Auto-redeploy from GitHub. Best for most users.</p>
+            </div>
+            <div class="card">
+              <h3>This guide</h3>
+              <p>You have a VPS / home box, know PM2, or want zero hosting bill on your PC.</p>
+            </div>
+            <div class="card">
+              <h3>Same bot</h3>
+              <p>Identical code, paper/live gates, and config. Only the host changes.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="local">
+          <h2>Local install (paper)</h2>
+          <table class="req">
+            <thead>
+              <tr><th>Need</th><th>Get it</th><th>Check</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Node.js 20+</strong></td>
+                <td><a href="https://nodejs.org" target="_blank" rel="noreferrer">nodejs.org</a></td>
+                <td><code>node -v</code></td>
+              </tr>
+              <tr>
+                <td><strong>Git</strong></td>
+                <td><a href="https://git-scm.com" target="_blank" rel="noreferrer">git-scm.com</a></td>
+                <td><code>git --version</code></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <ol class="steps">
+            <li>
+              <h3>Clone &amp; install</h3>
+              <pre><button type="button" class="copy" data-copy>Copy</button><code>git clone https://github.com/CryptoGnome/meteora-farmer.git
+cd meteora-farmer
+npm install</code></pre>
+              <p><code>better-sqlite3</code> compiling is normal. On Windows you may need VS Build Tools (C++).</p>
+            </li>
+            <li>
+              <h3>Create <code>.env</code></h3>
+              <pre><button type="button" class="copy" data-copy>Copy</button><code>cp .env.example .env</code></pre>
+              <pre><button type="button" class="copy" data-copy>Copy</button><code>FARMER_MODE=paper
+RPC_URL=https://api.mainnet-beta.solana.com</code></pre>
+            </li>
+            <li>
+              <h3>Force paper in <code>config.toml</code></h3>
+              <pre><button type="button" class="copy" data-copy>Copy</button><code>[exec]
+mode = "paper"</code></pre>
+              <p class="note">Live needs <strong>both</strong> this and <code>FARMER_MODE=live</code>.</p>
+            </li>
+            <li>
+              <h3>Run</h3>
+              <pre><button type="button" class="copy" data-copy>Copy</button><code>npm run run</code></pre>
+              <p>Other terminal:</p>
+              <pre><button type="button" class="copy" data-copy>Copy</button><code>npm run status
+npm run halt</code></pre>
+            </li>
+          </ol>
+        </section>
+
+        <section id="commands">
+          <h2>Commands</h2>
+          <pre><button type="button" class="copy" data-copy>Copy</button><code>npm run scan | vet | run | status | halt | force-close | test
+npm run dash:build &amp;&amp; npm run dash</code></pre>
+        </section>
+
+        <section id="dash">
+          <h2>Local dashboard</h2>
+          <pre><button type="button" class="copy" data-copy>Copy</button><code>DASH_TOKEN=pick-a-long-random-password
+DASH_PORT=8787</code></pre>
+          <pre><button type="button" class="copy" data-copy>Copy</button><code>npm run dash:build
+npm run dash</code></pre>
+          <p>Open <a href="http://localhost:8787">http://localhost:8787</a> with that token.</p>
+        </section>
+
+        <section id="keys">
+          <h2>Keys &amp; going live</h2>
+          <p>Same as the easy guide: Phantom burner → <code>WALLET_PRIVATE_KEY</code>, private RPC, Jupiter key.</p>
+          <pre><button type="button" class="copy" data-copy>Copy</button><code># .env
+FARMER_MODE=live
+RPC_URL=https://your-private-rpc
+JUPITER_API_KEY=…
+WALLET_PRIVATE_KEY=…</code></pre>
+          <pre><button type="button" class="copy" data-copy>Copy</button><code># config.toml
+[exec]
+mode = "live"</code></pre>
+          <p class="note danger">Burner only. One farmer process per wallet/DB.</p>
+        </section>
+
+        <section id="pm2">
+          <h2>PM2 on a VPS (always-on)</h2>
+          <p>This is how an operator box stays up without Railway.</p>
+          <pre><button type="button" class="copy" data-copy>Copy</button><code>npm install -g pm2
+pm2 start deploy/ecosystem.config.cjs --only meteora-farmer
+pm2 start deploy/ecosystem.config.cjs --only meteora-dash
+pm2 save
+pm2 startup
+pm2 logs meteora-farmer</code></pre>
+          <p>
+            <code>deploy/ecosystem.config.cjs</code> also defines <code>meteora-deploy</code>
+            (git pull watcher) — start that only if you want auto-updates from <code>master</code>.
+          </p>
+        </section>
+
+        <section id="autodeploy">
+          <h2>Auto-deploy on your server</h2>
+          <pre><button type="button" class="copy" data-copy>Copy</button><code>pm2 start deploy/ecosystem.config.cjs --only meteora-deploy
+pm2 save</code></pre>
+          <p>
+            When <code>origin/master</code> advances, the watcher pulls, typechecks/tests,
+            rebuilds the dash if needed, and restarts apps — same idea as Railway’s
+            “deploy on push,” but you own the machine.
+          </p>
+          <p class="note">
+            Don’t SCP over a dirty tree and expect the pill to say CURRENT — push + pull
+            (or let <code>meteora-deploy</code> do it).
+          </p>
+        </section>
+
+        <section id="remote-dash">
+          <h2>Dashboard from outside your LAN</h2>
+          <p>Unlike Railway’s public HTTPS URL, a home/VPS dash needs one of:</p>
+          <ul>
+            <li><strong>Tailscale / ZeroTier</strong> — easiest private access from your phone</li>
+            <li><strong>Cloudflare Tunnel</strong> — public HTTPS without opening ports</li>
+            <li><strong>Reverse proxy + HTTPS</strong> (Caddy/Nginx) on a VPS with a domain</li>
+          </ul>
+          <p class="note danger">
+            Don’t expose <code>:8787</code> raw to the internet without a strong
+            <code>DASH_TOKEN</code> (and preferably HTTPS).
+          </p>
+        </section>
+
+        <section id="troubleshoot">
+          <h2>Troubleshooting</h2>
+          <table class="req">
+            <thead>
+              <tr><th>Symptom</th><th>Fix</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>better-sqlite3</code> build fail</td>
+                <td>Windows: VS Build Tools. Linux: <code>build-essential</code></td>
+              </tr>
+              <tr>
+                <td>Already running / lock</td>
+                <td>Only if sure: <code>npm run release</code></td>
+              </tr>
+              <tr>
+                <td>BEHIND on version pill</td>
+                <td>Server didn’t pull — start <code>meteora-deploy</code> or <code>git pull</code></td>
+              </tr>
+              <tr>
+                <td>Want the simple path</td>
+                <td><a href="./">Easy setup (Railway)</a></td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <p class="footer">
+          <a href="./">Easy setup</a>
+          · <a href="https://github.com/CryptoGnome/meteora-farmer/blob/master/STRATEGY.md">STRATEGY.md</a>
+          · Paper first. Burner only.
+        </p>
+      </main>
+    </div>
+  </div>
+
+  <script src="copy.js"></script>
+</body>
+</html>
