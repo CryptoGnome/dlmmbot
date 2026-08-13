@@ -178,71 +178,73 @@ CREATE INDEX IF NOT EXISTS idx_follow_chains_state ON follow_chains(state, mode)
 
 let db: Database.Database | null = null;
 
+function migrate(database: Database.Database): void {
+  database.pragma("journal_mode = WAL");
+  database.exec(SCHEMA);
+  // Idempotent migrations for columns added after the initial schema.
+  try {
+    database.exec("ALTER TABLE positions ADD COLUMN ever_in_range INTEGER NOT NULL DEFAULT 0");
+  } catch { /* column already exists */ }
+  try {
+    database.exec("ALTER TABLE positions ADD COLUMN open_cost_sol REAL");
+  } catch { /* column already exists */ }
+  try {
+    database.exec("ALTER TABLE positions ADD COLUMN close_return_sol REAL");
+  } catch { /* column already exists */ }
+  try {
+    database.exec("ALTER TABLE positions ADD COLUMN fell_deep INTEGER NOT NULL DEFAULT 0");
+  } catch { /* column already exists */ }
+  try {
+    database.exec("ALTER TABLE positions ADD COLUMN fees_measured_sol REAL NOT NULL DEFAULT 0");
+  } catch { /* column already exists */ }
+  try {
+    database.exec("ALTER TABLE positions ADD COLUMN recovered_sol REAL NOT NULL DEFAULT 0");
+  } catch { /* column already exists */ }
+  try {
+    database.exec("ALTER TABLE positions ADD COLUMN fees_at_close_sol REAL NOT NULL DEFAULT 0");
+  } catch { /* column already exists */ }
+  try {
+    database.exec("ALTER TABLE positions ADD COLUMN follow_chain_id INTEGER");
+  } catch { /* column already exists */ }
+  database.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+
+  const cols = new Set(
+    (database.prepare("PRAGMA table_info(positions)").all() as Array<{ name: string }>).map((c) => c.name)
+  );
+  const required = [
+    "ever_in_range", "open_cost_sol", "close_return_sol", "fell_deep",
+    "fees_measured_sol", "recovered_sol", "fees_at_close_sol", "follow_chain_id",
+  ];
+  const missing = required.filter((c) => !cols.has(c));
+  if (missing.length)
+    throw new Error(`positions table is missing migrated column(s): ${missing.join(", ")} — migration failed, refusing to start`);
+}
+
+/** Open and migrate a DB at an arbitrary path (tests use :memory: or a temp file). */
+export function openDb(path: string): Database.Database {
+  if (path !== ":memory:") {
+    mkdirSync(resolve(path, ".."), { recursive: true });
+  }
+  const database = new Database(path);
+  migrate(database);
+  return database;
+}
+
 export function getDb(): Database.Database {
   if (!db) {
-    const dir = resolve(process.cwd(), "data");
-    mkdirSync(dir, { recursive: true });
-    db = new Database(resolve(dir, "farmer.db"));
-    db.pragma("journal_mode = WAL");
-    db.exec(SCHEMA);
-    // Idempotent migrations for columns added after the initial schema.
-    try {
-      db.exec("ALTER TABLE positions ADD COLUMN ever_in_range INTEGER NOT NULL DEFAULT 0");
-    } catch { /* column already exists */ }
-    try {
-      db.exec("ALTER TABLE positions ADD COLUMN open_cost_sol REAL");   // actual wallet debit at open (size + rent + tx)
-    } catch { /* column already exists */ }
-    try {
-      db.exec("ALTER TABLE positions ADD COLUMN close_return_sol REAL"); // actual wallet credit at close (exit + rent refund - tx)
-    } catch { /* column already exists */ }
-    try {
-      db.exec("ALTER TABLE positions ADD COLUMN fell_deep INTEGER NOT NULL DEFAULT 0"); // escape hatch armed (survives restarts)
-    } catch { /* column already exists */ }
-    // fees_claimed_sol is a pool-mid MARK and stays that way — the Kelly
-    // estimator reads it and changing it silently would move position sizing.
-    // These two carry the measured truth alongside it: what the claim txs
-    // actually credited, and what the residual sweep later recovered for a
-    // claim/close swap that failed (real income that used to land only in
-    // `ledger`, attributed to no position at all).
-    try {
-      db.exec("ALTER TABLE positions ADD COLUMN fees_measured_sol REAL NOT NULL DEFAULT 0");
-    } catch { /* column already exists */ }
-    try {
-      db.exec("ALTER TABLE positions ADD COLUMN recovered_sol REAL NOT NULL DEFAULT 0");
-    } catch { /* column already exists */ }
-    // Every close runs shouldClaimAndClose, so it collects whatever fees had
-    // accrued since the last claim — but nothing recorded them, and 17 of the
-    // first 20 positions therefore read fees_claimed_sol = 0 despite earning.
-    // Kept separate from fees_claimed_sol on purpose: close_return_sol already
-    // contains this SOL, so adding it there would double-count it against
-    // exit_sol and move Kelly. This column is for attribution, not for PnL.
-    try {
-      db.exec("ALTER TABLE positions ADD COLUMN fees_at_close_sol REAL NOT NULL DEFAULT 0");
-    } catch { /* column already exists */ }
-    // Follow-mode legs point at their chain. NULL = ordinary position; the
-    // Kelly estimator filters on this so chase legs never move main sizing.
-    try {
-      db.exec("ALTER TABLE positions ADD COLUMN follow_chain_id INTEGER");
-    } catch { /* column already exists */ }
-    db.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
-
-    // Those ALTERs are wrapped in `catch {}` to be idempotent, which also
-    // swallows a genuine failure (SQLITE_BUSY, disk full). The bot would then
-    // boot, trade normally, and throw `no such column` at the first close —
-    // after the on-chain removal, leaving a zombie row holding a slot with no
-    // alert. Assert instead, so a bad migration is a boot failure pm2 surfaces.
-    const cols = new Set(
-      (db.prepare("PRAGMA table_info(positions)").all() as Array<{ name: string }>).map((c) => c.name)
-    );
-    const required = [
-      "ever_in_range", "open_cost_sol", "close_return_sol", "fell_deep",
-      "fees_measured_sol", "recovered_sol", "fees_at_close_sol", "follow_chain_id",
-    ];
-    const missing = required.filter((c) => !cols.has(c));
-    if (missing.length)
-      throw new Error(`positions table is missing migrated column(s): ${missing.join(", ")} — migration failed, refusing to start`);
+    const path = process.env.FARMER_DB_PATH ?? resolve(process.cwd(), "data", "farmer.db");
+    if (path !== ":memory:") mkdirSync(resolve(path, ".."), { recursive: true });
+    db = openDb(path);
   }
   return db;
+}
+
+/** Close the singleton so the next getDb() opens FARMER_DB_PATH fresh (tests only). */
+export function _resetDbForTests(): void {
+  if (db) {
+    try { db.close(); } catch { /* already closed */ }
+    db = null;
+  }
 }
 
 export function now(): number {

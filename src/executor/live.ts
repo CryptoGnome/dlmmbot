@@ -73,7 +73,26 @@ const BINS_PER_ACCOUNT = 69;
 const RPC_TIMEOUT_MS = 20_000;
 // Rebuilds on ExceededBinSlippageTolerance — resending the same tx never helps
 // (the active-bin check is baked into the instruction at build time).
-const OPEN_SLIPPAGE_REBUILDS = 2;
+export const OPEN_SLIPPAGE_REBUILDS = 2;
+
+/** Planned top too far from on-chain active bin — refuse rather than strand capital. */
+export function rangeGapTooLarge(plannedTop: number, activeBinId: number, maxGap = 150): boolean {
+  return Math.abs(activeBinId - plannedTop) > maxGap;
+}
+
+/** Tracked accounts on chain returned none — never fabricate valueSol=0 / −open_cost. */
+export function trackedButMissingOnChain(trackedCount: number, foundCount: number): boolean {
+  return trackedCount > 0 && foundCount === 0;
+}
+
+/** Slippage sims need a rebuild, not a blind resend of the same instruction. */
+export function shouldRebuildOpenOnSlippage(
+  code: string | null,
+  attempt: number,
+  maxRebuilds = OPEN_SLIPPAGE_REBUILDS,
+): boolean {
+  return code === "ExceededBinSlippageTolerance" && attempt < maxRebuilds;
+}
 
 /** Pull the Anchor/program reason out of a Solana SendTransactionError. */
 export function txErrorDetail(e: unknown): { summary: string; code: string | null; logs: string[] } {
@@ -251,7 +270,7 @@ export class LiveExecutor implements Executor {
     // every tick instead of self-closing. A noisy stuck row is recoverable at
     // the next boot's reconcile; an abandoned on-chain position plus a
     // fabricated loss in the risk inputs is not.
-    if (ours.size > 0 && mine.length === 0) {
+    if (trackedButMissingOnChain(ours.size, mine.length)) {
       throw new Error(
         `pos#${position.id}: ${ours.size} tracked position account(s) but the chain returned none — ` +
         `refusing to mark as worthless (stale/lagging RPC or missing position_accounts rows)`
@@ -302,8 +321,8 @@ export class LiveExecutor implements Executor {
     // Sanity: the planned top must be near the on-chain active bin. A large gap
     // means the plan is in the wrong domain (e.g. UI-vs-raw price decimals,
     // incident 2026-08-07) or wildly stale — refuse rather than strand capital.
-    const gap = Math.abs(activeBin.binId - params.range.maxBinId);
-    if (gap > 150) {
+    if (rangeGapTooLarge(params.range.maxBinId, activeBin.binId)) {
+      const gap = Math.abs(activeBin.binId - params.range.maxBinId);
       throw new Error(
         `range sanity: planned top bin ${params.range.maxBinId} is ${gap} bins from on-chain active ${activeBin.binId} — refusing to open`
       );
@@ -388,7 +407,7 @@ export class LiveExecutor implements Executor {
           break;
         } catch (e) {
           lastDetail = txErrorDetail(e);
-          if (lastDetail.code === "ExceededBinSlippageTolerance" && attempt < OPEN_SLIPPAGE_REBUILDS) continue;
+          if (shouldRebuildOpenOnSlippage(lastDetail.code, attempt)) continue;
           throw Object.assign(new Error(lastDetail.summary), { logs: lastDetail.logs, code: lastDetail.code });
         }
       }

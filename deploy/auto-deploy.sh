@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Auto-deploy watcher — run this under PM2 on the server (see ecosystem.config.cjs).
 # Polls origin/$BRANCH and deploys ONLY when origin is strictly ahead of the
-# local branch: pull, reinstall deps if manifests changed, typecheck, and
-# restart the farmer only if the typecheck passes. A broken push therefore
-# never kills the running bot — it keeps running the last good build and the
+# local branch: pull, reinstall deps if manifests changed, typecheck + tests,
+# and restart the farmer only if both pass. A broken push therefore never
+# kills the running bot — it keeps running the last good build and the
 # watcher logs the failure until a fixed commit lands.
 #
 # Deliberately inert unless the checkout is ON $BRANCH and behind origin:
@@ -93,9 +93,12 @@ while true; do
   if [ -z "$FAILURE" ] && ! npx tsc --noEmit; then
     FAILURE="typecheck"
   fi
+  if [ -z "$FAILURE" ] && ! npm test; then
+    FAILURE="tests"
+  fi
 
   if [ -z "$FAILURE" ]; then
-    echo "[deploy] typecheck passed — restarting $APP_NAME"
+    echo "[deploy] typecheck + tests passed — restarting $APP_NAME"
     pm2 restart "$APP_NAME" --update-env
     echo "[deploy] deployed $(git rev-parse --short HEAD): $(git log -1 --pretty=%s)"
     last_failed=""

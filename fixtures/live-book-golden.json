@@ -1,0 +1,112 @@
+{
+  "description": "Anonymized golden cases from the live book (gn0meserver). No keys, no full DB.",
+  "cases": [
+    {
+      "id": "bot_p1_dump_through",
+      "symbol": "BOT",
+      "exit_reason": "P1_stop",
+      "notes": "Already fell_deep + below range; continued falling after stop — keep P1 tight.",
+      "entry": {
+        "entry_sol": 0.3,
+        "entry_price": 1.0,
+        "min_bin_id": 100,
+        "max_bin_id": 200,
+        "ever_in_range": 1,
+        "fell_deep": 1
+      },
+      "marks": [
+        {
+          "label": "stop_fire",
+          "value_sol": 0.21,
+          "value_frac": 0.7,
+          "price": 0.55,
+          "active_bin_id": 80,
+          "in_range": false,
+          "above_range": false,
+          "below_range": true,
+          "tvl_usd": 40000,
+          "fee_tvl_30m_pct": 0.4,
+          "vol_30m_usd": 60000
+        }
+      ],
+      "expect": { "exit_reason": "P1_stop" }
+    },
+    {
+      "id": "escape_winner_value_frac_floor",
+      "symbol": "ESC",
+      "exit_reason": "escape",
+      "notes": "Deep traversal then recovery to top slice; value_frac stayed above P1 floor.",
+      "entry": {
+        "entry_sol": 0.3,
+        "entry_price": 1.0,
+        "min_bin_id": 100,
+        "max_bin_id": 200,
+        "ever_in_range": 1,
+        "fell_deep": 1
+      },
+      "marks": [
+        {
+          "label": "recovered_top",
+          "value_sol": 0.33,
+          "value_frac": 1.1,
+          "price": 1.02,
+          "active_bin_id": 185,
+          "in_range": true,
+          "above_range": false,
+          "below_range": false,
+          "tvl_usd": 55000,
+          "fee_tvl_30m_pct": 0.8,
+          "vol_30m_usd": 90000
+        }
+      ],
+      "expect": { "exit_reason": "escape" }
+    },
+    {
+      "id": "p3_missed_10m_churn",
+      "symbol": "MISS",
+      "exit_reason": "P3_above",
+      "notes": "Never converted; old 10m sustain churned ~0.002 SOL rent — now 45m.",
+      "entry": {
+        "entry_sol": 0.3,
+        "entry_price": 1.0,
+        "min_bin_id": 100,
+        "max_bin_id": 200,
+        "ever_in_range": 0,
+        "fell_deep": 0
+      },
+      "marks": [
+        {
+          "label": "above_from_t0",
+          "value_sol": 0.301,
+          "value_frac": 1.003,
+          "price": 1.25,
+          "active_bin_id": 230,
+          "in_range": false,
+          "above_range": true,
+          "below_range": false,
+          "tvl_usd": 70000,
+          "fee_tvl_30m_pct": 1.2,
+          "vol_30m_usd": 120000
+        }
+      ],
+      "expect": {
+        "exit_reason": "P3_above",
+        "state": "closed_missed",
+        "sustain_min": 45
+      }
+    },
+    {
+      "id": "open_failed_0x1774",
+      "notes": "Anchor logs from ExceededBinSlippageTolerance — truncated Simulation failed. must not win.",
+      "open_failed": {
+        "message": "Simulation failed.\nCustom program error: 0x1774",
+        "logs": [
+          "Program log: AnchorError occurred. Error Code: ExceededBinSlippageTolerance. Error Number: 6004. Error Message: Exceeded bin slippage tolerance."
+        ]
+      },
+      "expect": {
+        "code": "ExceededBinSlippageTolerance"
+      }
+    }
+  ]
+}

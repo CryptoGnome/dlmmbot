@@ -141,6 +141,11 @@ export function config(): Config {
   return current;
 }
 
+/** Replace live config for unit tests. Pass null to reload config.toml. */
+export function _setConfigForTests(c: Config | null): void {
+  current = c === null ? load() : c;
+}
+
 export function onConfigChange(fn: (c: Config) => void): void {
   listeners.push(fn);
 }
