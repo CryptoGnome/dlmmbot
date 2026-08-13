@@ -66,7 +66,7 @@ describe("planner bin math", () => {
     const deepMin = maxBinId - 200;
     const fat = {
       minBinId: deepMin, maxBinId, binCount: 201, positionAccounts: 3,
-      bottomPricePct: -60, fibAnchor: null, estBinRentSol: 0.225,
+      bottomPricePct: -60, shape: "bidask" as const, fibAnchor: null, estBinRentSol: 0.225,
     };
     const fitted = fitPlanToRentBudget(fat, 0.075, price, binStep, decimalsX, 40);
     expect(fitted).not.toBeNull();
@@ -79,7 +79,7 @@ describe("planner bin math", () => {
   it("fitPlanToRentBudget is a no-op when rent already fits", () => {
     const plan = {
       minBinId: 1, maxBinId: 50, binCount: 50, positionAccounts: 1,
-      bottomPricePct: -40, fibAnchor: null, estBinRentSol: 0.075,
+      bottomPricePct: -40, shape: "bidask" as const, fibAnchor: null, estBinRentSol: 0.075,
     };
     expect(fitPlanToRentBudget(plan, 0.075, 1, 100, 9, 40)).toBe(plan);
   });
@@ -93,7 +93,7 @@ describe("planner bin math", () => {
     const plan = {
       minBinId: deepMin, maxBinId, binCount: maxBinId - deepMin + 1,
       positionAccounts: 10, bottomPricePct: -40, fibAnchor: null,
-      estBinRentSol: 0.75,
+      estBinRentSol: 0.75, shape: "bidask" as const,
     };
     expect(fitPlanToRentBudget(plan, 0.075, price, binStep, decimalsX, 40)).toBeNull();
   });

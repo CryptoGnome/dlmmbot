@@ -1,7 +1,7 @@
 import { getDb, now } from "../db/db.js";
 import { fetchPool } from "../scanner/meteora.js";
 import { binIdToPrice, priceToBinId } from "../ranges/planner.js";
-import type { ExitReason, Position } from "../types.js";
+import type { ExitReason, Position, RangeShape } from "../types.js";
 import type { Executor, OpenParams, PositionMark } from "./executor.js";
 
 // Paper executor (STRATEGY.md §8): simulates a one-sided SOL bid-ask position
@@ -35,6 +35,7 @@ async function livePool(address: string): Promise<PoolLive | null> {
 export class PaperExecutor implements Executor {
   readonly mode = "paper" as const;
   private binStepByPool = new Map<string, number>();
+  private rangeShapeByPos = new Map<number, RangeShape>();
 
   async open(params: OpenParams): Promise<Position> {
     const db = getDb();
@@ -48,8 +49,10 @@ export class PaperExecutor implements Executor {
       params.range.minBinId, params.range.maxBinId, params.range.estBinRentSol,
       params.sizeSol + PAPER_TX_COST_SOL
     );
+    const id = Number(res.lastInsertRowid);
+    this.rangeShapeByPos.set(id, params.range.shape ?? "bidask");
     return {
-      id: Number(res.lastInsertRowid),
+      id,
       mode: "paper",
       poolAddress: params.poolAddress,
       tokenMint: params.tokenMint,
@@ -101,32 +104,23 @@ export class PaperExecutor implements Executor {
     };
   }
 
-  /**
-   * Linear bid-ask approximation: liquidity weight grows linearly from the
-   * range top toward the bottom. Bins above the active bin were converted to
-   * tokens at their bin price (value moves with current price); bins below are
-   * untouched SOL.
-   */
   private simulateValue(position: Position, price: number, binStep: number, decimalsX: number): number {
+    const shape = this.rangeShapeByPos.get(position.id) ?? "bidask";
     const { minBinId, maxBinId, entrySol } = position;
     const n = maxBinId - minBinId + 1;
     if (n <= 0) return entrySol;
     const activeBinId = priceToBinId(price, binStep, decimalsX);
-
-    // Weight of bin i (0 = top): bid-ask puts more depth lower. w_i ∝ (i+1).
-    const totalW = (n * (n + 1)) / 2;
+    const totalW = shape === "spot" ? n : (n * (n + 1)) / 2;
     let value = 0;
     for (let i = 0; i < n; i++) {
       const binId = maxBinId - i;
-      const w = (i + 1) / totalW;
+      const w = shape === "spot" ? 1 / totalW : (i + 1) / totalW;
       const solInBin = entrySol * w;
       if (binId > activeBinId) {
-        // Price fell through this bin: SOL became tokens at binPrice.
         const binPrice = binIdToPrice(binId, binStep, decimalsX);
-        const tokens = solInBin / binPrice;
-        value += tokens * price;
+        value += (solInBin / binPrice) * price;
       } else {
-        value += solInBin; // untouched SOL
+        value += solInBin;
       }
     }
     return value;

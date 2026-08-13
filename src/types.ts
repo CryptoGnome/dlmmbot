@@ -69,12 +69,16 @@ export interface VetResult {
   };
 }
 
+export type RangeShape = "bidask" | "spot";
+
 export interface RangePlan {
   minBinId: number;
-  maxBinId: number;              // active bin at entry (range top)
+  maxBinId: number;              // active bin at entry (range top for bidask; upper edge for spot)
   binCount: number;
   positionAccounts: number;      // 1..entry.max_position_accounts
   bottomPricePct: number;        // e.g. -55 (% below entry price)
+  topPricePct?: number;          // spot: % above entry (symmetric-ish range)
+  shape: RangeShape;
   fibAnchor: { swingHigh: number; swingLow: number; level: number } | null;
   estBinRentSol: number;
 }

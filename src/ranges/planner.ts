@@ -48,6 +48,7 @@ function buildPlan(
     binCount,
     positionAccounts: Math.ceil(binCount / BINS_PER_POSITION),
     bottomPricePct: (binIdToPrice(minBinId, binStep, decimalsX) / currentPrice - 1) * 100,
+    shape: "bidask",
     fibAnchor,
     estBinRentSol: Math.ceil(binCount / BINS_PER_ARRAY_EST) * BIN_ARRAY_RENT_SOL,
   };

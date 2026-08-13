@@ -318,39 +318,49 @@ export class LiveExecutor implements Executor {
   async open(params: OpenParams): Promise<Position> {
     const pool = await this.pool(params.poolAddress);
     const activeBin = await pool.getActiveBin();
-    // Sanity: the planned top must be near the on-chain active bin. A large gap
-    // means the plan is in the wrong domain (e.g. UI-vs-raw price decimals,
-    // incident 2026-08-07) or wildly stale — refuse rather than strand capital.
-    if (rangeGapTooLarge(params.range.maxBinId, activeBin.binId)) {
-      const gap = Math.abs(activeBin.binId - params.range.maxBinId);
-      throw new Error(
-        `range sanity: planned top bin ${params.range.maxBinId} is ${gap} bins from on-chain active ${activeBin.binId} — refusing to open`
-      );
+    const shape = params.range.shape ?? "bidask";
+    const meta = await fetchPool(params.poolAddress);
+    const binStep = meta?.binStep ?? 100;
+
+    let maxBin: number, minBin: number;
+    if (shape === "spot") {
+      const mj = config().majors;
+      const below = Math.max(1, Math.round(mj.range_below_pct / (binStep / 100)));
+      const above = Math.max(0, Math.round(mj.range_above_pct / (binStep / 100)));
+      maxBin = activeBin.binId + above;
+      minBin = activeBin.binId - below;
+      const maxBins = BINS_PER_ACCOUNT * config().entry.max_position_accounts;
+      if (maxBin - minBin + 1 > maxBins) minBin = maxBin - maxBins + 1;
+    } else {
+      if (rangeGapTooLarge(params.range.maxBinId, activeBin.binId)) {
+        const gap = Math.abs(activeBin.binId - params.range.maxBinId);
+        throw new Error(
+          `range sanity: planned top bin ${params.range.maxBinId} is ${gap} bins from on-chain active ${activeBin.binId} — refusing to open`
+        );
+      }
+      const width = params.range.maxBinId - params.range.minBinId;
+      maxBin = activeBin.binId;
+      minBin = activeBin.binId > params.range.maxBinId
+        ? maxBin - width
+        : Math.min(params.range.minBinId, maxBin - 1);
     }
-    // Re-anchor to the LIVE active bin (§3: top = current price). Planner
-    // ranges are computed at scan time and vetting takes up to minutes; on a
-    // fast riser the market moves 10%+ above the planned top, stranding the
-    // ladder below (chrome pos#5 incident). Price rose: shift the whole range
-    // up, preserving planned width/depth. Price fell: top clamps to active,
-    // fib-anchored bottom stays (never place liquidity above the market).
-    const width = params.range.maxBinId - params.range.minBinId;
-    let maxBin = activeBin.binId;
-    let minBin = activeBin.binId > params.range.maxBinId
-      ? maxBin - width
-      : Math.min(params.range.minBinId, maxBin - 1);
     const totalBins = maxBin - minBin + 1;
     let liveEntryPrice = Number(pool.fromPricePerLamport(Number(activeBin.price)));
     const lamports = Math.floor(params.sizeSol * 1e9);
+    const strategyType = shape === "spot" ? StrategyType.Spot : StrategyType.BidAsk;
 
-    // Split into <=69-bin chunks, SOL per chunk proportional to linear bid-ask
-    // weights (deeper bins carry more).
     const chunks: Array<{ min: number; max: number; share: number }> = [];
-    const totalW = (totalBins * (totalBins + 1)) / 2;
+    const totalWRamp = (totalBins * (totalBins + 1)) / 2;
     for (let start = 0; start < totalBins; start += BINS_PER_ACCOUNT) {
       const end = Math.min(start + BINS_PER_ACCOUNT - 1, totalBins - 1);
-      let w = 0;
-      for (let i = start; i <= end; i++) w += i + 1; // index 0 = top bin
-      chunks.push({ min: maxBin - end, max: maxBin - start, share: w / totalW });
+      let share: number;
+      if (shape === "spot") share = (end - start + 1) / totalBins;
+      else {
+        let w = 0;
+        for (let i = start; i <= end; i++) w += i + 1;
+        share = w / totalWRamp;
+      }
+      chunks.push({ min: maxBin - end, max: maxBin - start, share });
     }
 
     const accountRows: Array<{ pubkey: string; min: number; max: number }> = [];
@@ -396,7 +406,7 @@ export class LiveExecutor implements Executor {
             user: this.wallet.publicKey,
             totalXAmount: new BN(0),
             totalYAmount: new BN(Math.floor(lamports * chunk.share)),
-            strategy: { minBinId: chunk.min, maxBinId: chunk.max, strategyType: StrategyType.BidAsk },
+            strategy: { minBinId: chunk.min, maxBinId: chunk.max, strategyType },
             slippage: config().entry.liquidity_slippage_pct,
           });
           const sig = await this.send(tx, [positionKp]);

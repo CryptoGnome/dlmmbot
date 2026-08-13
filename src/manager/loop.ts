@@ -21,6 +21,7 @@ import { sol24hChangePct, solUsdPrice } from "../market.js";
 import { circuitBreakerTripped, clusterBrakeTripped, computeBankroll, kellyStats, openPositionCount, positionSize, regimeFactor, tokenExposureSol } from "../risk/limits.js";
 import { applyMicroSize, isMicroMcap, microPoolSharePct, microSleeveExposure } from "../risk/micro.js";
 import { enterMajorsPositions } from "./majorsEntry.js";
+import { manageForSleeve } from "../risk/majorsManage.js";
 import { sleeveAtEntry } from "../risk/sleeve.js";
 import type { Position } from "../types.js";
 import { vetToken } from "../vetting/vet.js";
@@ -349,10 +350,7 @@ export async function managePositions(exec: Executor): Promise<void> {
       const ageH = (now() - pos.entryTs) / 3600;
       const valueFrac = pos.entrySol > 0 ? mark.valueSol / pos.entrySol : 1;
       const sleeve = sleeveAtEntry(pos);
-      const mj = sleeve === "majors" ? config().majors : null;
-      const maxAgeH = mj?.max_age_h ?? m.max_age_h;
-      const rotFeeMin = mj?.rotation_fee_daily_min_pct ?? m.rotation_fee_daily_min_pct;
-      const rotVolMin = mj?.rotation_vol_30m_min_usd ?? m.rotation_vol_30m_min_usd;
+      const pm = manageForSleeve(sleeve);
 
       // --- P0 SAFETY: pool death, price crash, TVL drain, rugcheck flip, holder watch ---
       const crashed = mark.price > 0 && pos.entryPrice > 0 &&
@@ -371,7 +369,7 @@ export async function managePositions(exec: Executor): Promise<void> {
       }
 
       // --- P1 STOP LOSS ---
-      if (valueFrac < m.stop_loss_frac) {
+      if (valueFrac < pm.stop_loss_frac) {
         clearRangeTimers(pos.id);
         await closeAndReport(exec, pos, "P1_stop", config().exec.exit_slippage_bps, "stop_loss", `stop loss at ${(valueFrac * 100 - 100).toFixed(1)}%`);
         blacklist(pos.tokenMint, "token", "stop loss cooldown", m.loss_reentry_cooldown_h);
@@ -380,14 +378,14 @@ export async function managePositions(exec: Executor): Promise<void> {
       }
 
       // --- P2 ROTATION: age limit + consecutive fee/volume decay ---
-      if (ageH > maxAgeH) {
+      if (ageH > pm.max_age_h) {
         clearRangeTimers(pos.id);
-        await closeAndReport(exec, pos, "P2_rotation", config().exec.exit_slippage_bps, "close", `rotation: max age ${maxAgeH}h reached`);
+        await closeAndReport(exec, pos, "P2_rotation", config().exec.exit_slippage_bps, "close", `rotation: max age ${pm.max_age_h}h reached`);
         recordDecision(pos.tokenMint, pos.poolAddress, "exited", "P2_rotation_age", null, { ageH, sleeve });
         continue;
       }
       const feeDaily = mark.feeTvl30mPct * 48;
-      const decayed = feeDaily < rotFeeMin || mark.vol30mUsd < rotVolMin;
+      const decayed = feeDaily < pm.rotation_fee_daily_min_pct || mark.vol30mUsd < pm.rotation_vol_30m_min_usd;
       const streak = decayed ? (decayStreak.get(pos.id) ?? 0) + 1 : 0;
       decayStreak.set(pos.id, streak);
       if (streak >= m.rotation_polls) {
@@ -404,9 +402,7 @@ export async function managePositions(exec: Executor): Promise<void> {
         const dbFlag = (getDb().prepare("SELECT ever_in_range AS e FROM positions WHERE id = ?")
           .get(pos.id) as { e: number } | undefined)?.e === 1;
         const traveled = everInRange.has(pos.id) || dbFlag;
-        const sustainMin = traveled
-          ? (mj?.above_range_sustain_min ?? m.above_range_sustain_min)
-          : (mj?.above_range_missed_sustain_min ?? m.above_range_missed_sustain_min);
+        const sustainMin = traveled ? pm.above_range_sustain_min : pm.above_range_missed_sustain_min;
         const since = aboveRangeSince.get(pos.id);
         if (since === undefined) {
           aboveRangeSince.set(pos.id, now());
@@ -432,7 +428,7 @@ export async function managePositions(exec: Executor): Promise<void> {
         const since = belowRangeSince.get(pos.id);
         if (since === undefined) {
           belowRangeSince.set(pos.id, now());
-          console.log(`[manager] pos#${pos.id} ${pos.symbol} below range — grace timer started (${m.below_range_grace_min}m)`);
+          console.log(`[manager] pos#${pos.id} ${pos.symbol} below range — grace timer started (${pm.below_range_grace_min}m)`);
           if (mark.unclaimedFeesSol >= m.grace_claim_min_sol) {
             try {
               const { claimedSol } = await exec.claimFees(pos);
@@ -441,9 +437,9 @@ export async function managePositions(exec: Executor): Promise<void> {
               console.error(`[manager] pos#${pos.id} grace-start claim failed:`, (e as Error).message);
             }
           }
-        } else if (now() - since >= m.below_range_grace_min * 60) {
+        } else if (now() - since >= pm.below_range_grace_min * 60) {
           clearRangeTimers(pos.id);
-          await closeAndReport(exec, pos, "P5_below", config().exec.exit_slippage_bps, "below_cut", `below-range cut after ${m.below_range_grace_min}m grace`);
+          await closeAndReport(exec, pos, "P5_below", config().exec.exit_slippage_bps, "below_cut", `below-range cut after ${pm.below_range_grace_min}m grace`);
           blacklist(pos.tokenMint, "token", "below range cut", m.loss_reentry_cooldown_h);
           recordDecision(pos.tokenMint, pos.poolAddress, "exited", "P5_below", null, { mark, graceS: now() - since });
         }
@@ -451,17 +447,17 @@ export async function managePositions(exec: Executor): Promise<void> {
       }
       belowRangeSince.delete(pos.id);
 
-      // --- ESCAPE HATCH ---
-      if (pos.followChainId == null) {
+      // --- ESCAPE HATCH (meme only by default) ---
+      if (pos.followChainId == null && (sleeve !== "majors" || config().majors.escape_hatch_enabled)) {
         const depth = pos.maxBinId - pos.minBinId;
         const frac = depth > 0 ? (pos.maxBinId - mark.activeBinId) / depth : 0;
-        if (frac >= m.escape_hatch_depth_pct / 100) {
+        if (frac >= pm.escape_hatch_depth_pct / 100) {
           if (!fellDeep.has(pos.id)) {
             fellDeep.add(pos.id);
             getDb().prepare("UPDATE positions SET fell_deep = 1 WHERE id = ?").run(pos.id);
             console.log(`[manager] pos#${pos.id} ${pos.symbol}: fell through ${(frac * 100).toFixed(0)}% of range — escape hatch armed`);
           }
-        } else if (frac <= m.escape_hatch_recovery_pct / 100) {
+        } else if (frac <= pm.escape_hatch_recovery_pct / 100) {
           const armed = fellDeep.has(pos.id) ||
             (getDb().prepare("SELECT fell_deep AS f FROM positions WHERE id = ?").get(pos.id) as { f: number } | undefined)?.f === 1;
           if (armed) {
@@ -475,13 +471,22 @@ export async function managePositions(exec: Executor): Promise<void> {
         }
       }
 
-      // --- P4 IN RANGE: claim + profit lock ---
-      if (mark.unclaimedFeesSol >= m.claim_min_sol) {
-        const { claimedSol } = await exec.claimFees(pos);
-        await alert("claim", `${pos.symbol} pos#${pos.id}: claimed ${claimedSol.toFixed(4)} SOL in fees`);
+      // --- P4 IN RANGE: claim / compound + profit lock ---
+      if (mark.unclaimedFeesSol >= pm.claim_min_sol) {
+        if (sleeve === "majors" && config().majors.fee_compound && exec.mode === "paper") {
+          getDb().prepare("UPDATE positions SET entry_sol = entry_sol + ?, fees_claimed_sol = fees_claimed_sol + ? WHERE id = ?")
+            .run(mark.unclaimedFeesSol, mark.unclaimedFeesSol, pos.id);
+          getDb().prepare(
+            "INSERT INTO events (position_id, ts, type, sol_delta, detail_json) VALUES (?, ?, 'claim', ?, ?)"
+          ).run(pos.id, now(), mark.unclaimedFeesSol, JSON.stringify({ kind: "majors_compound" }));
+          console.log(`[majors] pos#${pos.id} ${pos.symbol}: compounded ${mark.unclaimedFeesSol.toFixed(4)} SOL fees`);
+        } else {
+          const { claimedSol } = await exec.claimFees(pos);
+          await alert("claim", `${pos.symbol} pos#${pos.id}: claimed ${claimedSol.toFixed(4)} SOL in fees`);
+        }
       }
       if (
-        m.profit_lock_enabled &&
+        pm.profit_lock_enabled &&
         pos.profitLockFires < m.profit_lock_max_fires &&
         valueFrac >= m.profit_lock_at_frac
       ) {
