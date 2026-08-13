@@ -1,10 +1,12 @@
 import type { LiveWatch } from "@/lib/types";
 import type { LiveStatus } from "@/lib/api";
 import type { ReactNode } from "react";
-import { CircleDot } from "lucide-react";
+import { BookText, CircleDot, ExternalLink } from "lucide-react";
 import { GithubMark, Icon, PauseCircle, tabIcon, Unplug, Zap } from "@/lib/icons";
 
 export type TabId = "overview" | "book" | "analytics" | "activity" | "research" | "settings";
+
+const DOCS_URL = "https://dlmmbot.com/setup/";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "overview", label: "Overview" },
@@ -66,6 +68,22 @@ function BuildPill({ build }: { build: LiveWatch["build"] }) {
   );
 }
 
+function DocsLink({ className }: { className?: string }) {
+  return (
+    <a
+      href={DOCS_URL}
+      target="_blank"
+      rel="noreferrer"
+      className={className}
+      title="Open setup docs"
+    >
+      <Icon icon={BookText} size={14} className="opacity-80" />
+      Docs
+      <Icon icon={ExternalLink} size={10} className="opacity-50" />
+    </a>
+  );
+}
+
 export function Shell({
   tab, onTab, watch, live, stale, children, rangeTabs,
 }: {
@@ -101,6 +119,9 @@ export function Shell({
             );
           })}
         </nav>
+        <div className="border-t border-grid py-2">
+          <DocsLink className="shell-nav-btn no-underline" />
+        </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -139,6 +160,15 @@ export function Shell({
             {watch?.build && <BuildPill build={watch.build} />}
           </div>
           <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted">
+            <a
+              href={DOCS_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 border border-grid px-1.5 py-0.5 tracking-widest text-muted no-underline uppercase hover:border-hover hover:text-hover md:hidden"
+            >
+              <Icon icon={BookText} size={11} />
+              Docs
+            </a>
             <span>{watch?.heartbeat?.mode ?? "—"}</span>
             <span className="text-dim">|</span>
             <span>hb {watch?.heartbeat_age_s ?? "—"}s</span>
