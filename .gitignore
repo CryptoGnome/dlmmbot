@@ -2,6 +2,7 @@ node_modules/
 dist/
 data/
 coverage/
+.deploy-quarantine/
 .env
 *.log
 HALT

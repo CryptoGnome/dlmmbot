@@ -77,6 +77,20 @@ while true; do
 
   last_skip=""
   echo "[deploy] origin/$BRANCH advanced ($(git rev-parse --short "$LOCAL") -> $(git rev-parse --short "$REMOTE")), pulling..."
+
+  # Untracked files that the incoming commit adds (e.g. an SCP'd script left in
+  # deploy/) abort ff-only pulls. Quarantine those only — never touch dirty
+  # tracked edits; those still need a human.
+  mkdir -p .deploy-quarantine
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    if [ -e "$f" ] && [ -z "$(git ls-files -- "$f")" ]; then
+      dest=".deploy-quarantine/$(echo "$f" | tr '/' '__').$(date +%s)"
+      echo "[deploy] quarantining untracked $f -> $dest (would block pull)"
+      mv -- "$f" "$dest" || true
+    fi
+  done < <(git diff --name-only --diff-filter=A "$LOCAL" "$REMOTE")
+
   if ! git pull --ff-only origin "$BRANCH"; then
     note_skip "pull failed (uncommitted changes in the way?) — manual intervention needed"
     sleep "$POLL_SECONDS"; continue

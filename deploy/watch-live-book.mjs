@@ -10,7 +10,11 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { execSync } from "node:child_process";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+// Prefer FARMER_ROOT so ops can run a /tmp copy without writing into the git tree
+// (SCP into deploy/ previously left an untracked file that blocked auto-deploy).
+const root = resolve(
+  process.env.FARMER_ROOT ?? resolve(dirname(fileURLToPath(import.meta.url)), ".."),
+);
 const require = createRequire(resolve(root, "package.json"));
 const Database = require("better-sqlite3");
 
