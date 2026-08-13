@@ -32,6 +32,32 @@ function tomlBool(toml, key) {
   return m ? m[1] === "true" : null;
 }
 
+/** Meteora DLMM portfolio totals — same source as app.meteora.ag/portfolio. */
+function fetchMeteoraPortfolio(wallet) {
+  if (!wallet) return null;
+  try {
+    const total = JSON.parse(execSync(
+      `curl -sS --max-time 4 "https://dlmm.datapi.meteora.ag/portfolio/total?user=${wallet}"`,
+      { encoding: "utf8" },
+    ));
+    const open = JSON.parse(execSync(
+      `curl -sS --max-time 4 "https://dlmm.datapi.meteora.ag/portfolio/open?user=${wallet}&page_size=20"`,
+      { encoding: "utf8" },
+    ));
+    return {
+      closed_n: total.totalClosedPositions ?? null,
+      closed_pnl_sol: total.totalPnlSol != null ? Math.round(Number(total.totalPnlSol) * 1e6) / 1e6 : null,
+      closed_pct: total.totalPnlSolPctChange != null ? Math.round(Number(total.totalPnlSolPctChange) * 1e4) / 1e4 : null,
+      open_n: open.totalPositions ?? open.total?.totalPositions ?? null,
+      open_bal_sol: open.total?.balancesSol != null ? Math.round(Number(open.total.balancesSol) * 1e6) / 1e6 : null,
+      open_pnl_sol: open.total?.pnlSol != null ? Math.round(Number(open.total.pnlSol) * 1e6) / 1e6 : null,
+      source: "dlmm.datapi.meteora.ag",
+    };
+  } catch {
+    return null;
+  }
+}
+
 function openDb(root) {
   const require = createRequire(resolve(root, "package.json"));
   const Database = require("better-sqlite3");
@@ -75,6 +101,7 @@ export function buildLiveBookSnapshot(root) {
     const open = db.prepare(
       `SELECT p.id, p.symbol, p.token_mint AS mint, p.mode, p.state, p.pool,
               round(p.entry_sol,4) entry_sol, round(p.entry_price,12) entry_price,
+              round(p.open_cost_sol,6) open_cost_sol,
               p.min_bin_id, p.max_bin_id,
               round(p.fees_claimed_sol,6) fees_claimed_sol,
               datetime(p.entry_ts,'unixepoch') opened,
@@ -88,12 +115,38 @@ export function buildLiveBookSnapshot(root) {
        WHERE p.state IN ('open','pending','closing')
        ORDER BY p.id`
     ).all().map((r) => {
-      const value = r.value_sol != null ? Number(r.value_sol) : null;
+      let value = r.value_sol != null ? Number(r.value_sol) : null;
       const entry = Number(r.entry_sol) || 0;
-      const unclaimed = r.unclaimed_fees_sol != null ? Number(r.unclaimed_fees_sol) : null;
+      let unclaimed = r.unclaimed_fees_sol != null ? Number(r.unclaimed_fees_sol) : null;
       const claimed = Number(r.fees_claimed_sol) || 0;
+      let markUnreliable = false;
+      // value_sol=0 with a live price is almost always a failed rebalance / empty
+      // SDK read — not a real −100% wipe. Prefer last healthy mark for display.
+      if (value === 0 && entry > 0 && r.mark_price != null && Number(r.mark_price) > 0) {
+        const prev = db.prepare(
+          `SELECT value_sol, value_frac, unclaimed_fees_sol, ts
+           FROM position_marks
+           WHERE position_id = ? AND value_sol > 0
+           ORDER BY ts DESC LIMIT 1`
+        ).get(r.id);
+        if (prev && Number(prev.value_sol) > 0) {
+          value = Number(prev.value_sol);
+          unclaimed = prev.unclaimed_fees_sol != null ? Number(prev.unclaimed_fees_sol) : unclaimed;
+          markUnreliable = true;
+        } else {
+          value = null;
+          markUnreliable = true;
+        }
+      }
       const pnl = value != null ? value - entry : null;
       const pct = value != null && entry > 0 ? (value / entry) - 1 : null;
+      const liq = value != null
+        ? Math.round((value - (unclaimed ?? 0)) * 1e6) / 1e6
+        : null;
+      const invPnl = liq != null ? Math.round((liq - entry) * 1e6) / 1e6 : null;
+      const totalPnl = value != null
+        ? Math.round((value - entry + claimed) * 1e6) / 1e6
+        : null;
       const minBin = r.min_bin_id;
       const maxBin = r.max_bin_id;
       const activeBin = r.active_bin_id;
@@ -125,6 +178,7 @@ export function buildLiveBookSnapshot(root) {
         state: r.state,
         entry_sol: entry,
         entry_price: r.entry_price,
+        open_cost_sol: r.open_cost_sol != null ? Number(r.open_cost_sol) : null,
         opened: r.opened,
         fees_claimed_sol: claimed,
         min_bin_id: minBin,
@@ -139,17 +193,21 @@ export function buildLiveBookSnapshot(root) {
           price: markPrice,
           status,
         },
-        mark: value != null ? {
-          value_sol: Math.round(value * 1e6) / 1e6,
-          pnl_sol: Math.round((pnl ?? 0) * 1e6) / 1e6,
+        mark: value != null || markUnreliable ? {
+          value_sol: value != null ? Math.round(value * 1e6) / 1e6 : null,
+          liq_sol: liq,
+          pnl_sol: pnl != null ? Math.round(pnl * 1e6) / 1e6 : null,
+          inv_pnl_sol: invPnl,
+          total_pnl_sol: totalPnl,
           pct: pct != null ? Math.round(pct * 1e6) / 1e6 : null,
           unclaimed_fees_sol: unclaimed != null ? Math.round(unclaimed * 1e6) / 1e6 : null,
           fees_claimed_sol: claimed,
           in_range: status === "in",
           status,
+          unreliable: markUnreliable,
           active_bin_id: activeBin,
           price: markPrice,
-          age_s: r.mark_ts != null ? now - r.mark_ts : null,
+          age_s: r.mark_ts != null ? now - Number(r.mark_ts) : null,
           at: r.marked,
         } : null,
       };
@@ -224,13 +282,21 @@ export function buildLiveBookSnapshot(root) {
     const clusterExits = tomlNum(toml, "cluster_brake_exits") ?? 2;
     const clusterWindowH = tomlNum(toml, "cluster_brake_window_h") ?? 6;
     const clusterPauseH = tomlNum(toml, "cluster_brake_pause_h") ?? 6;
+    const clearedRaw = db.prepare(
+      "SELECT value FROM meta WHERE key='cluster_brake_cleared_at'"
+    ).get()?.value;
+    const clearedAt = clearedRaw != null ? Number(clearedRaw) : 0;
+    const clusterSince = Math.max(
+      now - clusterWindowH * 3600,
+      Number.isFinite(clearedAt) ? clearedAt : 0,
+    );
     const hard = db.prepare(
       `SELECT exit_ts, exit_reason, symbol
        FROM positions
        WHERE exit_reason IN ('P0_safety','P1_stop') AND exit_ts IS NOT NULL
          AND exit_ts > ?
        ORDER BY exit_ts DESC`
-    ).all(now - clusterWindowH * 3600);
+    ).all(clusterSince);
 
     let cluster = { tripped: false, count: hard.length, remainingMin: 0, recent: hard.slice(0, 5) };
     if (hard.length >= clusterExits) {
@@ -318,6 +384,58 @@ export function buildLiveBookSnapshot(root) {
     const BIN_RENT_SCORE_MIN = 70;
     const BIN_RENT_GATES = ["bin_rent", "majors_bin_rent"];
 
+    function parseEntryFeat(feat) {
+      try {
+        const j = JSON.parse(feat);
+        const pool = j.pool ?? {};
+        const name = pool.name ?? pool.symbol ?? null;
+        return {
+          size: typeof j.size === "number" ? Math.round(j.size * 1e4) / 1e4 : null,
+          sleeve: j.sleeve ?? (j.follow ? "follow" : null),
+          isAlpha: !!j.isAlpha,
+          symbol: name ? String(name).split("-")[0] : null,
+          baseScore: typeof j.experiment?.baseScore === "number"
+            ? Math.round(j.experiment.baseScore * 10) / 10
+            : null,
+        };
+      } catch {
+        return {};
+      }
+    }
+
+    const recentPasses = db.prepare(
+      `SELECT datetime(d.ts,'unixepoch') at, d.mint, d.pool, ROUND(d.score,1) score,
+              COALESCE(NULLIF(t.symbol,''), NULLIF(
+                (SELECT p.symbol FROM positions p WHERE p.token_mint = d.mint ORDER BY p.id DESC LIMIT 1),
+                ''), '?') AS symbol,
+              json_extract(d.features_json, '$.size') AS size,
+              json_extract(d.features_json, '$.sleeve') AS sleeve,
+              json_extract(d.features_json, '$.isAlpha') AS is_alpha,
+              json_extract(d.features_json, '$.experiment.baseScore') AS base_score,
+              json_extract(d.features_json, '$.pool.name') AS pool_name,
+              json_extract(d.features_json, '$.follow') AS follow
+       FROM decisions d
+       LEFT JOIN tokens t ON t.mint = d.mint
+       WHERE d.action='entered' AND d.ts > ?
+       ORDER BY d.ts DESC
+       LIMIT 12`
+    ).all(weekAgo).map((r) => {
+      const name = r.pool_name ? String(r.pool_name).split("-")[0] : null;
+      const size = typeof r.size === "number" ? Math.round(r.size * 1e4) / 1e4 : null;
+      const baseScore = typeof r.base_score === "number" ? Math.round(r.base_score * 10) / 10 : null;
+      return {
+        at: r.at,
+        mint: r.mint || null,
+        pool: r.pool || null,
+        score: r.score,
+        size,
+        sleeve: r.sleeve || (r.follow ? "follow" : null),
+        isAlpha: !!r.is_alpha,
+        baseScore,
+        symbol: r.symbol && r.symbol !== "?" ? r.symbol : (name || "?"),
+      };
+    });
+
     function parseBinRentNearMiss(feat) {
       try {
         const j = JSON.parse(feat);
@@ -400,7 +518,10 @@ export function buildLiveBookSnapshot(root) {
       };
     };
 
-    const deployedSol = open.reduce((s, p) => s + (p.entry_sol ?? 0), 0);
+    const deployedSol = open.reduce((s, p) => {
+      const mark = p.mark?.value_sol;
+      return s + (typeof mark === "number" && Number.isFinite(mark) ? mark : (p.entry_sol ?? 0));
+    }, 0);
     const walletSol = typeof hb?.walletSol === "number" ? hb.walletSol : null;
     const solUsdRow = db.prepare(
       `SELECT sol_usd FROM pnl_daily WHERE mode='live' AND sol_usd > 0 ORDER BY day DESC LIMIT 1`
@@ -419,6 +540,12 @@ export function buildLiveBookSnapshot(root) {
         ? Math.round(walletSol * solUsd * 100) / 100
         : null,
     };
+
+    // Meteora Data API — LP deposit/withdraw/fee PnL (what app.meteora.ag/portfolio shows).
+    // Distinct from our wallet-measured book (includes rent + post-exit swap slippage).
+    const meteora = fetchMeteoraPortfolio(process.env.WALLET_PUBKEY
+      ?? process.env.PUBLIC_WALLET
+      ?? "9DTThTbggnp2P2ZGLFRfN1A3j5JUsXez1dRJak3TixB2");
 
     return {
       ts: now,
@@ -441,6 +568,7 @@ export function buildLiveBookSnapshot(root) {
       heartbeat: hb,
       heartbeat_age_s: hb?.ts ? now - hb.ts : null,
       balance,
+      meteora,
       open,
       book: {
         all_time_live: allLive,
@@ -472,6 +600,7 @@ export function buildLiveBookSnapshot(root) {
         since_fix: binRentNearMiss(fixTs),
         last_24h: binRentNearMiss(dayAgo),
       },
+      recent_passes: recentPasses,
     };
   } finally {
     db.close();

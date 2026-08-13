@@ -22,7 +22,8 @@ export interface LiveWatch {
   };
   open: Array<{
     id: number; symbol: string; mint?: string; mode: string; state: string;
-    entry_sol: number; entry_price?: number; opened: string; fees_claimed_sol?: number;
+    entry_sol: number; entry_price?: number; open_cost_sol?: number | null;
+    opened: string; fees_claimed_sol?: number;
     min_bin_id?: number; max_bin_id?: number; range_status?: string;
     range?: {
       min_bin: number; max_bin: number; active_bin: number | null;
@@ -30,13 +31,17 @@ export interface LiveWatch {
       status: string;
     };
     mark?: {
-      value_sol: number;
-      pnl_sol: number;
+      value_sol: number | null;
+      liq_sol?: number | null;
+      pnl_sol: number | null;
+      inv_pnl_sol?: number | null;
+      total_pnl_sol?: number | null;
       pct: number | null;
       unclaimed_fees_sol: number | null;
       fees_claimed_sol: number;
       in_range: boolean;
       status?: string;
+      unreliable?: boolean;
       active_bin_id?: number | null;
       price?: number | null;
       age_s: number | null;
@@ -48,11 +53,25 @@ export interface LiveWatch {
     since_fix: BookWindow;
     last_24h: BookWindow;
   };
+  meteora?: {
+    closed_n: number | null;
+    closed_pnl_sol: number | null;
+    closed_pct: number | null;
+    open_n: number | null;
+    open_bal_sol: number | null;
+    open_pnl_sol: number | null;
+    source: string;
+  } | null;
   kelly: {
     samples: number; regime: string; appliedFraction: number;
     fullKelly: number | null; winRate: number | null;
   };
-  cluster: { tripped: boolean; count: number; remainingMin: number; recent: unknown[] };
+  cluster: {
+    tripped: boolean;
+    count: number;
+    remainingMin: number;
+    recent: Array<{ exit_ts?: number; exit_reason?: string; symbol?: string }>;
+  };
   open_failed_since_fix: {
     n: number; by_code: Record<string, number>;
     recent: Array<{ at: string; mint: string; code: string | null; error?: string }>;
@@ -74,6 +93,17 @@ export interface LiveWatch {
     since_fix: NearMiss;
     last_24h: NearMiss;
   };
+  recent_passes: Array<{
+    at: string;
+    mint?: string | null;
+    pool?: string | null;
+    symbol?: string;
+    score: number | null;
+    size?: number | null;
+    sleeve?: string | null;
+    isAlpha?: boolean;
+    baseScore?: number | null;
+  }>;
 }
 
 export interface BookWindow {
@@ -128,6 +158,13 @@ export interface HistorySnap {
   ladder: Array<{
     id: number; symbol: string; mint?: string; exit_reason: string; at: string;
     exit_ts: number; pnl: number; entry_sol: number; pct?: number | null;
+    open_cost_sol?: number | null;
+    close_return_sol?: number | null;
+    fees_sol?: number | null;
+    recovered_sol?: number | null;
+    fees_at_close_sol?: number | null;
+    exit_sol?: number | null;
+    exit_move_sol?: number | null;
   }>;
   skip_top: Array<{ g: string; n: number }>;
   skip_series: Array<Record<string, string | number>>;

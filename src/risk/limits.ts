@@ -159,17 +159,25 @@ export function circuitBreakerTripped(walletSol: number): boolean {
  * Cluster brake: N hard exits (P0/P1) inside a window pauses new entries.
  * Wallet-% breaker missed Aug 12 (−0.159 on a ~24 SOL book); this fires on
  * the loss *pattern* before the dollar threshold.
+ *
+ * Operator clear: meta `cluster_brake_cleared_at` = unix seconds. Hard exits
+ * at or before that ts are ignored (future P0/P1 still trip normally).
  */
 export function clusterBrakeTripped(): { count: number; remainingMin: number } | null {
   const s = config().sizing;
   if (!s.cluster_brake_exits || s.cluster_brake_exits <= 0) return null;
   const windowS = (s.cluster_brake_window_h || 6) * 3600;
   const pauseS = (s.cluster_brake_pause_h || 6) * 3600;
+  const clearedRaw = getDb().prepare(
+    "SELECT value FROM meta WHERE key='cluster_brake_cleared_at'"
+  ).get() as { value: string } | undefined;
+  const clearedAt = clearedRaw ? Number(clearedRaw.value) : 0;
+  const since = Math.max(now() - windowS, Number.isFinite(clearedAt) ? clearedAt : 0);
   const rows = getDb().prepare(
     `SELECT exit_ts FROM positions
      WHERE exit_reason IN ('P0_safety','P1_stop') AND exit_ts IS NOT NULL AND exit_ts > ?
      ORDER BY exit_ts DESC`
-  ).all(now() - windowS) as Array<{ exit_ts: number }>;
+  ).all(since) as Array<{ exit_ts: number }>;
   if (rows.length < s.cluster_brake_exits) return null;
   // Pause measured from the Nth-most-recent hard exit (the one that tripped).
   const tripTs = rows[s.cluster_brake_exits - 1]!.exit_ts;

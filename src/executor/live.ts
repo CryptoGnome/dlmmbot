@@ -39,6 +39,7 @@ interface DlmmPool {
     user: PublicKey; position: PublicKey; fromBinId: number; toBinId: number;
     bps: BN; shouldClaimAndClose?: boolean; skipUnwrapSOL?: boolean;
   }): Promise<Transaction[]>;
+  closePositionIfEmpty(params: { owner: PublicKey; position: LbPosition }): Promise<Transaction>;
   claimAllSwapFee(params: { owner: PublicKey; positions: LbPosition[] }): Promise<Transaction[]>;
   refetchStates(): Promise<void>;
   fromPricePerLamport(pricePerLamport: number): string;
@@ -84,6 +85,31 @@ export function rangeGapTooLarge(plannedTop: number, activeBinId: number, maxGap
 /** Tracked accounts on chain returned none — never fabricate valueSol=0 / −open_cost. */
 export function trackedButMissingOnChain(trackedCount: number, foundCount: number): boolean {
   return trackedCount > 0 && foundCount === 0;
+}
+
+/** Native SOL + wSOL ATA change for our wallet in one tx (Jupiter/zap often credit wSOL). */
+export function wealthDeltaLamports(
+  meta: NonNullable<ParsedTransactionWithMeta["meta"]>,
+  accountKeys: Array<{ pubkey: PublicKey }>,
+  wallet: PublicKey,
+): number | null {
+  const idx = accountKeys.findIndex((k) => k.pubkey.equals(wallet));
+  const pre = meta.preBalances[idx];
+  const post = meta.postBalances[idx];
+  if (idx < 0 || pre === undefined || post === undefined) return null;
+  let lamports = post - pre;
+  const owner = wallet.toBase58();
+  const sumWsol = (balances: NonNullable<typeof meta.preTokenBalances>) =>
+    balances
+      .filter((b) => b.owner === owner && b.mint === SOL_MINT)
+      .reduce((s, b) => s + Number(b.uiTokenAmount.amount), 0);
+  lamports += sumWsol(meta.postTokenBalances ?? []) - sumWsol(meta.preTokenBalances ?? []);
+  return lamports;
+}
+
+function lbPositionEmpty(p: LbPosition): boolean {
+  return Number(p.positionData.totalXAmount) === 0 && Number(p.positionData.totalYAmount) === 0
+    && Number(p.positionData.feeX.toString()) === 0 && Number(p.positionData.feeY.toString()) === 0;
 }
 
 /** Slippage sims need a rebuild, not a blind resend of the same instruction. */
@@ -192,16 +218,14 @@ export class LiveExecutor implements Executor {
       }
       // accountKeys carries address-lookup entries appended in the same order
       // as pre/postBalances, so Jupiter's versioned txs index correctly.
-      const idx = tx.transaction.message.accountKeys.findIndex((k) =>
-        k.pubkey.equals(this.wallet.publicKey)
-      );
-      const pre = tx.meta.preBalances[idx];
-      const post = tx.meta.postBalances[idx];
-      if (idx < 0 || pre === undefined || post === undefined) {
+      // Include wSOL ATA delta: residual sweeps / zap often land value as wSOL
+      // with ~0 native change (Niles #63 recorded recovered≈0 on a +0.60 wSOL sell).
+      const d = wealthDeltaLamports(tx.meta, tx.transaction.message.accountKeys, this.wallet.publicKey);
+      if (d === null) {
         console.error(`[live] walletDelta: wallet absent from tx ${sig} — recording unknown`);
         return null;
       }
-      lamports += post - pre;
+      lamports += d;
     }
     return lamports / 1e9;
   }
@@ -313,13 +337,18 @@ export class LiveExecutor implements Executor {
    */
   private binSnapshot(positions: LbPosition[]): Array<Record<string, string | number>> {
     const out: Array<Record<string, string | number>> = [];
-    for (const p of positions)
-      for (const b of p.positionData.positionBinData)
+    for (const p of positions) {
+      const bins = p.positionData?.positionBinData;
+      if (!Array.isArray(bins)) continue;
+      for (const b of bins) {
+        if (!b || b.binId == null) continue;
         out.push({
           b: b.binId, p: b.price,
           x: b.positionXAmount, y: b.positionYAmount,
           fx: b.positionFeeXAmount, fy: b.positionFeeYAmount,
         });
+      }
+    }
     return out;
   }
 
@@ -600,31 +629,81 @@ export class LiveExecutor implements Executor {
   }
 
   async escapeRebalance(position: Position, slippageBps: number): Promise<{ ok: boolean }> {
-    const { active, positions } = await this.ourLbPositions(position);
-    const res = await runEscapeRebalance({
-      connection: this.connection,
-      wallet: this.wallet,
-      poolAddress: position.poolAddress,
-      minBinId: position.minBinId,
-      maxBinId: position.maxBinId,
-      activeBinId: active,
-      lbPositions: positions,
-      swapSlippageBps: slippageBps,
-      send: (tx) => this.send(tx),
-    });
-    if (!res.ok) return { ok: false };
+    // BOB#66 / Niles#63: Zap reported success while zap-in left liquidity in the
+    // wallet; next tick P0'd an empty shell at −100% until residual sweep. Prefer
+    // plain close until reshape is proven with a post-check.
+    if (config().exec.escape_rebalance_enabled !== true) return { ok: false };
 
-    const db = getDb();
-    db.prepare("UPDATE positions SET min_bin_id = ?, max_bin_id = ?, fell_deep = 0 WHERE id = ?")
-      .run(res.newMinBinId, res.newMaxBinId, position.id);
-    db.prepare(
-      "UPDATE position_accounts SET min_bin_id = ?, max_bin_id = ? WHERE position_id = ?"
-    ).run(res.newMinBinId, res.newMaxBinId, position.id);
-    db.prepare(
-      "INSERT INTO events (position_id, ts, type, tx_sig, detail_json) VALUES (?, ?, 'rebalance', ?, ?)"
-    ).run(position.id, now(), res.sigs[0] ?? null, JSON.stringify({ kind: "escape_rebalance", sigs: res.sigs, bins: [res.newMinBinId, res.newMaxBinId] }));
-    console.log(`[live] pos#${position.id} ${position.symbol}: escape rebalance bins [${res.newMinBinId},${res.newMaxBinId}]`);
-    return { ok: true };
+    const { active, positions } = await this.ourLbPositions(position);
+    try {
+      const res = await runEscapeRebalance({
+        connection: this.connection,
+        wallet: this.wallet,
+        poolAddress: position.poolAddress,
+        minBinId: position.minBinId,
+        maxBinId: position.maxBinId,
+        activeBinId: active,
+        lbPositions: positions,
+        swapSlippageBps: slippageBps,
+        send: (tx) => this.send(tx),
+      });
+      if (!res.ok) return { ok: false };
+
+      // Zap can return ok with a no-op zap-in (tokens still in wallet, bins empty).
+      const after = await this.ourLbPositions(position);
+      const pool = await this.pool(position.poolAddress);
+      const worth = this.valueOf(after.positions, after.priceYperX, pool.tokenX.mint.decimals);
+      const empty = after.positions.length === 0
+        || after.positions.every(lbPositionEmpty)
+        || worth.valueSol <= 1e-9;
+      if (empty) {
+        getDb().prepare(
+          "INSERT INTO events (position_id, ts, type, tx_sig, detail_json) VALUES (?, ?, 'rebalance_partial', ?, ?)"
+        ).run(
+          position.id, now(), res.sigs[0] ?? null,
+          JSON.stringify({
+            kind: "escape_rebalance_noop",
+            sigs: res.sigs,
+            bins: [res.newMinBinId, res.newMaxBinId],
+            valueSol: worth.valueSol,
+          }),
+        );
+        console.error(
+          `[live] pos#${position.id}: escape rebalance left empty position (value=${worth.valueSol.toFixed(4)}) — salvage close`,
+        );
+        return { ok: false };
+      }
+
+      const db = getDb();
+      db.prepare("UPDATE positions SET min_bin_id = ?, max_bin_id = ?, fell_deep = 0 WHERE id = ?")
+        .run(res.newMinBinId, res.newMaxBinId, position.id);
+      db.prepare(
+        "UPDATE position_accounts SET min_bin_id = ?, max_bin_id = ? WHERE position_id = ?"
+      ).run(res.newMinBinId, res.newMaxBinId, position.id);
+      db.prepare(
+        "INSERT INTO events (position_id, ts, type, tx_sig, detail_json) VALUES (?, ?, 'rebalance', ?, ?)"
+      ).run(position.id, now(), res.sigs[0] ?? null, JSON.stringify({ kind: "escape_rebalance", sigs: res.sigs, bins: [res.newMinBinId, res.newMaxBinId] }));
+      console.log(`[live] pos#${position.id} ${position.symbol}: escape rebalance bins [${res.newMinBinId},${res.newMaxBinId}]`);
+      return { ok: true };
+    } catch (e) {
+      const sigs = (e as { sigs?: string[] }).sigs ?? [];
+      if (sigs.length) {
+        getDb().prepare(
+          "INSERT INTO events (position_id, ts, type, tx_sig, detail_json) VALUES (?, ?, 'rebalance_partial', ?, ?)"
+        ).run(
+          position.id, now(), sigs[0] ?? null,
+          JSON.stringify({
+            kind: "escape_rebalance_partial",
+            sigs,
+            error: (e as Error).message?.split("\n")[0] ?? String(e),
+          }),
+        );
+        console.error(
+          `[live] pos#${position.id}: partial escape rebalance (${sigs.length} sigs) — position may be empty; close next`,
+        );
+      }
+      throw e;
+    }
   }
 
   async close(position: Position, reason: ExitReason, slippageBps: number): Promise<{ exitSol: number; txCostSol: number }> {
@@ -639,33 +718,85 @@ export class LiveExecutor implements Executor {
     // Every tx this close sends, so the wallet delta below covers all of them.
     const sigs: string[] = [];
     let xToSwap = 0n;
+    let removeFailedEmpty = false;
     for (const p of positions) {
       xToSwap += BigInt(Math.floor(Number(p.positionData.totalXAmount))) + BigInt(p.positionData.feeX.toString());
-      const txs = await pool.removeLiquidity({
-        user: this.wallet.publicKey,
-        position: p.publicKey,
-        fromBinId: p.positionData.lowerBinId,
-        toBinId: p.positionData.upperBinId,
-        bps: new BN(10_000),
-        shouldClaimAndClose: true,
-      });
-      for (const tx of txs) sigs.push(await this.send(tx));
+      // Failed escape-rebalance can leave an empty on-chain account. removeLiquidity
+      // then crashes inside the SDK (binId undefined). Close the shell for rent.
+      if (lbPositionEmpty(p) || before.valueSol <= 1e-9) {
+        try {
+          const tx = await pool.closePositionIfEmpty({ owner: this.wallet.publicKey, position: p });
+          sigs.push(await this.send(tx));
+        } catch (e) {
+          removeFailedEmpty = true;
+          console.error(
+            `[live] pos#${position.id}: closePositionIfEmpty failed:`,
+            (e as Error).message.split("\n")[0],
+          );
+        }
+        continue;
+      }
+      const fromBinId = p.positionData.lowerBinId ?? position.minBinId;
+      const toBinId = p.positionData.upperBinId ?? position.maxBinId;
+      try {
+        const txs = await pool.removeLiquidity({
+          user: this.wallet.publicKey,
+          position: p.publicKey,
+          fromBinId,
+          toBinId,
+          bps: new BN(10_000),
+          shouldClaimAndClose: true,
+        });
+        for (const tx of txs) sigs.push(await this.send(tx));
+      } catch (e) {
+        if (before.valueSol > 1e-9) throw e;
+        try {
+          const tx = await pool.closePositionIfEmpty({ owner: this.wallet.publicKey, position: p });
+          sigs.push(await this.send(tx));
+        } catch (e2) {
+          removeFailedEmpty = true;
+          console.error(
+            `[live] pos#${position.id}: empty removeLiquidity+close failed — writing terminal exit:`,
+            (e2 as Error).message.split("\n")[0],
+          );
+        }
+      }
     }
 
     // Manual zap-out: swap all withdrawn token-side to SOL. On a below-range
     // exit this leg IS the exit value — the remove-liquidity tx returns only
     // rent — so its signature must reach the delta or the close reads as a
     // total loss.
-    if (xToSwap > 0n) {
-      const swap = await this.tokenToSol(position.tokenMint, xToSwap, slippageBps);
+    // Also sell any wallet residue of this mint (escape rebalance can leave
+    // tokens in the ATA while position bins are empty — xToSwap from chain is 0).
+    let walletX = 0n;
+    try {
+      const TOKEN_PROGRAMS = [
+        new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
+        new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"),
+      ];
+      for (const programId of TOKEN_PROGRAMS) {
+        const accs = await this.connection.getParsedTokenAccountsByOwner(this.wallet.publicKey, { programId });
+        for (const acc of accs.value) {
+          const info = acc.account.data.parsed.info as { mint: string; tokenAmount: { amount: string } };
+          if (info.mint === position.tokenMint && info.tokenAmount.amount !== "0") {
+            walletX += BigInt(info.tokenAmount.amount);
+          }
+        }
+      }
+    } catch (e) {
+      console.error(`[live] pos#${position.id}: wallet residue check failed:`, (e as Error).message.split("\n")[0]);
+    }
+    const toSell = xToSwap > walletX ? xToSwap : walletX;
+    if (toSell > 0n) {
+      const swap = await this.tokenToSol(position.tokenMint, toSell, slippageBps);
       if (swap) sigs.push(swap.signature);
     }
 
-    // Never write terminal state for a close that sent nothing. walletDelta([])
-    // returns 0, not null, so an empty send would be recorded as a MEASURED
-    // zero return — indistinguishable from a real total loss. claimFees already
-    // guards this shape at its top; close() and withdraw() did not.
-    if (sigs.length === 0 && this.accountKeys(position.id).length > 0) {
+    // Never write terminal state for a close that sent nothing — unless the
+    // position is already empty on-chain (failed rebalance) and removeLiquidity
+    // cannot run. In that case exit_sol=0 is the truth, not a fabricated loss.
+    if (sigs.length === 0 && this.accountKeys(position.id).length > 0 && !removeFailedEmpty) {
       throw new Error(
         `pos#${position.id}: close sent no transactions against ${this.accountKeys(position.id).length} ` +
         `tracked account(s) — refusing to write an exit`
@@ -677,7 +808,7 @@ export class LiveExecutor implements Executor {
       P3_above: "closed_win", P5_below: "closed_below", escape: "closed_escape", manual: "closed_manual",
     };
     // Actual wallet credit for this close (exit value + rent refunds - tx fees).
-    const closeReturnSol = await this.walletDelta(sigs);
+    const closeReturnSol = sigs.length ? await this.walletDelta(sigs) : 0;
 
     const db = getDb();
     // `before.feesSol` is what shouldClaimAndClose collected on the way out.
@@ -702,6 +833,7 @@ export class LiveExecutor implements Executor {
       sigs[0] ?? null, before.valueSol, 0.001,
       JSON.stringify({
         sigs, closeReturnSol, markedExitSol: before.valueSol, swapped: xToSwap > 0n,
+        emptyClose: removeFailedEmpty || before.valueSol <= 1e-9,
         // Chain legs, so attribution reconciles without a wallet scan
         // (RANGE-SHAPE-DECISION.md item 3).
         legs: { feesSolMarked: before.feesSol, feeXRaw: before.feeXRaw.toString(), xToSwapRaw: xToSwap.toString() },

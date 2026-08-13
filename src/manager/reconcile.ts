@@ -86,9 +86,22 @@ export async function reconcileLive(connection: Connection, wallet: PublicKey): 
     if (positions.length === 0) continue;
     // Bin range across all position accounts on this pair.
     let minBin = Number.MAX_SAFE_INTEGER, maxBin = Number.MIN_SAFE_INTEGER;
+    let anyLiquidity = false;
     for (const pos of positions) {
       minBin = Math.min(minBin, pos.positionData.lowerBinId);
       maxBin = Math.max(maxBin, pos.positionData.upperBinId);
+      if (Number(pos.positionData.totalXAmount) > 0 || Number(pos.positionData.totalYAmount) > 0) {
+        anyLiquidity = true;
+      }
+    }
+    // Empty shells left by a failed rebalance/close — adopting them as open
+    // creates a $0 "position" that P0 writes off again (Niles #63 → ADOPTED #65).
+    // Leave them for the executor's empty-close / rent reclaim path.
+    if (!anyLiquidity) {
+      console.log(
+        `[reconcile] skip adopt ${poolAddr.slice(0, 8)}… — ${positions.length} empty account(s), no liquidity`,
+      );
+      continue;
     }
     const res = db.prepare(
       `INSERT INTO positions (mode, pool, token_mint, symbol, entry_ts, entry_price, entry_sol,

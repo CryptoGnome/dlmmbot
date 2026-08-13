@@ -52,7 +52,7 @@ export function EquityChart({ data }: { data: HistorySnap["equity"] }) {
   const last = data[data.length - 1]!;
   return (
     <div className="flex h-full flex-col">
-      <div className="mb-2 flex flex-wrap gap-4 px-1 text-[12px]">
+      <div className="mb-1 flex flex-wrap gap-4 px-1 text-[12px]">
         <div>
           <span className="text-dim">Total SOL </span>
           <span className={last.cum_sol >= 0 ? "text-ok font-semibold" : "text-danger font-semibold"}>

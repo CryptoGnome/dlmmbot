@@ -4,7 +4,7 @@ import {
 } from "./limits.js";
 import { installConfig, restoreConfig } from "../test/config.js";
 import { useMemoryDb, resetTestDb, insertClosedPosition } from "../test/db.js";
-import { now } from "../db/db.js";
+import { getDb, now } from "../db/db.js";
 
 describe("regimeFactor", () => {
   beforeEach(() => installConfig((c) => {
@@ -47,6 +47,17 @@ describe("clusterBrakeTripped", () => {
 
   it("does not fire on a single hard exit", () => {
     insertClosedPosition({ entrySol: 0.3, exitSol: 0.2, exitReason: "P1_stop", exitTs: now() - 100 });
+    expect(clusterBrakeTripped()).toBeNull();
+  });
+
+  it("respects cluster_brake_cleared_at operator clear", () => {
+    const t = now();
+    insertClosedPosition({ entrySol: 0.3, exitSol: 0.2, exitReason: "P1_stop", exitTs: t - 100 });
+    insertClosedPosition({ entrySol: 0.3, exitSol: 0.15, exitReason: "P0_safety", exitTs: t - 50 });
+    expect(clusterBrakeTripped()).not.toBeNull();
+    getDb().prepare(
+      "INSERT INTO meta (key, value) VALUES ('cluster_brake_cleared_at', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+    ).run(String(t));
     expect(clusterBrakeTripped()).toBeNull();
   });
 });

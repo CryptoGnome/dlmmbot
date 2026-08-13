@@ -15,6 +15,16 @@ const dlmmMod = createRequire(import.meta.url)("@meteora-ag/dlmm") as {
 };
 const StrategyType = dlmmMod.default?.StrategyType ?? dlmmMod.StrategyType;
 
+/** Thrown when a rebalance leg fails after earlier legs already landed. */
+export class PartialRebalanceError extends Error {
+  readonly sigs: string[];
+  constructor(message: string, sigs: string[]) {
+    super(message);
+    this.name = "PartialRebalanceError";
+    this.sigs = sigs;
+  }
+}
+
 export function zapSdkConfig() {
   return {
     jupiterApiUrl: DEFAULT_JUPITER_API_URL,
@@ -41,28 +51,36 @@ export function liquiditySlippageBps(): number {
   return Math.round(config().entry.liquidity_slippage_pct * 100);
 }
 
-async function sendOptionalTx(
-  tx: Transaction | undefined,
-  send: (tx: Transaction) => Promise<string>,
-  sigs: string[],
-): Promise<void> {
-  if (!tx || tx.instructions.length === 0) return;
-  sigs.push(await send(tx));
-}
-
-/** Send rebalance tx sequence from Zap SDK (setup → rebalance → swap → ledger → zap-in → cleanup). */
+/** Send rebalance tx sequence from Zap SDK (setup → rebalance → swap → ledger → zap-in → cleanup).
+ *  Throws if any leg fails AFTER an earlier leg already landed — callers must treat that as
+ *  a half-applied reshape (liquidity may already be gone from the old bins). */
 export async function sendRebalanceResponse(
   resp: RebalanceDlmmPositionResponse,
   send: (tx: Transaction) => Promise<string>,
 ): Promise<string[]> {
   const sigs: string[] = [];
-  await sendOptionalTx(resp.setupTransaction, send, sigs);
-  await sendOptionalTx(resp.initBinArrayTransaction, send, sigs);
-  await sendOptionalTx(resp.rebalancePositionTransaction, send, sigs);
-  await sendOptionalTx(resp.swapTransaction, send, sigs);
-  await sendOptionalTx(resp.ledgerTransaction, send, sigs);
-  await sendOptionalTx(resp.zapInTransaction, send, sigs);
-  await sendOptionalTx(resp.cleanUpTransaction, send, sigs);
+  const legs: Array<[string, Transaction | null | undefined]> = [
+    ["setup", resp.setupTransaction],
+    ["initBinArray", resp.initBinArrayTransaction],
+    ["rebalance", resp.rebalancePositionTransaction],
+    ["swap", resp.swapTransaction],
+    ["ledger", resp.ledgerTransaction],
+    ["zapIn", resp.zapInTransaction],
+    ["cleanup", resp.cleanUpTransaction],
+  ];
+  for (const [name, tx] of legs) {
+    if (!tx || tx.instructions.length === 0) continue;
+    try {
+      sigs.push(await send(tx));
+    } catch (e) {
+      const tip = (e as Error).message?.split("\n")[0] ?? String(e);
+      throw new PartialRebalanceError(
+        `rebalance ${name} failed after ${sigs.length} prior sig(s)` +
+        (sigs.length ? ` (liquidity may already be moved): ${tip}` : `: ${tip}`),
+        sigs,
+      );
+    }
+  }
   return sigs;
 }
 

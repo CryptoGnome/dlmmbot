@@ -58,8 +58,57 @@ export function gateLabel(gate: string): string {
   return map[gate] ?? gate.replace(/_/g, " ");
 }
 
+const TZ = "America/New_York";
+
+/** Parse API times (UTC ISO or `YYYY-MM-DD HH:MM:SS`) into a Date. */
+function parseUtc(isoOrSql: string): Date | null {
+  const raw = isoOrSql.trim();
+  if (!raw) return null;
+  // Already has timezone / Z
+  if (/[zZ]|[+-]\d{2}:?\d{2}$/.test(raw)) {
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  // SQL datetime from sqlite is UTC without zone
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(raw);
+  if (!m) {
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(Date.UTC(
+    Number(m[1]), Number(m[2]) - 1, Number(m[3]),
+    Number(m[4]), Number(m[5]), Number(m[6] ?? 0),
+  ));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Compact Eastern time: `08-13 10:33 AM` */
 export function shortTime(isoOrSql: string | null | undefined): string {
   if (!isoOrSql) return "—";
-  const s = isoOrSql.replace("T", " ").slice(0, 16);
-  return s.slice(5);
+  const d = parseUtc(isoOrSql);
+  if (!d) return "—";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: TZ,
+    month: "2-digit",
+    day: "2-digit",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  return `${get("month")}-${get("day")} ${get("hour")}:${get("minute")} ${get("dayPeriod")}`;
+}
+
+/** Footer / clock: Eastern `10:33:52 AM` */
+export function clockTime(ms: number | Date | null | undefined): string {
+  if (ms == null) return "—";
+  const d = ms instanceof Date ? ms : new Date(ms);
+  if (Number.isNaN(d.getTime())) return "—";
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: TZ,
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  }).format(d);
 }

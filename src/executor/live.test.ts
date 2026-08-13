@@ -4,8 +4,11 @@ import {
   rangeGapTooLarge,
   trackedButMissingOnChain,
   shouldRebuildOpenOnSlippage,
+  wealthDeltaLamports,
   OPEN_SLIPPAGE_REBUILDS,
 } from "./live.js";
+import { PublicKey } from "@solana/web3.js";
+import { SOL_MINT } from "../config.js";
 
 describe("txErrorDetail", () => {
   it("extracts ExceededBinSlippageTolerance from 0x1774", () => {
@@ -52,5 +55,40 @@ describe("live open/mark guards", () => {
     expect(shouldRebuildOpenOnSlippage("ExceededBinSlippageTolerance", 0)).toBe(true);
     expect(shouldRebuildOpenOnSlippage("ExceededBinSlippageTolerance", OPEN_SLIPPAGE_REBUILDS)).toBe(false);
     expect(shouldRebuildOpenOnSlippage("InsufficientFunds", 0)).toBe(false);
+  });
+});
+
+describe("wealthDeltaLamports", () => {
+  const wallet = new PublicKey("9DTThTbggnp2P2ZGLFRfN1A3j5JUsXez1dRJak3TixB2");
+  const other = new PublicKey("11111111111111111111111111111111");
+
+  it("counts native + wSOL as one wealth figure", () => {
+    const keys = [{ pubkey: other }, { pubkey: wallet }];
+    const meta = {
+      preBalances: [0, 1_000_000_000],
+      postBalances: [0, 999_992_970], // -0.00000703 native
+      preTokenBalances: [
+        { accountIndex: 2, mint: SOL_MINT, owner: wallet.toBase58(), uiTokenAmount: { amount: "0", decimals: 9, uiAmount: 0 } },
+      ],
+      postTokenBalances: [
+        { accountIndex: 2, mint: SOL_MINT, owner: wallet.toBase58(), uiTokenAmount: { amount: "603934037", decimals: 9, uiAmount: 0.603934037 } },
+      ],
+    };
+    const d = wealthDeltaLamports(meta as never, keys, wallet);
+    expect(d).toBe(603934037 - 7030);
+  });
+
+  it("nets unwrap (native up, wSOL down) to ~0", () => {
+    const keys = [{ pubkey: wallet }];
+    const meta = {
+      preBalances: [1_000_000_000],
+      postBalances: [1_600_000_000],
+      preTokenBalances: [
+        { accountIndex: 1, mint: SOL_MINT, owner: wallet.toBase58(), uiTokenAmount: { amount: "600000000", decimals: 9, uiAmount: 0.6 } },
+      ],
+      postTokenBalances: [],
+    };
+    const d = wealthDeltaLamports(meta as never, keys, wallet);
+    expect(d).toBe(0);
   });
 });

@@ -14,4 +14,4 @@ export function tokenFromUrl(): string {
   return sessionStorage.getItem("dash_token") ?? "";
 }
 
-export { fmtSol, fmtUsd, fmtPct, fmtRet, gmgnUrl, exitLabel, gateLabel, shortTime } from "./format";
+export { fmtSol, fmtUsd, fmtPct, fmtRet, gmgnUrl, exitLabel, gateLabel, shortTime, clockTime } from "./format";

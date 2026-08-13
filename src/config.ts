@@ -113,6 +113,8 @@ export interface Config {
   };
   exec: {
     mode: "paper" | "live"; use_zap: boolean;
+    /** When false, escape hatch closes instead of Zap reshape-in-place. */
+    escape_rebalance_enabled?: boolean;
     exit_slippage_bps: number; safety_exit_slippage_bps: number;
     tx_retries: number; paper_promotion_days: number;
   };

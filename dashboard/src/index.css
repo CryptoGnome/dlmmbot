@@ -70,3 +70,14 @@ body {
 .recharts-default-tooltip li {
   color: #e8edf5 !important;
 }
+
+/* Keep scroll, hide the thumb — panels look cleaner */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}

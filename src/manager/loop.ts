@@ -144,24 +144,26 @@ async function closeAndReport(
   // 0 means no claim happened, so fall through to the mark (also 0).
   const feesClaimShown = row?.fees_measured_sol || feesClaimed;
   const feesTotal = feesClaimShown + feesAtClose;
-  // `pnl` stays on the CLAIMED mark alone. exit_sol already contains whatever
-  // the close itself collected — valueOf() folds feesSol into valueSol — so
-  // adding feesAtClose here would count it twice. The display below shows the
-  // true total, which is a different job: ZEUS pos#24 reported "fees 0.0000"
-  // on a close that collected 0.0281 SOL, because this line read only the
-  // claimed column and every fee that position earned arrived at close.
-  const pnl = res.exitSol + feesClaimed - pos.entrySol;
-  const pct = pos.entrySol > 0 ? (pnl / pos.entrySol) * 100 : 0;
+  // Prefer measured wallet PnL for the headline when columns exist — mark-based
+  // (exit_sol + fees_claimed - entry) is what Kelly historically read, but it
+  // diverges badly on empty/P0 closes (Niles/K showed −100% mark vs small
+  // measured losses). Book / dash / circuit breaker already use REALIZED_PNL_SQL.
+  const markPnl = res.exitSol + feesClaimed - pos.entrySol;
+  const measuredPnl = row?.open_cost_sol != null && row?.close_return_sol != null
+    ? row.close_return_sol + row.fees_measured_sol + row.recovered_sol - row.open_cost_sol
+    : null;
+  const pnl = measuredPnl ?? markPnl;
+  const pctBase = measuredPnl != null && row?.open_cost_sol ? row.open_cost_sol : pos.entrySol;
+  const pct = pctBase > 0 ? (pnl / pctBase) * 100 : 0;
   const holdH = (now() - pos.entryTs) / 3600;
   const hold = holdH < 1 ? `${(holdH * 60).toFixed(0)}m` : `${holdH.toFixed(1)}h`;
-  // True PnL: measured wallet flows only — what the wallet actually gained,
-  // never a pool-mid mark. `pnl` above stays marked so the headline number
-  // matches what Kelly reads.
   let trueLine = "";
-  if (row?.open_cost_sol != null && row?.close_return_sol != null) {
-    const truePnl = row.close_return_sol + row.fees_measured_sol + row.recovered_sol - row.open_cost_sol;
-    trueLine = `\ntrue PnL (measured): ${truePnl >= 0 ? "+" : ""}${truePnl.toFixed(4)} SOL` +
-      ` [in ${row.open_cost_sol.toFixed(4)} → out ${(row.close_return_sol + row.fees_measured_sol + row.recovered_sol).toFixed(4)}]`;
+  if (measuredPnl != null && row) {
+    trueLine = `\ntrue PnL (measured): ${measuredPnl >= 0 ? "+" : ""}${measuredPnl.toFixed(4)} SOL` +
+      ` [in ${row.open_cost_sol!.toFixed(4)} → out ${(row.close_return_sol! + row.fees_measured_sol + row.recovered_sol).toFixed(4)}]`;
+    if (Math.abs(markPnl - measuredPnl) > 0.02) {
+      trueLine += `\nmark PnL (display-only): ${markPnl >= 0 ? "+" : ""}${markPnl.toFixed(4)} SOL`;
+    }
   }
   await alert(
     kind,
@@ -176,9 +178,7 @@ async function closeAndReport(
   // here, so this is the one place the chain learns its leg's outcome. Budget
   // reads the measured wallet delta when the columns exist, the mark otherwise.
   if (pos.followChainId != null) {
-    const legPnl = row?.open_cost_sol != null && row?.close_return_sol != null
-      ? row.close_return_sol + row.fees_measured_sol + row.recovered_sol - row.open_cost_sol
-      : pnl;
+    const legPnl = measuredPnl ?? markPnl;
     try {
       onFollowLegClosed(pos, reason, legPnl);
     } catch (e) {
@@ -499,6 +499,16 @@ export async function managePositions(exec: Executor): Promise<void> {
               recordDecision(pos.tokenMint, pos.poolAddress, "exited", "escape_rebalance", null, { frac, mark, sleeve });
               continue;
             }
+            // Partial rebalance often leaves tokens/wSOL in the wallet and an empty
+            // position shell. Sweep residuals onto this row before the close so
+            // recovered_sol is attributed (wSOL-aware walletDelta).
+            if (exec.sweepResiduals) {
+              try {
+                await exec.sweepResiduals(RESIDUAL_SWEEP_MIN_SOL);
+              } catch (e) {
+                console.error(`[manager] pos#${pos.id} pre-close sweep failed:`, (e as Error).message);
+              }
+            }
             const { exitSol } = await closeAndReport(exec, pos, "escape", config().exec.exit_slippage_bps, "close",
               "escape hatch: deep dip recovered to range top — reset (close fallback)");
             bankProfit(pos, exitSol, "escape hatch");
@@ -532,6 +542,8 @@ export async function managePositions(exec: Executor): Promise<void> {
       }
     } catch (e) {
       console.error(`[manager] position ${pos.id} (${pos.symbol}) act:`, (e as Error).message);
+      const stack = (e as Error).stack?.split("\n").slice(1, 6).join(" <- ");
+      if (stack) console.error(`[manager] position ${pos.id} act stack:`, stack);
     }
   }
 
