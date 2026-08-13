@@ -35,9 +35,10 @@ function BuildPill({ build, onOpenChanges }: {
   const syncLabel =
     sync === "current" && build.dirty ? "DIRTY"
       : sync === "current" ? "CURRENT"
-        : sync === "behind" ? "BEHIND"
-          : sync === "ahead" ? "AHEAD"
-            : sync === "diverged" ? "DIVERGED" : "GIT?";
+        : sync === "behind" && build.needs_approval ? "APPROVE"
+          : sync === "behind" ? "BEHIND"
+            : sync === "ahead" ? "AHEAD"
+              : sync === "diverged" ? "DIVERGED" : "GIT?";
   const tip = [
     build.message ? `"${build.message}"` : null,
     `disk ${build.describe ?? build.head ?? "—"}`,
@@ -46,6 +47,9 @@ function BuildPill({ build, onOpenChanges }: {
     sync,
     build.behind_count ? `${build.behind_count} pending` : null,
     build.dirty ? "tracked working tree dirty" : null,
+    build.auto_update === false
+      ? (build.needs_approval ? "manual — approve on Changes" : "manual approve mode")
+      : null,
     sync === "behind" ? "click → Changes" : "click → GitHub commits",
   ].filter(Boolean).join(" · ");
   const cls =

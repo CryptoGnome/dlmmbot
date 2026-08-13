@@ -18,6 +18,10 @@ import {
   setupStatus, writeSetupState, hasEncryptedWallet,
 } from "./lib/wallet-crypto.mjs";
 import { applyRuntimeEnv } from "./lib/runtime-paths.mjs";
+import {
+  approveDeploy, readDeployPrefs, writeDeployPrefs,
+} from "./lib/deploy-prefs.mjs";
+import { execSync } from "node:child_process";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const root = resolve(process.env.FARMER_ROOT ?? resolve(__dir, ".."));
@@ -308,6 +312,59 @@ const server = createServer(async (req, res) => {
         publicKey: result.publicKey,
         note: "Imported & encrypted. Unlock with your passphrase when you want the bot to trade.",
         status: setupStatus(readEnvMasked(root)),
+      });
+    } catch (e) {
+      sendJson(res, 400, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/deploy-prefs" && req.method === "GET") {
+    try {
+      sendJson(res, 200, { prefs: readDeployPrefs(root) });
+    } catch (e) {
+      sendJson(res, 500, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/deploy-prefs" && req.method === "PATCH") {
+    try {
+      const body = await readBody(req);
+      const next = {};
+      if (body?.autoUpdate != null) next.autoUpdate = !!body.autoUpdate;
+      if (body?.autoUpdate === true) {
+        next.approveSha = null;
+        next.approvedAt = null;
+      }
+      const prefs = writeDeployPrefs(root, next);
+      watchCache = { at: 0, data: null, building: null };
+      sendJson(res, 200, { prefs });
+    } catch (e) {
+      sendJson(res, 400, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/deploy-approve" && req.method === "POST") {
+    try {
+      const branch = process.env.DEPLOY_BRANCH || "master";
+      let remoteSha = null;
+      try {
+        remoteSha = execSync(`git rev-parse refs/remotes/origin/${branch}`, {
+          cwd: root, encoding: "utf8",
+        }).trim() || null;
+      } catch { /* */ }
+      if (!remoteSha) {
+        sendJson(res, 400, { error: "no origin tip to approve — is git fetch working?" });
+        return;
+      }
+      const prefs = approveDeploy(root, remoteSha);
+      watchCache = { at: 0, data: null, building: null };
+      sendJson(res, 200, {
+        ok: true,
+        prefs,
+        note: "Approved — meteora-deploy will pull within a minute if the watcher is running.",
       });
     } catch (e) {
       sendJson(res, 400, { error: e.message ?? String(e) });

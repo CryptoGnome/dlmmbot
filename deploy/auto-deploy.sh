@@ -117,8 +117,19 @@ while true; do
     sleep "$POLL_SECONDS"; continue
   fi
 
+  # Operator gate: auto-update off until Changes → Approve (dashboard writes data/deploy-prefs.json).
+  DEPLOY_GATE=$(node --input-type=module -e "
+    import { shouldAutoDeploy } from './deploy/lib/deploy-prefs.mjs';
+    const r = shouldAutoDeploy(process.cwd(), process.argv[1]);
+    process.stdout.write(r.ok ? 'ok:' + r.reason : 'wait');
+  " "$REMOTE" 2>/dev/null || echo "ok:auto")
+  if [ "$DEPLOY_GATE" = "wait" ]; then
+    note_skip "auto-update off — $(git rev-parse --short "$REMOTE") waiting for Approve on Changes tab"
+    sleep "$POLL_SECONDS"; continue
+  fi
+
   last_skip=""
-  echo "[deploy] origin/$BRANCH advanced ($(git rev-parse --short "$LOCAL") -> $(git rev-parse --short "$REMOTE")), pulling..."
+  echo "[deploy] origin/$BRANCH advanced ($(git rev-parse --short "$LOCAL") -> $(git rev-parse --short "$REMOTE")), pulling... (gate=$DEPLOY_GATE)"
 
   # Untracked files that the incoming commit adds (e.g. an SCP'd script left in
   # deploy/) abort ff-only pulls. Quarantine those only — never touch dirty
@@ -165,6 +176,10 @@ while true; do
 
   if [ -z "$FAILURE" ]; then
     restart_app || true
+    node --input-type=module -e "
+      import { clearApprove } from './deploy/lib/deploy-prefs.mjs';
+      clearApprove(process.cwd());
+    " 2>/dev/null || true
     if [ "$DASH_CHANGED" = 1 ] || [ -d dashboard/dist ]; then
       echo "[deploy] restarting meteora-dash (if present)"
       "$PM2" restart meteora-dash --update-env 2>/dev/null \

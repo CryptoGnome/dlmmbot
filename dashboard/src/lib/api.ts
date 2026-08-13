@@ -247,6 +247,53 @@ export async function unlockWallet(opts: {
   };
 }
 
+export type DeployPrefs = {
+  autoUpdate: boolean;
+  approveSha: string | null;
+  approvedAt: string | null;
+};
+
+export async function fetchDeployPrefs(): Promise<DeployPrefs> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/deploy-prefs${q}`, { headers: authHeaders() });
+  const data = await res.json() as { prefs?: DeployPrefs; error?: string };
+  if (!res.ok) throw new Error(data.error ?? `deploy prefs ${res.status}`);
+  return data.prefs ?? { autoUpdate: true, approveSha: null, approvedAt: null };
+}
+
+export async function patchDeployPrefs(updates: { autoUpdate: boolean }): Promise<DeployPrefs> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/deploy-prefs${q}`, {
+    method: "PATCH",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(updates),
+  });
+  const data = await res.json() as { prefs?: DeployPrefs; error?: string };
+  if (!res.ok) throw new Error(data.error ?? `deploy prefs patch ${res.status}`);
+  return data.prefs ?? { autoUpdate: true, approveSha: null, approvedAt: null };
+}
+
+export async function approveDeployUpdate(): Promise<{ ok: boolean; note?: string; prefs: DeployPrefs }> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/deploy-approve${q}`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: "{}",
+  });
+  const data = await res.json() as {
+    ok?: boolean; note?: string; prefs?: DeployPrefs; error?: string;
+  };
+  if (!res.ok) throw new Error(data.error ?? `deploy approve ${res.status}`);
+  return {
+    ok: !!data.ok,
+    note: data.note,
+    prefs: data.prefs ?? { autoUpdate: false, approveSha: null, approvedAt: null },
+  };
+}
+
 export type LiveStatus = "connecting" | "open" | "closed";
 
 type LiveHandlers = {

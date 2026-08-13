@@ -172,12 +172,15 @@ export function useBuildToasts(watch: LiveWatch | null) {
     if (becameBehind || moreBehind) {
       const n = b.behind_count && b.behind_count > 0 ? b.behind_count : null;
       const tip = b.pending?.[0]?.subject;
+      const manual = b.auto_update === false;
       toast({
         id: `update-avail-${origin ?? "x"}`,
         title: n && n > 1 ? `${n} updates available` : "Update available",
         detail: tip
-          ? `${origin ?? "origin"} · ${tip}`
-          : `GitHub ${origin ?? "ahead"} — see Changes`,
+          ? `${origin ?? "origin"} · ${tip}${manual ? " — approve on Changes" : ""}`
+          : manual
+            ? `GitHub ${origin ?? "ahead"} — open Changes and Approve`
+            : `GitHub ${origin ?? "ahead"} — see Changes`,
         tone: "warn",
         kind: "event",
         ttlMs: 7_000,

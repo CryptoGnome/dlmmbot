@@ -8,6 +8,7 @@ import { createRequire } from "node:module";
 import { exec, execSync } from "node:child_process";
 import { promisify } from "node:util";
 import { runtimePaths } from "./runtime-paths.mjs";
+import { readDeployPrefs, shouldAutoDeploy } from "./deploy-prefs.mjs";
 
 const execAsync = promisify(exec);
 
@@ -159,6 +160,12 @@ function buildGitInfo(root) {
     pending = parseLog(git(root, `git log HEAD..${originFull} -20 --pretty=format:%h%x09%ct%x09%s`));
   }
 
+  const prefs = readDeployPrefs(root);
+  const gate = sync === "behind" && originFull
+    ? shouldAutoDeploy(root, originFull)
+    : { ok: true, reason: prefs.autoUpdate ? "auto" : "manual" };
+  const needsApproval = sync === "behind" && !prefs.autoUpdate && !gate.ok;
+
   return {
     version,
     branch,
@@ -176,6 +183,11 @@ function buildGitInfo(root) {
     fetch_ok: lastOriginFetchOk,
     recent,
     pending,
+    auto_update: prefs.autoUpdate,
+    approve_sha: prefs.approveSha,
+    approved_at: prefs.approvedAt,
+    needs_approval: needsApproval,
+    deploy_gate: gate.reason,
   };
 }
 
@@ -972,6 +984,11 @@ export function buildLiveBookSnapshot(root) {
         fetched_at: gitInfo.fetched_at,
         recent: gitInfo.recent,
         pending: gitInfo.pending,
+        auto_update: gitInfo.auto_update,
+        approve_sha: gitInfo.approve_sha,
+        approved_at: gitInfo.approved_at,
+        needs_approval: gitInfo.needs_approval,
+        deploy_gate: gitInfo.deploy_gate,
         fix_sha: fixSha,
         fix_ts: fixTs,
         fix_at: new Date(fixTs * 1000).toISOString(),

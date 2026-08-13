@@ -23,6 +23,13 @@ export interface LiveWatch {
     fetched_at?: number | null;
     recent?: Array<{ sha: string | null; subject: string; at: string | null; ts: number | null }>;
     pending?: Array<{ sha: string | null; subject: string; at: string | null; ts: number | null }>;
+    /** PM2 auto-deploy on by default; off = approve from Changes. */
+    auto_update?: boolean;
+    approve_sha?: string | null;
+    approved_at?: string | null;
+    /** Behind + auto_update off + not yet approved for current origin tip. */
+    needs_approval?: boolean;
+    deploy_gate?: string;
     fix_sha: string | null;
     fix_ts: number;
     fix_at: string;

@@ -126,7 +126,7 @@ pm2 startup
 pm2 logs meteora-farmer
 ```
 
-Ecosystem sets `FARMER_CONFIG_PATH` / `FARMER_ENV_PATH` / `FARMER_DB_PATH` under `data/` so Settings never dirties git. `meteora-deploy` in the same ecosystem is the git pull watcher — start it only if you want auto-updates from `master`.
+Ecosystem sets `FARMER_CONFIG_PATH` / `FARMER_ENV_PATH` / `FARMER_DB_PATH` under `data/` so Settings never dirties git. `meteora-deploy` in the same ecosystem is the git pull watcher — start it only if you want updates from `master`.
 
 ## Auto-deploy
 
@@ -134,6 +134,8 @@ Ecosystem sets `FARMER_CONFIG_PATH` / `FARMER_ENV_PATH` / `FARMER_DB_PATH` under
 pm2 start deploy/ecosystem.config.cjs --only meteora-deploy
 pm2 save
 ```
+
+Auto-update is **on by default**. To review commits before they land: Settings → Wallet & secrets → turn **Auto-update** off. When GitHub is ahead, open **Changes** and click the checkmark (**Approve**) — the watcher then pulls that tip.
 
 ::: tip
 Don’t SCP a dirty tree and expect CURRENT — push + pull (or let the watcher do it).
@@ -155,5 +157,5 @@ Don’t expose `:8787` raw without a strong `DASH_TOKEN` (and HTTPS).
 | --- | --- |
 | `better-sqlite3` build fail | VS Build Tools / `build-essential` |
 | Already running / lock | Only if sure: `npm run release` |
-| BEHIND on version pill | Start `meteora-deploy` or `git pull` |
+| BEHIND on version pill | Start `meteora-deploy`, or approve on Changes if auto-update is off, or `git pull` |
 | Want the simple path | [Easy setup (Railway)](./easy) |

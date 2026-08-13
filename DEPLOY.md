@@ -21,6 +21,8 @@ This starts three PM2 apps:
   push never takes down the running bot — it keeps the last good build and
   retries when a fixed commit lands. GitHub Actions CI also typechecks every
   push, so a red X on the commit means the server won't deploy it.
+  Auto-update is on by default (`data/deploy-prefs.json`); turn it off in
+  Settings → Wallet & secrets, then Approve from the Changes tab to pull.
 - **meteora-dash** — LAN ops dashboard (`deploy/dashboard-server.mjs`) on port
   **8787**. Read-only against `data/farmer.db`. Requires `DASH_TOKEN` in `.env`.
 

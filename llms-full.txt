@@ -42,7 +42,8 @@ Settings also exposes encrypted wallet create / import / unlock on the Wallet & 
 - Activity feed with signed SOL coloring (inflows green, outflows red)
 - Toasts for new entries/exits/fails/cluster/events and link/heartbeat edges (max two visible; pressure shortens TTL)
 - Changes tab + toasts when GitHub is ahead, a deploy lands, or the farmer restarts on a new build
-- Settings: Bot settings (sizing, risk, filters) and Wallet & secrets (vault, encrypted wallet)
+- Host updates: auto-update on by default (PM2 `meteora-deploy`); Settings toggle to require Approve on Changes before pull
+- Settings: Bot settings (sizing, risk, filters) and Wallet & secrets (vault, encrypted wallet, auto-update)
 - Research page: public X credits (not partners/signals)
 
 ## Safety model

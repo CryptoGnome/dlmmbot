@@ -1,8 +1,11 @@
+import { useState } from "react";
 import { Panel, Badge } from "@/components/ui";
 import { shortTime, timeAgo } from "@/lib/utils";
 import type { LiveWatch } from "@/lib/types";
 import { Icon } from "@/lib/icons";
-import { ExternalLink, ScrollText } from "lucide-react";
+import { ExternalLink, ScrollText, Check } from "lucide-react";
+import { approveDeployUpdate } from "@/lib/api";
+import { toast } from "@/lib/toast";
 
 type Commit = NonNullable<LiveWatch["build"]["recent"]>[number];
 
@@ -69,6 +72,32 @@ export function ChangelogPage({ watch }: { watch: LiveWatch | null }) {
   const pending = b?.pending ?? [];
   const recent = b?.recent ?? [];
   const behind = b?.sync === "behind";
+  const auto = b?.auto_update !== false;
+  const needsApproval = !!b?.needs_approval;
+  const approvedWaiting = behind && !auto && !needsApproval && !!b?.approve_sha;
+  const [busy, setBusy] = useState(false);
+
+  const onApprove = async () => {
+    setBusy(true);
+    try {
+      const r = await approveDeployUpdate();
+      toast({
+        title: "Update approved",
+        detail: r.note ?? "Deploy watcher will pull shortly.",
+        tone: "ok",
+        kind: "event",
+      });
+    } catch (e) {
+      toast({
+        title: "Approve failed",
+        detail: (e as Error).message,
+        tone: "danger",
+        kind: "fail",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div className="space-y-3">
@@ -93,6 +122,10 @@ export function ChangelogPage({ watch }: { watch: LiveWatch | null }) {
               </a>
             </>
           ) : null}
+          {" · "}
+          <span className={auto ? "text-ok" : "text-warn"}>
+            {auto ? "auto-update on" : "manual approve"}
+          </span>
         </p>
       </div>
 
@@ -100,18 +133,40 @@ export function ChangelogPage({ watch }: { watch: LiveWatch | null }) {
         <Panel
           title="Pending update"
           right={
-            <Badge tone="warn">
-              {b?.behind_count && b.behind_count > 0
-                ? `${b.behind_count} commit${b.behind_count === 1 ? "" : "s"}`
-                : "behind"}
-            </Badge>
+            <div className="flex items-center gap-2">
+              {needsApproval && (
+                <button
+                  type="button"
+                  title="Approve & deploy this update"
+                  disabled={busy}
+                  onClick={() => void onApprove()}
+                  className="inline-flex items-center gap-1 border border-ok/70 bg-ok/10 px-2 py-1 text-[10px] tracking-wider text-ok uppercase hover:bg-ok/20 disabled:opacity-50"
+                >
+                  <Icon icon={Check} size={12} />
+                  {busy ? "…" : "Approve"}
+                </button>
+              )}
+              {approvedWaiting && (
+                <Badge tone="ok">approved — deploying</Badge>
+              )}
+              <Badge tone="warn">
+                {b?.behind_count && b.behind_count > 0
+                  ? `${b.behind_count} commit${b.behind_count === 1 ? "" : "s"}`
+                  : "behind"}
+              </Badge>
+            </div>
           }
         >
           <p className="mb-3 text-[11px] text-dim">
             GitHub is ahead of this host
             {b?.origin ? ` (origin ${b.origin}` : ""}
             {b?.head ? `, disk ${b.head}` : ""}
-            {b?.origin ? ")" : ""}. Auto-deploy usually picks these up within a minute.
+            {b?.origin ? ")" : ""}.{" "}
+            {auto
+              ? "Auto-deploy usually picks these up within a minute."
+              : needsApproval
+                ? "Auto-update is off — review the commits, then click Approve (checkmark) to let the host pull."
+                : "Approved — waiting for meteora-deploy to pull."}
           </p>
           <CommitList
             items={pending}
