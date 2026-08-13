@@ -140,7 +140,7 @@ const GROUPS: Group[] = [
         path: "vetting.age_min_enabled",
         label: "Block too-young tokens",
         kind: "bool",
-        help: "Skip tokens newer than the minimum age below.",
+        help: "Uses mint age (RugCheck), not when the Meteora pool was created.",
       },
       {
         path: "vetting.age_min_minutes",
@@ -150,13 +150,13 @@ const GROUPS: Group[] = [
         max: 180,
         step: 5,
         suffix: "min",
-        help: "0 = effectively off even if the toggle is on.",
+        help: "Mint age floor. 0 = effectively off even if the toggle is on.",
       },
       {
         path: "vetting.age_max_enabled",
         label: "Block too-old tokens",
         kind: "bool",
-        help: "Skip tokens older than the max age below.",
+        help: "Uses mint age (RugCheck), not Meteora pool age.",
       },
       {
         path: "vetting.age_max_days",

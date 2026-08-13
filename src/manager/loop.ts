@@ -809,8 +809,9 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       continue;
     }
 
-    const createdAtMs = cand.pool.createdAt ? Date.parse(cand.pool.createdAt) : null;
-    const vet = await vetToken(cand.tokenMint, createdAtMs);
+    // Pool createdAt is a fallback only — vet prefers RugCheck mint detectedAt.
+    const poolCreatedAtMs = cand.pool.createdAt ? Date.parse(cand.pool.createdAt) : null;
+    const vet = await vetToken(cand.tokenMint, poolCreatedAtMs);
     if (vet.verdict !== "pass") {
       recordDecision(cand.tokenMint, cand.pool.address, "skipped", vet.hardFailures[0]?.gate ?? "vet", cand.score, { vet, cand });
       continue;

@@ -39,8 +39,8 @@ max_pool_share_pct = 20          # skip if our position would exceed this % of p
 
 [vetting]                  # STRATEGY.md §2.2 — token hard gates
 # Master switches (Settings UI). Off = skip that hard fail; thresholds still apply when on.
-age_min_enabled = true           # block "too young"
-age_max_enabled = true           # block "too old"
+age_min_enabled = true           # block "too young" (mint age via RugCheck, not pool age)
+age_max_enabled = true           # block "too old" (mint age via RugCheck, not pool age)
 insider_gate_enabled = true      # block high insider / funding-cluster %
 holder_gate_enabled = true       # block single-holder / top-10 concentration
 rugcheck_veto_enabled = true     # block high RugCheck score (rugged flag always on)

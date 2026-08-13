@@ -37,7 +37,20 @@ function applyHolderGates(
     fail("top10_holders", shares.top10.toFixed(1), v.top10_max_pct);
 }
 
-export async function vetToken(mint: string, tokenCreatedAtMs: number | null): Promise<VetResult> {
+/** Mint age source: RugCheck first (true token age), else DLMM pool createdAt. */
+export function resolveTokenCreatedAtMs(
+  rugDetectedAt: string | null | undefined,
+  poolCreatedAtMs: number | null,
+): number | null {
+  const rug = rugDetectedAt ? Date.parse(rugDetectedAt) : NaN;
+  if (Number.isFinite(rug) && rug > 0) return rug;
+  if (poolCreatedAtMs != null && Number.isFinite(poolCreatedAtMs) && poolCreatedAtMs > 0) {
+    return poolCreatedAtMs;
+  }
+  return null;
+}
+
+export async function vetToken(mint: string, poolCreatedAtMs: number | null): Promise<VetResult> {
   const v = config().vetting;
   const hard: GateFailure[] = [];
   const fail = (gate: string, value: unknown, limit: unknown) =>
@@ -183,8 +196,11 @@ export async function vetToken(mint: string, tokenCreatedAtMs: number | null): P
     if (facts.holderCount === null) facts.holderCount = jup.holderCount;
   }
 
-  // --- age gates ---
-  if (tokenCreatedAtMs) {
+  // Token mint age — not Meteora pool age. Migrated pump tokens often have a
+  // brand-new DLMM pool while the mint is hours/days old; pool.createdAt caused
+  // false age_min skips (and would under-count age_max the other way).
+  const tokenCreatedAtMs = resolveTokenCreatedAtMs(report?.detectedAt, poolCreatedAtMs);
+  if (tokenCreatedAtMs != null) {
     const ageMin = (Date.now() - tokenCreatedAtMs) / 60_000;
     facts.tokenAgeMinutes = Math.round(ageMin);
     if (v.age_min_enabled !== false && ageMin < v.age_min_minutes)
