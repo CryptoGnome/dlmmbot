@@ -84,6 +84,17 @@ export interface Config {
     chain_max_age_h: number; cold_polls_end: number;
     open_fail_cooldown_s: number;
   };
+  majors: {
+    enabled: boolean;
+    pools: Array<{ pool: string; symbol?: string }>;
+    fee_tvl_24h_min_pct: number; fee_tvl_30m_daily_min_pct: number;
+    tvl_min_usd: number; tvl_max_usd: number; vol_30m_min_usd: number;
+    max_pool_share_pct: number; size_sol: number; max_position_sol: number;
+    max_slots: number; deploy_cap_pct: number; meme_reserve_slots: number;
+    range_depth_pct: number;
+    max_age_h: number; above_range_sustain_min: number; above_range_missed_sustain_min: number;
+    rotation_fee_daily_min_pct: number; rotation_vol_30m_min_usd: number;
+  };
   rotation: {
     alpha_slots: number; alpha_score_min: number;
     displacement_enabled: boolean; displacement_margin: number;

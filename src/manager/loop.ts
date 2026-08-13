@@ -20,6 +20,8 @@ import { clearHolderWatch, holderCheck } from "./holderwatch.js";
 import { sol24hChangePct, solUsdPrice } from "../market.js";
 import { circuitBreakerTripped, clusterBrakeTripped, computeBankroll, kellyStats, openPositionCount, positionSize, regimeFactor, tokenExposureSol } from "../risk/limits.js";
 import { applyMicroSize, isMicroMcap, microPoolSharePct, microSleeveExposure } from "../risk/micro.js";
+import { enterMajorsPositions } from "./majorsEntry.js";
+import { sleeveAtEntry } from "../risk/sleeve.js";
 import type { Position } from "../types.js";
 import { vetToken } from "../vetting/vet.js";
 
@@ -346,6 +348,11 @@ export async function managePositions(exec: Executor): Promise<void> {
     try {
       const ageH = (now() - pos.entryTs) / 3600;
       const valueFrac = pos.entrySol > 0 ? mark.valueSol / pos.entrySol : 1;
+      const sleeve = sleeveAtEntry(pos);
+      const mj = sleeve === "majors" ? config().majors : null;
+      const maxAgeH = mj?.max_age_h ?? m.max_age_h;
+      const rotFeeMin = mj?.rotation_fee_daily_min_pct ?? m.rotation_fee_daily_min_pct;
+      const rotVolMin = mj?.rotation_vol_30m_min_usd ?? m.rotation_vol_30m_min_usd;
 
       // --- P0 SAFETY: pool death, price crash, TVL drain, rugcheck flip, holder watch ---
       const crashed = mark.price > 0 && pos.entryPrice > 0 &&
@@ -373,14 +380,14 @@ export async function managePositions(exec: Executor): Promise<void> {
       }
 
       // --- P2 ROTATION: age limit + consecutive fee/volume decay ---
-      if (ageH > m.max_age_h) {
+      if (ageH > maxAgeH) {
         clearRangeTimers(pos.id);
-        await closeAndReport(exec, pos, "P2_rotation", config().exec.exit_slippage_bps, "close", `rotation: max age ${m.max_age_h}h reached`);
-        recordDecision(pos.tokenMint, pos.poolAddress, "exited", "P2_rotation_age", null, { ageH });
+        await closeAndReport(exec, pos, "P2_rotation", config().exec.exit_slippage_bps, "close", `rotation: max age ${maxAgeH}h reached`);
+        recordDecision(pos.tokenMint, pos.poolAddress, "exited", "P2_rotation_age", null, { ageH, sleeve });
         continue;
       }
       const feeDaily = mark.feeTvl30mPct * 48;
-      const decayed = feeDaily < m.rotation_fee_daily_min_pct || mark.vol30mUsd < m.rotation_vol_30m_min_usd;
+      const decayed = feeDaily < rotFeeMin || mark.vol30mUsd < rotVolMin;
       const streak = decayed ? (decayStreak.get(pos.id) ?? 0) + 1 : 0;
       decayStreak.set(pos.id, streak);
       if (streak >= m.rotation_polls) {
@@ -397,7 +404,9 @@ export async function managePositions(exec: Executor): Promise<void> {
         const dbFlag = (getDb().prepare("SELECT ever_in_range AS e FROM positions WHERE id = ?")
           .get(pos.id) as { e: number } | undefined)?.e === 1;
         const traveled = everInRange.has(pos.id) || dbFlag;
-        const sustainMin = traveled ? m.above_range_sustain_min : m.above_range_missed_sustain_min;
+        const sustainMin = traveled
+          ? (mj?.above_range_sustain_min ?? m.above_range_sustain_min)
+          : (mj?.above_range_missed_sustain_min ?? m.above_range_missed_sustain_min);
         const since = aboveRangeSince.get(pos.id);
         if (since === undefined) {
           aboveRangeSince.set(pos.id, now());
@@ -411,8 +420,8 @@ export async function managePositions(exec: Executor): Promise<void> {
           if (classification === "missed")
             getDb().prepare("UPDATE positions SET state='closed_missed' WHERE id=?").run(pos.id);
           else bankProfit(pos, exitSol, "P3 take-profit");
-          recordDecision(pos.tokenMint, pos.poolAddress, "exited", `P3_above_${classification}`, null, { mark, sustainedS: now() - since, exitSol, sustainMin });
-          if (pos.followChainId == null) armFollowChain(pos, mark.price);
+          recordDecision(pos.tokenMint, pos.poolAddress, "exited", `P3_above_${classification}`, null, { mark, sustainedS: now() - since, exitSol, sustainMin, sleeve });
+          if (pos.followChainId == null && sleeve !== "majors") armFollowChain(pos, mark.price);
         }
         continue;
       }
@@ -877,7 +886,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     const feePath = cand.pool.feeTvl24hPct >= g.fee_tvl_24h_min_pct ? "24h" : "recent_hot";
     recordDecision(cand.tokenMint, cand.pool.address, "entered", null, score, {
       size, range, vet: vet.facts, pool: cand.pool, kelly, isAlpha, flow,
-      sleeve: isMicro ? "micro" : "core",
+      sleeve: isMicro ? "micro" : "meme",
       experiment: { feePath, isMicro, baseScore, trendingBonus, flowBonus, flowPenalty },
     });
     await alert("entry",
@@ -889,6 +898,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       `range=[${range.minBinId},${range.maxBinId}] (${range.bottomPricePct.toFixed(0)}% depth) pos#${pos.id}`
     );
   }
+  await enterMajorsPositions(exec, bankroll);
 }
 
 /** Main loop: manage every poll_s, enter every interval_s. */

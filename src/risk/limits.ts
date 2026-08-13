@@ -1,5 +1,6 @@
 import { config } from "../config.js";
 import { getDb, now, REALIZED_PNL_SQL } from "../db/db.js";
+import { sleeveAtEntry } from "./sleeve.js";
 
 // STRATEGY.md §5 — sizing, portfolio limits, circuit breaker, regime filter.
 
@@ -56,12 +57,15 @@ export function kellyStats(): KellyStats {
   // follow_chain_id IS NULL: follow-mode legs keep their own ledger (the
   // follow_chains table) — a different entry distribution polluting this
   // estimator was the same mistake STRATEGY §10 forbids for majors mode.
-  const rows = getDb().prepare(
-    `SELECT (${REALIZED_PNL_SQL}) / entry_sol AS ret
+  const raw = getDb().prepare(
+    `SELECT token_mint, pool, entry_ts, (${REALIZED_PNL_SQL}) / entry_sol AS ret
      FROM positions
      WHERE exit_ts IS NOT NULL AND entry_sol > 0 AND follow_chain_id IS NULL
      ORDER BY exit_ts DESC LIMIT ?`
-  ).all(s.kelly_lookback) as Array<{ ret: number }>;
+  ).all(s.kelly_lookback * 3) as Array<{ token_mint: string; pool: string; entry_ts: number; ret: number }>;
+  const rows = raw.filter((r) =>
+    sleeveAtEntry({ tokenMint: r.token_mint, poolAddress: r.pool, entryTs: r.entry_ts }) !== "majors"
+  ).slice(0, s.kelly_lookback);
 
   const n = rows.length;
   if (!s.kelly_enabled || n < s.kelly_min_samples) {

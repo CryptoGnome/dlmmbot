@@ -59,7 +59,7 @@ describe("microSleeveExposure", () => {
        VALUES ('live', 'poolB', 'mintB', 'B', ?, 1, 0.55, 1, 10, 'open', 0, 0)`
     ).run(ts);
     recordDecision("mintA", "poolA", "entered", null, 80, { pool: { marketCapUsd: 150_000 }, sleeve: "micro" });
-    recordDecision("mintB", "poolB", "entered", null, 85, { pool: { marketCapUsd: 350_000 }, sleeve: "core" });
+    recordDecision("mintB", "poolB", "entered", null, 85, { pool: { marketCapUsd: 350_000 }, sleeve: "meme" });
 
     const exp = microSleeveExposure();
     expect(exp.slots).toBe(1);
