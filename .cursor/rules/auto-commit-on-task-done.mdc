@@ -1,0 +1,33 @@
+---
+description: After finishing a task with repo changes, auto commit + push (no waiting to be asked)
+alwaysApply: true
+---
+
+# Auto-commit when a task is done
+
+You do **not** need the user to say “commit” or “push” after finishing work in this repo.
+
+## When to commit automatically
+
+At the end of a completed task (feature, fix, refactor, docs, rules), if `git status` shows relevant changes:
+
+1. Sync docs/site/llms per `docs-sync-on-commit.mdc` if the diff warrants it.
+2. Commit with a concise message (why > what).
+3. Follow `post-commit-ci.mdc`: local sanity when practical → **push** → watch CI → fix until green.
+4. Tell the user the commit SHA / one-line summary (and that it was pushed).
+
+## When **not** to auto-commit
+
+- User said not to commit / not to push for this turn
+- Only scratch/temp files, secrets (`.env`, keys), or unrelated dirty files you didn’t touch
+- Task is mid-flight (still waiting on user choice) — wait until the deliverable is done
+- Empty diff — don’t create an empty commit
+
+## Confirmation UI
+
+Native yes/no commit buttons are **not** available in this agent. Default is **automatic** commit+push. If the change is unusually risky (force-push, public secret exposure, destroying history), **stop and ask in chat** instead of committing.
+
+## Overrides
+
+- “don’t commit” / “local only” / “no push” for that message wins for that turn
+- Otherwise treat task completion with a clean, intentional diff as standing permission to commit and push

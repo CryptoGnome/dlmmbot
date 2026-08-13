@@ -1,18 +1,18 @@
 ---
-description: After every user-requested commit — push, watch CI, fix until green
+description: After every commit — push, watch CI, fix until green
 alwaysApply: true
 ---
 
 # Post-commit: push + CI gate
 
-Whenever you **create a git commit** because the user asked to commit (this is standing permission to push for those commits):
+Whenever you **create a git commit** in this repo (user-asked **or** auto after task done — standing push permission):
 
 ## Flow
 
 1. **Docs sync** — apply `.cursor/rules/docs-sync-on-commit.mdc` before the commit lands.
 2. **Commit** on the current branch (never force-push `master`/`main` unless the user explicitly demands it).
 3. **Sanity** — if the diff touched bot/dashboard/deploy code, run the relevant local check when practical (`npm test` and/or `dashboard` build). If it fails, fix and make a **new** commit (do not amend unless amend rules allow).
-4. **Push** — `git push -u origin HEAD` (or `git push` if upstream exists). Do **not** wait for the user to ask again to push after a successful commit.
+4. **Push** — `git push -u origin HEAD` (or `git push` if upstream exists). Do **not** wait for the user to ask to push.
 5. **Watch CI** — `gh run list --commit $(git rev-parse HEAD)` then `gh run watch <id> --exit-status` for **all** workflows on that SHA (not only `CI`).
 6. On **failure**: logs (`gh run view <id> --log-failed`), fix root cause, commit, push, re-watch until green.
 7. Do **not** declare the task done while Actions for that push are still failing or still running (unless the user explicitly says to ignore CI).
@@ -20,9 +20,9 @@ Whenever you **create a git commit** because the user asked to commit (this is s
 
 ## Do not
 
-- Push when the user only asked for a local commit **and** also said not to push
+- Push when the user explicitly said **no push** / **local only** for that turn
 - Force-push to `master`/`main`
-- Skip the push step out of caution after a normal requested commit — pushing is expected here
+- Skip the push step after a normal successful commit — pushing is expected here
 
 ```bash
 git push -u origin HEAD
