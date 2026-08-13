@@ -103,19 +103,22 @@ export function Shell({
         <header className="flex flex-wrap items-center justify-between gap-2 border-b border-grid px-3 py-2.5 md:px-4">
           <div className="flex flex-wrap items-center gap-2">
             <span
-              className={`live-blink inline-flex items-center gap-1 text-[10px] tracking-widest ${stale ? "text-danger" : "text-ok"}`}
-              title={stale ? "farmer heartbeat stale" : "farmer heartbeat fresh"}
+              className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10px] tracking-widest ${
+                stale ? "border-danger/70 text-danger" : "border-ok/70 text-ok"
+              }`}
+              title={stale ? "farmer heartbeat stale / off" : "farmer heartbeat fresh"}
             >
               <Icon icon={stale ? Unplug : CircleDot} size={11} />
-              {stale ? "STALE" : "LIVE"}
+              {stale ? "OFF" : "ON"}
             </span>
             <span
-              className={`live-blink inline-flex items-center gap-1 text-[10px] tracking-widest ${
-                live === "open" ? "text-ok" : live === "connecting" ? "text-warn" : "text-danger"
+              className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10px] tracking-widest ${
+                live === "open" ? "border-ok/70 text-ok" : "border-danger/70 text-danger"
               }`}
+              title={live === "open" ? "websocket connected" : live === "connecting" ? "websocket connecting" : "websocket disconnected"}
             >
               <Icon icon={Zap} size={11} />
-              {live === "open" ? "WS" : live === "connecting" ? "WS…" : "WS OFF"}
+              {live === "open" ? "WS ON" : "WS OFF"}
             </span>
             {watch && (
               <span

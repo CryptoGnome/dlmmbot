@@ -45,10 +45,6 @@ h1, h2, .font-display {
   50%, 100% { opacity: 0.35; }
 }
 
-.live-blink {
-  animation: blink 1.6s step-end infinite;
-}
-
 .panel {
   background: var(--color-panel);
   border: 1px solid var(--color-grid);
