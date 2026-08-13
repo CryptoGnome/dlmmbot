@@ -1,197 +1,345 @@
 # meteora-farmer
 
-**Automated Meteora DLMM liquidity farmer for Solana.**
+Automated **Meteora DLMM** liquidity bot for Solana.
 
-Scans hot SOL-quoted meme pools, vets the token, opens **one-sided SOL bid-ask** positions below price, then manages each position with a strict exit machine. PnL is tracked in SQLite. **Paper mode is the safe default path** — live trading is double-locked behind config *and* env.
+It finds busy SOL-quoted meme pools, checks the token isn’t an obvious rug, opens a **one-sided SOL** LP position below price, then exits by fixed rules. Everything is logged in SQLite.
 
-> LPing memecoins can wipe a wallet. This bot can lose every SOL you give it. Nothing here is financial advice. Use a burner wallet. Never put rent money in it.
+**Start in paper mode.** Paper needs no wallet and spends no SOL. Live trading is locked behind two separate switches on purpose.
+
+| | |
+|---|---|
+| Strategy deep-dive | [STRATEGY.md](STRATEGY.md) |
+| Knobs that actually run | [config.toml](config.toml) |
+| Risk | This can lose **100%** of funds in the wallet. Not financial advice. Burner only. |
+
+---
+
+## Contents
+
+1. [What it does](#what-it-does)
+2. [Before you start](#before-you-start)
+3. [Install & run (paper)](#install--run-paper)
+4. [Commands you’ll use](#commands-youll-use)
+5. [Optional dashboard](#optional-dashboard)
+6. [Going live](#going-live) ← includes private key, RPC, Jupiter
+7. [Keep it running (PM2)](#keep-it-running-pm2)
+8. [Troubleshooting](#troubleshooting)
 
 ---
 
 ## What it does
 
 ```text
-scan pools  →  gate + score  →  vet token  →  size (Kelly)  →  open LP
-                                                              ↓
-                         manage every ~15s (P0–P5 exits, claims, reclaim)
-                                                              ↓
-                                              close → bank PnL in SQLite
+every ~60s          every ~15s
+───────────         ──────────
+scan pools    →     manage open LPs
+filter + score            ↓
+vet token           claim / reclaim / exit
+size position             ↓
+open LP             record PnL in SQLite
 ```
 
-| Piece | Job |
-|---|---|
-| **Scanner** | Sweeps Meteora DLMM pools on a timer; picks the best pool per token |
-| **Gates + score** | Hard filters (TVL, fees, mcap, …) then a 0–100 opportunity score |
-| **Vetting** | RugCheck / holders / clusters / on-chain authorities — veto rugs |
-| **Entry** | Fib-anchored bid-ask below spot (meme/micro); spot range for majors |
-| **Manager** | Mechanical exits: safety, stop, rotation, above/below range, escape |
-| **Executor** | Paper = simulated fills · Live = real `@meteora-ag/dlmm` + Jupiter zap |
-| **Ledger** | SQLite (`data/farmer.db`) — positions, marks, decisions, events |
-| **Dashboard** | Optional LAN UI (`:8787`) for book / activity / settings |
+**In plain English**
 
-### Three sleeves
+- **Scan** — pull hot Meteora pools
+- **Filter** — skip junk (TVL, fees, age, mcap, …)
+- **Vet** — rug / holder / authority checks
+- **Open** — put SOL into a bid-ask range under the price
+- **Manage** — mechanical exits (stop, safety, above/below range, etc.)
+- **Paper vs live** — same brain; paper fakes fills, live uses your burner wallet
 
-| Sleeve | Who | Shape | Notes |
-|---|---|---|---|
-| **micro** | mcap ~$100k–$200k | BidAsk | Smaller size, tighter caps |
-| **meme** | mcap ≥ ~$200k | BidAsk | Main strategy |
-| **majors** | allowlisted alts | Spot | Separate timing + manage rules |
-
-Full strategy spec (every knob): **[STRATEGY.md](STRATEGY.md)**  
-Live knobs (hot-reloaded): **[config.toml](config.toml)**
+Three size “sleeves”: **micro** (tiny caps), **meme** (main), **majors** (allowlisted alts, spot range). Details in [STRATEGY.md](STRATEGY.md).
 
 ---
 
-## Requirements
+## Before you start
 
-Before you touch anything, install these:
+Install these first:
 
-1. **Node.js 20 or newer** — [https://nodejs.org](https://nodejs.org) (LTS is fine)
-2. **Git** — [https://git-scm.com](https://git-scm.com)
-3. A terminal (PowerShell, macOS Terminal, or Linux shell)
-4. (Optional later) A **burner** Solana wallet + a decent RPC (Helius / similar) for live mode
+| Need | Link | Check |
+|---|---|---|
+| **Node.js 20+** | [nodejs.org](https://nodejs.org) (LTS) | `node -v` → `v20…` or higher |
+| **Git** | [git-scm.com](https://git-scm.com) | `git --version` |
+| A terminal | PowerShell / Terminal / bash | — |
 
-Check Node works:
-
-```bash
-node -v
-# should print v20.x or higher
-```
+You do **not** need a wallet, RPC key, or Jupiter key for paper mode.
 
 ---
 
-## Install (idiot-proof)
+## Install & run (paper)
 
-Do these steps **in order**. Do not skip. Do not start with live mode.
+Do these in order. Stay in paper until you’re comfortable.
 
-### Step 1 — Get the code
+### 1. Download the repo
 
 ```bash
 git clone https://github.com/CryptoGnome/meteora-farmer.git
 cd meteora-farmer
 ```
 
-### Step 2 — Install dependencies
+### 2. Install packages
 
 ```bash
 npm install
 ```
 
-Wait until it finishes with no red errors.  
-(`better-sqlite3` compiles a native module — that is normal.)
+Wait for it to finish. A message about `better-sqlite3` compiling is normal.
 
-### Step 3 — Create your `.env`
+### 3. Create your `.env` file
 
 ```bash
 cp .env.example .env
 ```
 
-Open `.env` in a text editor. For a first run, leave it mostly empty and keep:
+Open `.env` in Notepad / VS Code / nano. For paper, you only need:
 
 ```env
 FARMER_MODE=paper
 RPC_URL=https://api.mainnet-beta.solana.com
 ```
 
-You do **not** need a wallet key for paper mode.
+Leave wallet keys empty.
 
-> Never commit `.env`. Never paste private keys into chat, Discord, or screenshots.
+**Rules**
 
-### Step 4 — Force paper mode in config
+- Never commit `.env`
+- Never paste keys into Discord, Telegram, or screenshots
+- Never use your main wallet for this bot
 
-Open `config.toml`, find `[exec]`, and set:
+### 4. Confirm config is paper
+
+Open `config.toml`, find `[exec]`, set:
 
 ```toml
 [exec]
 mode = "paper"
 ```
 
-If this file already says `mode = "live"`, change it to `"paper"` until you know what you are doing.
+If it already says `"live"`, change it to `"paper"`.
 
-### Step 5 — Sanity checks (optional but smart)
+> Live only runs when **both** `config.toml` and `.env` say live. One alone is not enough.
+
+### 5. Smoke test (optional)
 
 ```bash
 npm run scan
 ```
 
-You should see pool candidates (or a quiet empty list if markets are dead). Errors about RPC? Switch `RPC_URL` to a private RPC.
+You should see candidates (or an empty list if markets are quiet).
 
 ```bash
-npm run vet -- <TOKEN_MINT_ADDRESS>
+npm run vet -- PASTE_A_TOKEN_MINT_HERE
 ```
 
-Replace `<TOKEN_MINT_ADDRESS>` with a real mint. You should get a vetting report.
-
-### Step 6 — Start the farmer (paper)
+### 6. Start paper trading
 
 ```bash
 npm run run
 ```
 
-Leave this terminal open. The bot will scan, maybe open paper positions, and manage them.
+Leave that window open.
 
-In another terminal (same folder):
+In a **second** terminal in the same folder:
 
 ```bash
 npm run status
 ```
 
-### Step 7 — Stop safely
-
-In a third terminal:
+### 7. Stop
 
 ```bash
 npm run halt
 ```
 
-That tells a running farmer to close out and stop.  
-Or press `Ctrl+C` in the `npm run run` window if you just want to kill the process (paper is fine either way).
+Or press `Ctrl+C` in the `run` window (fine for paper).
 
 ---
 
-## Everyday commands
+## Commands you’ll use
 
-| Command | What it does |
-|---|---|
-| `npm run scan` | One-shot: show candidates that pass pool gates |
-| `npm run vet -- <mint>` | One-shot: full vet report for one token |
-| `npm run run` | Start the loop (paper or live, depending on gates) |
-| `npm run status` | Open positions + realized PnL |
-| `npm run halt` | Ask the running farmer to close all + stop |
-| `npm run force-close -- <id>` | Force-close one position by id |
-| `npm test` | Run the test suite |
-| `npm run typecheck` | TypeScript check |
+```bash
+npm run scan                 # show pools that pass gates right now
+npm run vet -- <mint>        # full vet report for one token
+npm run run                  # start the bot loop
+npm run status               # open positions + profit
+npm run halt                 # close all + stop (politely)
+npm run force-close -- <id>  # force-close one position id
+npm test                     # run tests
+```
 
 ---
 
-## Optional: LAN dashboard
+## Optional dashboard
 
-1. Put a long random secret in `.env`:
+Local web UI for positions, activity, and settings.
+
+**1.** Add to `.env`:
 
 ```env
-DASH_TOKEN=change-me-to-something-long-and-random
+DASH_TOKEN=pick-a-long-random-password
 DASH_PORT=8787
 ```
 
-2. Build the UI once:
+**2.** Build once:
 
 ```bash
 npm run dash:build
 ```
 
-3. Start the API + UI:
+**3.** Start:
 
 ```bash
 npm run dash
 ```
 
-4. Open `http://localhost:8787` (or your machine’s LAN IP `:8787`) and paste the same `DASH_TOKEN` when asked.
+**4.** Open [http://localhost:8787](http://localhost:8787) and enter the same `DASH_TOKEN`.
+
+On your LAN: `http://YOUR_PC_IP:8787`.
 
 ---
 
-## Optional: keep it running with PM2
+## Going live
 
-Only after paper mode works by hand:
+Only after paper feels boring and you understand the exits.
+
+Live spends **real SOL**. Use a **burner** wallet funded with money you can lose completely.
+
+### Live checklist
+
+- [ ] Paper ran cleanly for a while  
+- [ ] Fresh burner wallet (not your main)  
+- [ ] Private RPC URL  
+- [ ] Jupiter API key  
+- [ ] Private key in `.env` (or keypair file path)  
+- [ ] `config.toml` → `mode = "live"`  
+- [ ] `.env` → `FARMER_MODE=live`  
+- [ ] Only **one** farmer process on that wallet  
+
+---
+
+### How to get a burner wallet + private key
+
+#### Option A — Phantom (easiest)
+
+1. Install [Phantom](https://phantom.app).
+2. Create a **new** wallet (or a new account inside Phantom).  
+   Do **not** use the wallet that holds your life savings.
+3. Send only the SOL you are willing to lose to that address.
+4. Export the private key:
+   - Open Phantom → select that account  
+   - **Settings** → **Security & Privacy** → **Export Private Key**  
+   - Enter your password  
+   - Copy the key (long base58 string)
+5. Paste into `.env`:
+
+```env
+WALLET_PRIVATE_KEY=paste_the_key_here_with_no_quotes_no_spaces
+```
+
+6. Close the export screen. Don’t leave it open. Don’t screenshot it.
+
+#### Option B — Solana CLI keypair file
+
+```bash
+solana-keygen new --outfile ./burner.json
+```
+
+Put the path in `.env` instead of the base58 key:
+
+```env
+WALLET_KEYPAIR_PATH=./burner.json
+```
+
+Fund the pubkey printed by `solana-keygen`.  
+If **both** `WALLET_PRIVATE_KEY` and `WALLET_KEYPAIR_PATH` are set, the base58 key wins.
+
+---
+
+### How to get a private RPC
+
+Public `api.mainnet-beta.solana.com` is fine for a paper smoke test. Live opens/closes will fail or lag on it.
+
+1. Sign up at a provider (examples: [Helius](https://www.helius.dev), [QuickNode](https://www.quicknode.com), FluxRPC, etc.).
+2. Create a **Solana mainnet** endpoint.
+3. Copy the HTTPS URL into `.env`:
+
+```env
+RPC_URL=https://your-provider-url-here
+```
+
+Optional backup for the watchdog:
+
+```env
+RPC_URL_FALLBACK=https://your-backup-url-here
+```
+
+---
+
+### How to get a Jupiter API key
+
+Needed in live for swaps / zap-out.
+
+1. Go to [portal.jup.ag](https://portal.jup.ag).
+2. Create an account / API key (free tier is enough to start).
+3. Put it in `.env`:
+
+```env
+JUPITER_API_KEY=your_key_here
+```
+
+---
+
+### Optional: Telegram alerts
+
+1. In Telegram, talk to [@BotFather](https://t.me/BotFather) → `/newbot` → copy the bot token.  
+2. Talk to [@userinfobot](https://t.me/userinfobot) → copy your chat id.  
+3. Message your new bot once so it can DM you.  
+4. Add to `.env`:
+
+```env
+TELEGRAM_BOT_TOKEN=123456:ABC...
+TELEGRAM_CHAT_ID=987654321
+```
+
+Optional discovery enrichment (bot works without it):
+
+```env
+GMGN_API_KEY=
+```
+
+---
+
+### Flip the two live switches
+
+**`.env`**
+
+```env
+FARMER_MODE=live
+RPC_URL=https://your-private-rpc
+JUPITER_API_KEY=your_key
+WALLET_PRIVATE_KEY=your_burner_key
+```
+
+**`config.toml`**
+
+```toml
+[exec]
+mode = "live"
+```
+
+Then:
+
+```bash
+npm run run
+```
+
+To go back to paper: set **both** back to `paper`, and remove or comment the wallet key if you want extra safety.
+
+---
+
+## Keep it running (PM2)
+
+Only after `npm run run` works by hand.
 
 ```bash
 npm install -g pm2
@@ -200,95 +348,41 @@ pm2 save
 pm2 logs meteora-farmer
 ```
 
-Also in that file: `meteora-dash` (dashboard) and `meteora-deploy` (auto-pull from `master` on the server). Start those only if you want them.
+Same file can also start:
 
----
-
-## Going live (dangerous)
-
-Live mode spends real SOL. Read this twice.
-
-### Double gate (both required)
-
-1. `config.toml` → `[exec] mode = "live"`
-2. `.env` → `FARMER_MODE=live`
-
-If either is not `live`, it stays paper / refuses live execution.
-
-### Also required for live
-
-| Item | Why |
-|---|---|
-| `WALLET_PRIVATE_KEY` **or** `WALLET_KEYPAIR_PATH` | Burner wallet only |
-| Decent `RPC_URL` | Public RPC will rate-limit and fail opens/closes |
-| `JUPITER_API_KEY` | Zap-out / swaps ([portal.jup.ag](https://portal.jup.ag)) |
-| Funded burner | Only SOL you can **fully** afford to lose |
-
-Optional: `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` for alerts, `GMGN_API_KEY` for discovery enrichment.
-
-### Live checklist
-
-- [ ] Paper loop ran cleanly for a while
-- [ ] `[exec].mode` and `FARMER_MODE` both set deliberately
-- [ ] Burner wallet, not your main
-- [ ] Private RPC configured
-- [ ] Jupiter key set
-- [ ] You understand exits are mechanical — the bot will cut losers
-- [ ] Only **one** farmer process against that wallet/DB (second loop = pain)
-
-Then:
-
-```bash
-npm run run
-```
-
----
-
-## Safety model (short)
-
-- **Paper by default path** — no wallet needed
-- **Live is double-gated** — config + env must both say live
-- **Wallet keys** are only read by the live executor (not scanner/vetting)
-- **Single-instance lock** — one `run` per checkout/DB
-- **Capital preservation first** — strict exits beat “diamond hands”
-
----
-
-## Repo map
-
-```text
-src/           farmer code (scanner → vet → entry → manage → executor)
-dashboard/     React SPA for the LAN ops UI
-deploy/        dashboard server, auto-deploy, PM2 ecosystem
-config.toml    all strategy knobs (hot-reloaded)
-.env.example   env template (copy to .env)
-data/          SQLite DB + runtime files (created on first run)
-STRATEGY.md    full strategy specification
-```
+- `meteora-dash` — dashboard server  
+- `meteora-deploy` — auto-pull when `master` updates (server installs)
 
 ---
 
 ## Troubleshooting
 
-| Problem | Fix |
+| Symptom | What to do |
 |---|---|
-| `node -v` too old | Install Node 20+ and reopen the terminal |
-| `npm install` fails on `better-sqlite3` | Install build tools (VS Build Tools on Windows, `build-essential` on Linux) |
-| Scan/run spam RPC errors | Use a private RPC in `.env` |
-| “Already running” / lock errors | `npm run release` only if you are sure no other farmer is live |
-| Dashboard won’t open | Set `DASH_TOKEN`, run `npm run dash:build`, then `npm run dash` |
-| Thought it was paper but it traded | Check **both** `config.toml` `[exec].mode` and `FARMER_MODE` |
+| `node -v` too old | Install Node 20+, close and reopen the terminal |
+| `npm install` fails on `better-sqlite3` | Windows: install “Desktop development with C++” (VS Build Tools). Linux: `sudo apt install build-essential python3` |
+| Scan/run flooded with RPC errors | Put a private RPC in `RPC_URL` |
+| “Already running” / lock file | Make sure no other `run` is open. Only if you’re sure: `npm run release` |
+| Dashboard blank / unauthorized | Set `DASH_TOKEN`, run `dash:build`, then `dash`, use the same token in the browser |
+| Thought it was paper but it traded | Check **both** `[exec].mode` in `config.toml` **and** `FARMER_MODE` in `.env` |
+| Opens fail in live | Jupiter key set? Private RPC? Burner funded with SOL + a little for fees? |
 
 ---
 
-## Docs
+## Folder map
 
-- [STRATEGY.md](STRATEGY.md) — full system + exit priorities
-- [config.toml](config.toml) — what actually runs
-- [RANGE-SHAPE-DECISION.md](RANGE-SHAPE-DECISION.md) — why meme stays BidAsk
+```text
+src/            bot code
+dashboard/      web UI
+deploy/         dashboard server + PM2 + auto-deploy
+config.toml     strategy settings (hot-reloads)
+.env.example    copy → .env
+data/           SQLite DB (created on first run)
+STRATEGY.md     full design doc
+```
 
 ---
 
 ## Disclaimer
 
-This software is provided as-is. Memecoin LP is extreme risk. You can lose 100% of funds under this bot’s control. Authors and contributors owe you nothing if it bricks a wallet. Run paper first. Use a burner. Don’t be a hero.
+Provided as-is. Memecoin LP is extreme risk. You can lose everything under this bot’s control. Authors owe you nothing if a wallet gets wrecked. Paper first. Burner only. Don’t be a hero.
