@@ -14,6 +14,8 @@
     "force-close": "tsx src/cli.ts force-close",
     "heartbeat-check": "node deploy/heartbeat-check.cjs",
     "simulate-zap": "tsx deploy/simulate-zap.ts",
+    "dash": "node deploy/dashboard-server.mjs",
+    "dash:build": "npm --prefix dashboard ci && npm --prefix dashboard run build",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "test": "vitest run --coverage",

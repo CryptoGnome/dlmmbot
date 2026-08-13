@@ -230,6 +230,7 @@ Tables:
 - Residual token sweep, Telegram alerts, out-of-process heartbeat, config hot-reload, auto-deploy watcher
 - Zap SDK token→SOL on close/claim/sweep/profit-lock (`use_zap`, manual lite-Jupiter fallback)
 - Escape hatch in-place rebalance via `rebalanceDlmmPosition` (close fallback if Zap fails)
+- LAN ops dashboard (`meteora-dash` :8787) — phosphor terminal UI + equity/exit/skip charts
 - Kelly on measured wallet PnL (n≥50 on live book); fee banking only (`fee_destination = bank`, `majors.fee_compound = false`)
 
 ### Active monitoring (operational — not new builds)
@@ -251,7 +252,7 @@ Tables:
 
 - Second tranche (`tranche_enabled = false`)
 - Meme `compound` / `hybrid` fee destination (only `bank` implemented)
-- Local dashboard (Express UI) — CLI `status` + live-book watch script for now
+- Local dashboard (Express UI) — **shipped** as Vite SPA + `deploy/dashboard-server.mjs` (see DEPLOY.md)
 - Weight auto-tuning from `decisions` table (n=57 too small; score doesn't separate escape vs P1)
 - RugCheck paid WebSocket firehose if scanner latency matters
 - Multi-wallet sharding

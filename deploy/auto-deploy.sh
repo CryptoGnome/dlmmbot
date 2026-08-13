@@ -139,7 +139,9 @@ while true; do
   fi
 
   DEPS_CHANGED=0
+  DASH_CHANGED=0
   git diff --name-only "$LOCAL" HEAD | grep -qE '^package(-lock)?\.json$' && DEPS_CHANGED=1
+  git diff --name-only "$LOCAL" HEAD | grep -qE '^dashboard/' && DASH_CHANGED=1
 
   FAILURE=""
   if [ "$DEPS_CHANGED" = 1 ]; then
@@ -152,9 +154,23 @@ while true; do
   if [ -z "$FAILURE" ] && ! npm test; then
     FAILURE="tests"
   fi
+  if [ -z "$FAILURE" ] && [ "$DASH_CHANGED" = 1 ]; then
+    echo "[deploy] dashboard/ changed — building SPA"
+    if [ -f dashboard/package-lock.json ]; then
+      (cd dashboard && npm ci && npm run build) || FAILURE="dashboard build"
+    else
+      (cd dashboard && npm install && npm run build) || FAILURE="dashboard build"
+    fi
+  fi
 
   if [ -z "$FAILURE" ]; then
     restart_app || true
+    if [ "$DASH_CHANGED" = 1 ] || [ -d dashboard/dist ]; then
+      echo "[deploy] restarting meteora-dash (if present)"
+      "$PM2" restart meteora-dash --update-env 2>/dev/null \
+        || "$PM2" start deploy/ecosystem.config.cjs --only meteora-dash 2>/dev/null \
+        || echo "[deploy] meteora-dash not started (ok if DASH_TOKEN unset / app not added yet)"
+    fi
   else
     # `pm2 restart` runs the WORKING TREE, and the pull above already moved it
     # onto the bad commit. Leaving it there means the next restart from ANY

@@ -25,5 +25,17 @@ module.exports = {
         PM2_BIN: `${process.env.HOME}/.npm-global/bin/pm2`,
       },
     },
+    {
+      name: "meteora-dash",
+      script: __dirname + "/dashboard-server.mjs",
+      cwd: __dirname + "/..",
+      autorestart: true,
+      max_restarts: 20,
+      restart_delay: 5000,
+      env: {
+        DASH_PORT: "8787",
+        // DASH_TOKEN must be set in the process env / .env — never commit secrets.
+      },
+    },
   ],
 };

@@ -12,7 +12,7 @@ pm2 start deploy/ecosystem.config.cjs
 pm2 save && pm2 startup     # survive reboots (follow the printed instructions)
 ```
 
-This starts two PM2 apps:
+This starts three PM2 apps:
 
 - **meteora-farmer** — the bot (`npm run run`), auto-restarted on crash.
 - **meteora-deploy** — the auto-deploy watcher: polls `origin/master` every 30s;
@@ -21,6 +21,29 @@ This starts two PM2 apps:
   push never takes down the running bot — it keeps the last good build and
   retries when a fixed commit lands. GitHub Actions CI also typechecks every
   push, so a red X on the commit means the server won't deploy it.
+- **meteora-dash** — LAN ops dashboard (`deploy/dashboard-server.mjs`) on port
+  **8787**. Read-only against `data/farmer.db`. Requires `DASH_TOKEN` in `.env`.
+
+## LAN dashboard
+
+Build once (or let auto-deploy rebuild when `dashboard/` changes):
+
+```bash
+cd dashboard && npm ci && npm run build && cd ..
+# ensure DASH_TOKEN is set in .env
+pm2 start deploy/ecosystem.config.cjs --only meteora-dash
+# or: pm2 restart meteora-dash --update-env
+```
+
+Open from any machine on the LAN:
+
+```
+http://192.168.68.59:8787/?token=YOUR_DASH_TOKEN
+```
+
+- Polls live watch every 15s and history every 60s.
+- **Do not port-forward 8787 to the WAN** — token is a shared secret, not full auth.
+- Dashboard crashes do not restart the farmer (separate PM2 app).
 
 ## Workflow after setup
 
