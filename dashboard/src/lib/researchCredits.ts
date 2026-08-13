@@ -8,6 +8,43 @@ export type Credit = {
   url?: string;
 };
 
+const REPO = "https://github.com/CryptoGnome/dlmmbot";
+
+/** Prefills a GitHub issue so users can contribute research for agent review. */
+export function researchSuggestionIssueUrl(): string {
+  const title = "Research suggestion: ";
+  const body = [
+    "## What should we look at?",
+    "",
+    "<!-- Link, handle, video, essay, Discord lore — anything public -->",
+    "",
+    "- **Link / handle:** ",
+    "- **One-line summary:** ",
+    "",
+    "## Why it might matter for DLMM Bot",
+    "",
+    "<!-- Fees, range shape, exits, sizing, sleeves, risk — be concrete -->",
+    "",
+    "",
+    "",
+    "## Where it might land",
+    "",
+    "- [ ] STRATEGY.md note",
+    "- [ ] Research page credit",
+    "- [ ] Config / gate idea",
+    "- [ ] Not sure — just review it",
+    "",
+    "<!-- An agent will triage this against our ledger before we note it in strategy. -->",
+  ].join("\n");
+
+  const q = new URLSearchParams({
+    template: "research_suggestion.md",
+    title,
+    body,
+  });
+  return `${REPO}/issues/new?${q.toString()}`;
+}
+
 export const RESEARCH_CREDITS: Credit[] = [
   {
     handle: "Tuuxxdotsol",
