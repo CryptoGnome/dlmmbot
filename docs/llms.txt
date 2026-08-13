@@ -20,5 +20,6 @@ Railway signup: https://railway.com?referralCode=SCj9lN
 - Dashboard: overview, book, analytics, activity feed, research credits, settings
 - First-run setup wizard: RPC, encrypted wallet (create or Phantom import), paper/live mode
 - Live requires both `FARMER_MODE=live` and `[exec].mode = "live"`
+- Runtime config/env/db live under gitignored `data/` (repo `config.toml` is a template)
 - Optional Railway `WALLET_PASSPHRASE` auto-unlocks encrypted wallet on boot
 - Not financial advice; memecoin LP can lose 100%

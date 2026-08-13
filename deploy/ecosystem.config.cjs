@@ -1,17 +1,28 @@
 // PM2 process definitions for the server.
 // Usage:  pm2 start deploy/ecosystem.config.cjs && pm2 save && pm2 startup
+// Runtime config/env/db live under data/ (gitignored) so Settings never dirties git.
+const path = require("path");
+
+const root = path.join(__dirname, "..");
+const dataDir = path.join(root, "data");
+const runtimeEnv = {
+  FARMER_ROOT: root,
+  FARMER_CONFIG_PATH: path.join(dataDir, "config.toml"),
+  FARMER_ENV_PATH: path.join(dataDir, ".env"),
+  FARMER_DB_PATH: path.join(dataDir, "farmer.db"),
+};
+
 module.exports = {
   apps: [
     {
       name: "meteora-farmer",
       script: "npm",
       args: "run run",
-      cwd: __dirname + "/..",
+      cwd: root,
       autorestart: true,
       max_restarts: 20,
       restart_delay: 5000,
-      // The farmer's single-instance lock reclaims stale locks from dead PIDs,
-      // so PM2 crash-restarts recover cleanly.
+      env: { ...runtimeEnv },
     },
     {
       name: "meteora-deploy",
@@ -19,7 +30,6 @@ module.exports = {
       interpreter: "bash",
       autorestart: true,
       restart_delay: 10000,
-      // Keep pm2 on PATH even when PM2 restarts this watcher with a stripped env.
       env: {
         PATH: `${process.env.HOME}/.npm-global/bin:${process.env.HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin`,
         PM2_BIN: `${process.env.HOME}/.npm-global/bin/pm2`,
@@ -28,11 +38,12 @@ module.exports = {
     {
       name: "meteora-dash",
       script: __dirname + "/dashboard-server.mjs",
-      cwd: __dirname + "/..",
+      cwd: root,
       autorestart: true,
       max_restarts: 20,
       restart_delay: 5000,
       env: {
+        ...runtimeEnv,
         DASH_PORT: "8787",
         // DASH_TOKEN must be set in the process env / .env — never commit secrets.
       },

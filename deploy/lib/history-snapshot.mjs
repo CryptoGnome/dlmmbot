@@ -5,11 +5,12 @@
 import { resolve } from "node:path";
 import { createRequire } from "node:module";
 import { REALIZED_PNL } from "./live-book-snapshot.mjs";
+import { runtimePaths } from "./runtime-paths.mjs";
 
 function openDb(root) {
   const require = createRequire(resolve(root, "package.json"));
   const Database = require("better-sqlite3");
-  return new Database(resolve(root, "data/farmer.db"), { readonly: true, fileMustExist: true });
+  return new Database(runtimePaths(root).dbPath, { readonly: true, fileMustExist: true });
 }
 
 function rangeStart(range, now) {

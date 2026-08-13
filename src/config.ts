@@ -1,6 +1,28 @@
-import { readFileSync, watchFile } from "node:fs";
-import { resolve } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, watchFile } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { parse } from "smol-toml";
+
+/** Prefer gitignored data/ for live knobs so Settings never dirties the checkout. */
+(function ensureRuntimeDefaults() {
+  const root = process.cwd();
+  const data = process.env.FARMER_DB_PATH
+    ? dirname(resolve(process.env.FARMER_DB_PATH))
+    : resolve(root, "data");
+  mkdirSync(data, { recursive: true });
+  if (!process.env.FARMER_CONFIG_PATH) process.env.FARMER_CONFIG_PATH = join(data, "config.toml");
+  if (!process.env.FARMER_ENV_PATH) process.env.FARMER_ENV_PATH = join(data, ".env");
+  if (!process.env.FARMER_DB_PATH) process.env.FARMER_DB_PATH = join(data, "farmer.db");
+  const cfg = process.env.FARMER_CONFIG_PATH;
+  if (cfg && !existsSync(cfg)) {
+    const tmpl = resolve(root, "config.toml");
+    if (existsSync(tmpl)) copyFileSync(tmpl, cfg);
+  }
+  const envFile = process.env.FARMER_ENV_PATH;
+  if (envFile && !existsSync(envFile)) {
+    const tmpl = resolve(root, ".env");
+    if (existsSync(tmpl)) copyFileSync(tmpl, envFile);
+  }
+})();
 
 // Typed mirror of config.toml. Sections/keys must match STRATEGY.md defaults.
 export interface Config {
@@ -161,7 +183,7 @@ export interface Env {
   farmerMode: string;
 }
 
-const CONFIG_PATH = resolve(process.env.FARMER_CONFIG_PATH ?? resolve(process.cwd(), "config.toml"));
+const CONFIG_PATH = resolve(process.env.FARMER_CONFIG_PATH!);
 
 // Minimal .env loader (no dependency): KEY=VALUE lines, # comments,
 // existing process.env always wins. Volume path (FARMER_ENV_PATH) wins last.

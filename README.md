@@ -17,7 +17,7 @@ Scans hot SOL-quoted meme pools, vets the token, opens a **one-sided SOL** LP be
 
 **Railway (shortest path):** Deploy `CryptoGnome/dlmmbot` → attach volume at `/app/data` → Generate domain → open the URL (token is in deploy logs if unset) → first-run setup wizard (RPC, encrypted wallet create/import, paper/live) or Settings.
 
-`railway.toml` builds the dash and starts farmer + dashboard together. Paper mode is the default. Optional: set `WALLET_PASSPHRASE` on Railway to auto-unlock an encrypted wallet on boot.
+`railway.toml` builds the dash and starts farmer + dashboard together. Paper mode is the default. Runtime config/env/db live on the volume under `/app/data` (repo `config.toml` is only a template). Optional: set `WALLET_PASSPHRASE` on Railway to auto-unlock an encrypted wallet on boot.
 
 ---
 

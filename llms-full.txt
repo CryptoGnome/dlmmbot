@@ -28,6 +28,12 @@ On first login when RPC + wallet are missing, a setup wizard walks through:
 - Choose paper or live (live still needs the double lock)
 - Optional unlock into .env for trading
 
+## Runtime data
+
+Repo `config.toml` is a template. Live knobs, `.env`, and SQLite live under gitignored `data/`
+(`FARMER_CONFIG_PATH`, `FARMER_ENV_PATH`, `FARMER_DB_PATH`). On Railway that is the volume at
+`/app/data`. Settings writes never dirty the git checkout — DIRTY on the dash means real code drift.
+
 Settings also exposes encrypted wallet create / import / unlock later. Set WALLET_PASSPHRASE on Railway to unlock on boot before the farmer starts.
 
 ## Dashboard features

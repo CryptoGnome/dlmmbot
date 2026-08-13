@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createRequire } from "node:module";
 import { execSync } from "node:child_process";
+import { runtimePaths } from "./runtime-paths.mjs";
 
 const require = createRequire(import.meta.url);
 
@@ -188,7 +189,8 @@ function fetchMeteoraPortfolio(wallet) {
 function openDb(root) {
   const require = createRequire(resolve(root, "package.json"));
   const Database = require("better-sqlite3");
-  return new Database(resolve(root, "data/farmer.db"), { readonly: true, fileMustExist: true });
+  const dbPath = runtimePaths(root).dbPath;
+  return new Database(dbPath, { readonly: true, fileMustExist: true });
 }
 
 /**
@@ -207,7 +209,7 @@ export function buildLiveBookSnapshot(root) {
       ? Number(git(root, `git show -s --format=%ct ${fixSha}`)) || (now - 86_400)
       : now - 86_400;
 
-    const toml = readFileSync(resolve(root, "config.toml"), "utf8");
+    const toml = readFileSync(runtimePaths(root).configPath, "utf8");
     const gitInfo = buildGitInfo(root);
 
     const heartbeat = db.prepare("SELECT value FROM meta WHERE key='heartbeat'").get()?.value;

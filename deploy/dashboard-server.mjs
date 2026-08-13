@@ -17,9 +17,11 @@ import {
   generateAndEncrypt, importAndEncrypt, unlockEncryptedWallet,
   setupStatus, writeSetupState, hasEncryptedWallet,
 } from "./lib/wallet-crypto.mjs";
+import { applyRuntimeEnv } from "./lib/runtime-paths.mjs";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const root = resolve(process.env.FARMER_ROOT ?? resolve(__dir, ".."));
+applyRuntimeEnv(root);
 
 try {
   const envFiles = [resolve(root, ".env"), process.env.FARMER_ENV_PATH].filter(Boolean);

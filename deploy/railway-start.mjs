@@ -4,24 +4,17 @@
  * Persists DB / config / .env on the attached volume when present.
  */
 import { spawn } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve, join } from "node:path";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { applyRuntimeEnv } from "./lib/runtime-paths.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
-const volume = process.env.RAILWAY_VOLUME_MOUNT_PATH;
-const dataDir = volume && volume.length ? volume : resolve(root, "data");
-mkdirSync(dataDir, { recursive: true });
-
-const configPath = join(dataDir, "config.toml");
-const envPath = join(dataDir, ".env");
-const dbPath = join(dataDir, "farmer.db");
-
-if (!existsSync(configPath)) {
-  copyFileSync(resolve(root, "config.toml"), configPath);
-  console.log(`[railway] seeded ${configPath}`);
-}
+const paths = applyRuntimeEnv(root);
+const configPath = paths.configPath;
+const envPath = paths.envPath;
+const dbPath = paths.dbPath;
 
 function loadEnvFile(path) {
   try {
@@ -58,6 +51,7 @@ if (!process.env.DASH_TOKEN) {
   console.log("[railway] tip: set DASH_TOKEN as a Railway variable to keep the same token forever");
 }
 
+const volume = process.env.RAILWAY_VOLUME_MOUNT_PATH;
 if (!volume) {
   console.warn("[railway] no volume detected — attach a volume at /app/data so SQLite & Settings survive redeploys");
 } else {

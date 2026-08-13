@@ -2,8 +2,8 @@
  * Surgical config.toml edits — update key = value lines in-place so comments survive.
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { parse } from "smol-toml";
+import { runtimePaths } from "./runtime-paths.mjs";
 
 /** Sections the Settings UI may edit. Nested tables under majors.pools are excluded. */
 const EDITABLE_SECTIONS = new Set([
@@ -13,9 +13,7 @@ const EDITABLE_SECTIONS = new Set([
 ]);
 
 function configPath(root) {
-  return process.env.FARMER_CONFIG_PATH
-    ? resolve(process.env.FARMER_CONFIG_PATH)
-    : resolve(root, "config.toml");
+  return runtimePaths(root).configPath;
 }
 
 export function readConfigToml(root) {
@@ -160,9 +158,7 @@ export const SECRET_EDIT_KEYS = [
 const SECRET_EDIT_SET = new Set(SECRET_EDIT_KEYS);
 
 function envPath(root) {
-  return process.env.FARMER_ENV_PATH
-    ? resolve(process.env.FARMER_ENV_PATH)
-    : resolve(root, ".env");
+  return runtimePaths(root).envPath;
 }
 
 /** Status-only env snapshot — sensitive values are never included. */

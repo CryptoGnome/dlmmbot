@@ -106,8 +106,13 @@ npm install</code></pre>
 RPC_URL=https://api.mainnet-beta.solana.com</code></pre>
             </li>
             <li>
-              <h3>Force paper in <code>config.toml</code></h3>
-              <pre><button type="button" class="copy" data-copy>Copy</button><code>[exec]
+              <h3>Force paper in runtime config</h3>
+              <p>
+                First run seeds gitignored <code>data/config.toml</code> from the repo template.
+                Edit that file (or use Settings) — not the tracked <code>config.toml</code>.
+              </p>
+              <pre><button type="button" class="copy" data-copy>Copy</button><code># data/config.toml
+[exec]
 mode = "paper"</code></pre>
               <p class="note">Live needs <strong>both</strong> this and <code>FARMER_MODE=live</code>.</p>
             </li>
@@ -138,15 +143,15 @@ npm run dash</code></pre>
         <section id="keys">
           <h2>Keys &amp; going live</h2>
           <p>Phantom burner → <code>WALLET_PRIVATE_KEY</code>, private RPC, Jupiter key.</p>
-          <pre><button type="button" class="copy" data-copy>Copy</button><code># .env
+          <pre><button type="button" class="copy" data-copy>Copy</button><code># data/.env (seeded from .env on first run)
 FARMER_MODE=live
 RPC_URL=https://your-private-rpc
 JUPITER_API_KEY=…
 WALLET_PRIVATE_KEY=…</code></pre>
-          <pre><button type="button" class="copy" data-copy>Copy</button><code># config.toml
+          <pre><button type="button" class="copy" data-copy>Copy</button><code># data/config.toml
 [exec]
 mode = "live"</code></pre>
-          <p class="note danger">Burner only. One farmer process per wallet/DB.</p>
+          <p class="note danger">Burner only. One bot process per wallet/DB.</p>
         </section>
 
         <section id="pm2">
@@ -158,6 +163,8 @@ pm2 save
 pm2 startup
 pm2 logs meteora-farmer</code></pre>
           <p>
+            Ecosystem sets <code>FARMER_CONFIG_PATH</code> / <code>FARMER_ENV_PATH</code> /
+            <code>FARMER_DB_PATH</code> under <code>data/</code> so Settings never dirties git.
             <code>meteora-deploy</code> in the same ecosystem is the git pull watcher —
             start it only if you want auto-updates from <code>master</code>.
           </p>
