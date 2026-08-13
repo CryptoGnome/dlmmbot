@@ -210,8 +210,13 @@ chain_max_age_h = 12
 cold_polls_end = 3         # consecutive polls under gates.vol_30m_min_usd ends the chain
 open_fail_cooldown_s = 300 # after a failed leg open, wait before retrying (was every 15s × 4 sims)
 
-[majors]                   # STRATEGY.md §10 — idle-capital parking (v0: whitelist, fixed size)
+[majors]                   # STRATEGY.md §10 — idle-capital parking
 enabled = true
+discovery = true                   # sweep datapi each tick; pick best pool per symbol
+discovery_pages = 8              # high-TVL pools (100k+); re-ranked by live fee/TVL
+symbol_allowlist = ["PUMP", "ANSEM", "JTO", "BONK", "WIF", "RAY", "JUP"]
+mcap_min_usd = 0                   # set e.g. 50_000_000 to also admit large caps by mcap
+age_min_days = 7                   # established pools only (discovery)
 fee_tvl_24h_min_pct = 0.08       # ~1%/week; majors earn far less than meme 20%/d
 fee_tvl_30m_daily_min_pct = 0.05
 tvl_min_usd = 100000
@@ -238,7 +243,8 @@ symbol = "PUMP"
 pool = "6e7V9eegCHw997T72MxgwwJipZ6GJyZF8NvjkzT1rvpN"
 symbol = "ANSEM"
 
-# SOL-USDC majors need USDC-quote planner work — add when bin math supports it.
+# Optional whitelist seeds — discovery still finds the best live pool per symbol.
+# Remove [[majors.pools]] entries entirely to rely on discovery + symbol_allowlist only.
 
 [rotation]                 # capital agility: room for spectacular newcomers (§5)
 alpha_slots = 1                  # slots reserved for score >= alpha_score_min only

@@ -89,13 +89,13 @@ export async function enterMajorsPositions(exec: Executor, bankroll: Bankroll): 
 
     recordDecision(cand.tokenMint, cand.pool.address, "entered", null, cand.score, {
       size, range, pool: cand.pool, sleeve: "majors",
-      experiment: { path: "majors_whitelist", feeTvl24h: cand.pool.feeTvl24hPct },
+      experiment: { path: "majors", source: cand.source, feeTvl24h: cand.pool.feeTvl24hPct },
     });
     await alert("entry",
       `${cand.symbol} pos#${pos.id}: MAJORS ${size.toFixed(2)} SOL @ ${cand.pool.price.toPrecision(4)} ` +
-      `(fee/TVL ${cand.pool.feeTvl24hPct.toFixed(2)}%/d, depth ${range.bottomPricePct.toFixed(0)}%)\n` +
+      `(${cand.source}, fee/TVL ${cand.pool.feeTvl24hPct.toFixed(2)}%/d, depth ${range.bottomPricePct.toFixed(0)}%)\n` +
       `chart: https://gmgn.ai/sol/token/${cand.tokenMint}`);
-    console.log(`[majors] ${cand.symbol} size=${size.toFixed(2)} SOL fee24h=${cand.pool.feeTvl24hPct.toFixed(2)}% pos#${pos.id}`);
+    console.log(`[majors] ${cand.symbol} size=${size.toFixed(2)} SOL source=${cand.source} fee24h=${cand.pool.feeTvl24hPct.toFixed(2)}% pool=${cand.pool.address.slice(0, 8)}… pos#${pos.id}`);
     break; // one majors entry per tick
   }
 }

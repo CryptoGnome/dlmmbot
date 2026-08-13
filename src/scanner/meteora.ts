@@ -83,6 +83,21 @@ function normalize(p: RawPool): PoolInfo & { extras: RawPoolExtras } {
   };
 }
 
+/** Sweep high-TVL pools for majors discovery (sorted by TVL, not meme fee/TVL). */
+export async function sweepMajorsPools(): Promise<Array<PoolInfo & { extras: RawPoolExtras }>> {
+  const mj = config().majors;
+  const out: Array<PoolInfo & { extras: RawPoolExtras }> = [];
+  for (let page = 1; page <= mj.discovery_pages; page++) {
+    const filter = encodeURIComponent(`is_blacklisted=false&&tvl>${mj.tvl_min_usd}`);
+    const body = await getJson<{ data: RawPool[]; pages: number }>(
+      `/pools?page=${page}&page_size=100&sort_by=tvl:desc&filter_by=${filter}`
+    );
+    out.push(...body.data.map(normalize));
+    if (page >= body.pages) break;
+  }
+  return out;
+}
+
 /** Sweep the top pools by 30m fee/TVL, pre-filtered by TVL floor server-side. */
 export async function sweepPools(): Promise<Array<PoolInfo & { extras: RawPoolExtras }>> {
   const c = config();

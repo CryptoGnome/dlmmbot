@@ -32,3 +32,24 @@ export function majorsPoolGates(p: PoolInfo & { extras: RawPoolExtras }): GateFa
 
   return fails;
 }
+
+export function majorsSymbol(p: PoolInfo): string {
+  return (p.name.split("-")[0] ?? p.name).toUpperCase();
+}
+
+/** Discovery admission: symbol allowlist and/or high mcap, plus minimum pool age. */
+export function majorsDiscoveryEligible(p: PoolInfo & { extras: RawPoolExtras }): boolean {
+  const mj = config().majors;
+  const sym = majorsSymbol(p);
+  const allow = mj.symbol_allowlist.map((s) => s.toUpperCase());
+  const bySymbol = allow.length > 0 && allow.includes(sym);
+  const byMcap = mj.mcap_min_usd > 0 && p.marketCapUsd >= mj.mcap_min_usd;
+  if (!bySymbol && !byMcap) return false;
+  if (mj.age_min_days <= 0) return true;
+  const ageMs = p.createdAt ? Date.now() - Date.parse(p.createdAt) : null;
+  return ageMs !== null && ageMs >= mj.age_min_days * DAY_MS;
+}
+
+export function majorsScore(p: PoolInfo): number {
+  return p.feeTvl24hPct * 10 + p.feeTvl30mPct * 48; // weight current 30m fee yield
+}

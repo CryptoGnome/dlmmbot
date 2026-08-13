@@ -86,6 +86,8 @@ export interface Config {
   };
   majors: {
     enabled: boolean;
+    discovery: boolean; discovery_pages: number;
+    symbol_allowlist: string[]; mcap_min_usd: number; age_min_days: number;
     pools: Array<{ pool: string; symbol?: string }>;
     fee_tvl_24h_min_pct: number; fee_tvl_30m_daily_min_pct: number;
     tvl_min_usd: number; tvl_max_usd: number; vol_30m_min_usd: number;
