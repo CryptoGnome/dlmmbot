@@ -10,12 +10,12 @@ Scans hot SOL-quoted meme pools, vets the token, opens a **one-sided SOL** LP be
 
 | Path | Who it’s for | Guide |
 |---|---|---|
-| **Easy — Railway** | Most users (no VPS, public dash URL, auto-redeploy) | [`docs/index.html`](docs/index.html) |
+| **Easy — Railway** | Most users (no VPS, public dash URL, auto-redeploy) | [`docs/index.html`](docs/index.html) · [Sign up](https://railway.com?referralCode=SCj9lN) |
 | **Advanced — local / VPS / PM2** | You already have a server or want full control | [`docs/advanced.html`](docs/advanced.html) |
 
 Open the HTML files in a browser (or host `docs/` on Pages / Cloudflare when the repo is public).
 
-**Recommended default for newcomers:** Railway — see the easy guide. Operators with a box (PM2, auto-deploy) use Advanced.
+**Recommended default for newcomers:** [Railway](https://railway.com?referralCode=SCj9lN) — see the easy guide. Operators with a box (PM2, auto-deploy) use Advanced.
 
 ---
 
