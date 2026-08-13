@@ -102,7 +102,7 @@ export function Shell({
           <div className="font-display text-sm font-semibold tracking-[0.14em]">DLMM</div>
           <div className="mt-0.5 text-[10px] tracking-widest text-dim">BOT OPS</div>
         </div>
-        <nav className="flex-1 py-2">
+        <nav className="flex flex-1 flex-col py-2">
           {TABS.map((t) => {
             const TabIcon = tabIcon[t.id];
             return (
@@ -118,10 +118,8 @@ export function Shell({
               </button>
             );
           })}
+          <DocsLink className="shell-nav-btn mt-auto no-underline" />
         </nav>
-        <div className="border-t border-grid py-2">
-          <DocsLink className="shell-nav-btn no-underline" />
-        </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -160,15 +158,6 @@ export function Shell({
             {watch?.build && <BuildPill build={watch.build} />}
           </div>
           <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted">
-            <a
-              href={DOCS_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 border border-grid px-1.5 py-0.5 tracking-widest text-muted no-underline uppercase hover:border-hover hover:text-hover md:hidden"
-            >
-              <Icon icon={BookText} size={11} />
-              Docs
-            </a>
             <span>{watch?.heartbeat?.mode ?? "—"}</span>
             <span className="text-dim">|</span>
             <span>hb {watch?.heartbeat_age_s ?? "—"}s</span>
@@ -197,6 +186,15 @@ export function Shell({
               </button>
             );
           })}
+          <a
+            href={DOCS_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex shrink-0 items-center gap-1 border border-transparent px-2.5 py-1 text-[10px] tracking-wider text-muted no-underline uppercase hover:text-hover"
+          >
+            <Icon icon={BookText} size={12} />
+            Docs
+          </a>
         </div>
 
         <main className="flex-1 space-y-3 overflow-auto px-3 py-3 md:px-4 md:py-4">
