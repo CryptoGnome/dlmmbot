@@ -78,6 +78,9 @@ export function BookPage({
                       <span>inv <span className={tone(inv)}>{inv == null ? "—" : fmtSol(inv, 4)}</span></span>
                       <span>fees u <span className={tone(feeU)}>{fmtSol(feeU, 4)}</span></span>
                       <span>claimed <span className={tone(feeC)}>{fmtSol(feeC, 4)}</span></span>
+                      {p.open_cost_sol != null && (
+                        <span>open cost {p.open_cost_sol.toFixed(3)}</span>
+                      )}
                     </div>
                     {p.range?.min_bin != null && p.range.max_bin != null && (
                       <div className="mt-2 border-t border-grid pt-1.5">
@@ -109,23 +112,50 @@ export function BookPage({
                     <th className="pb-1.5 pr-2 font-normal">When</th>
                     <th className="pb-1.5 pr-2 font-normal">Symbol</th>
                     <th className="pb-1.5 pr-2 font-normal">Reason</th>
-                    <th className="pb-1.5 font-normal text-right">PnL</th>
+                    <th className="pb-1.5 font-normal text-right">PnL breakdown</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {hist.ladder.slice(0, 20).map((r) => (
-                    <tr key={r.id} className="border-t border-grid align-top">
-                      <td className="py-1.5 pr-2 text-muted whitespace-nowrap">{shortTime(r.at)}</td>
-                      <td className="py-1.5 pr-2"><TokenSymbol symbol={r.symbol} mint={r.mint} /></td>
-                      <td className="py-1.5 pr-2 text-muted">{exitLabel(r.exit_reason)}</td>
-                      <td className="py-1.5 text-right tabular-nums">
-                        <div className={r.pnl >= 0 ? "text-ok font-semibold" : "text-danger font-semibold"}>
-                          {fmtSol(r.pnl, 3)}
-                          {r.pct != null && <span className="ml-1 text-[10px] font-normal opacity-80">{fmtRet(r.pct)}</span>}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {hist.ladder.slice(0, 20).map((r) => {
+                    const tone = (n: number | null | undefined) =>
+                      n == null ? "text-dim" : n >= 0 ? "text-ok" : "text-danger";
+                    return (
+                      <tr key={r.id} className="border-t border-grid align-top">
+                        <td className="py-1.5 pr-2 text-muted whitespace-nowrap">{shortTime(r.at)}</td>
+                        <td className="py-1.5 pr-2"><TokenSymbol symbol={r.symbol} mint={r.mint} /></td>
+                        <td className="py-1.5 pr-2 text-muted">{exitLabel(r.exit_reason)}</td>
+                        <td className="py-1.5 text-right tabular-nums">
+                          <div className={r.pnl >= 0 ? "text-ok font-semibold" : "text-danger font-semibold"}>
+                            {fmtSol(r.pnl, 3)}
+                            {r.pct != null && (
+                              <span className="ml-1 text-[10px] font-normal opacity-80">{fmtRet(r.pct)}</span>
+                            )}
+                          </div>
+                          <div className="mt-0.5 space-y-0.5 text-[10px] text-muted">
+                            <div>
+                              exit <span className={tone(r.exit_move_sol)}>
+                                {r.exit_move_sol == null ? "—" : fmtSol(r.exit_move_sol, 4)}
+                              </span>
+                              {" · "}fees <span className={tone(r.fees_sol)}>{fmtSol(r.fees_sol ?? 0, 4)}</span>
+                              {(r.recovered_sol ?? 0) !== 0 && (
+                                <>
+                                  {" · "}rec <span className={tone(r.recovered_sol)}>
+                                    {fmtSol(r.recovered_sol ?? 0, 4)}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                            {(r.open_cost_sol != null || r.close_return_sol != null) && (
+                              <div className="text-dim">
+                                cost {r.open_cost_sol?.toFixed(3) ?? "—"} → ret {r.close_return_sol?.toFixed(3) ?? "—"}
+                                {r.entry_sol > 0 && <> · size {r.entry_sol.toFixed(3)}</>}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
               {hist.ladder.length > 20 && (

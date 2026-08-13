@@ -3,7 +3,10 @@ import { cn, exitLabel, fmtPct, fmtRet, fmtSol, fmtUsd, shortTime } from "@/lib/
 import { Badge, Panel } from "@/components/ui";
 import { EquityChart } from "@/components/Charts";
 import { TokenSymbol } from "@/components/TokenSymbol";
-import { StatusBadge, type RangeStatus } from "@/components/RangeBar";
+import { RangeBar, StatusBadge, type RangeStatus } from "@/components/RangeBar";
+
+const toneN = (n: number | null | undefined) =>
+  n == null ? "text-dim" : n >= 0 ? "text-ok" : "text-danger";
 
 function HeroStat({
   label, value, pct, tone = "fg", sub,
@@ -112,36 +115,86 @@ export function OverviewPage({
               No open positions
             </div>
           ) : (
-            <ul className="divide-y divide-grid">
+            <div className="space-y-2">
               {open.map((p) => {
                 const m = p.mark;
                 const pnl = m?.total_pnl_sol ?? m?.pnl_sol;
+                const inv = m?.inv_pnl_sol;
+                const feeU = m?.unclaimed_fees_sol ?? 0;
+                const feeC = p.fees_claimed_sol ?? m?.fees_claimed_sol ?? 0;
                 const status = (p.range?.status ?? m?.status ?? "unknown") as RangeStatus;
+                const underwater = pnl != null && pnl < 0;
                 return (
-                  <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 first:pt-0 last:pb-0">
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <span className="text-[10px] text-dim">#{p.id}</span>
-                      <TokenSymbol symbol={p.symbol} mint={p.mint} />
-                      <StatusBadge status={status} />
-                      <span className="text-[11px] text-muted tabular-nums">{p.entry_sol.toFixed(2)} SOL</span>
-                    </div>
-                    <div className="text-right">
-                      <div className={cn(
-                        "tabular-nums text-[13px] font-semibold",
-                        pnl == null ? "text-dim" : pnl >= 0 ? "text-ok" : "text-danger",
-                      )}>
-                        {pnl == null ? "—" : fmtSol(pnl, 3)}
-                      </div>
-                      {m?.pct != null && (
-                        <div className={cn("text-[10px] tabular-nums", m.pct >= 0 ? "text-ok" : "text-danger")}>
-                          {fmtRet(m.pct)}
+                  <div key={p.id} className="border border-grid bg-bg/40 px-3 py-2">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0 space-y-0.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[11px] text-accent">#{p.id}</span>
+                          <TokenSymbol symbol={p.symbol} mint={p.mint} />
+                          <StatusBadge status={status} />
+                          {underwater && (
+                            <span className="text-[10px] uppercase tracking-wider text-danger">underwater</span>
+                          )}
+                          {!underwater && pnl != null && pnl > 0 && (
+                            <span className="text-[10px] uppercase tracking-wider text-ok">in profit</span>
+                          )}
                         </div>
+                        <div className="text-[11px] text-muted">
+                          size {p.entry_sol.toFixed(3)} SOL · opened {shortTime(p.opened)}
+                          {m?.value_sol != null && <> · mark {m.value_sol.toFixed(3)} SOL{m.unreliable ? "*" : ""}</>}
+                          {m?.liq_sol != null && <> · liq {m.liq_sol.toFixed(3)}</>}
+                          {m?.value_sol == null && m?.unreliable && <> · mark unavailable</>}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[10px] uppercase tracking-wider text-dim">Total PnL</div>
+                        <div className={cn(
+                          "tabular-nums font-semibold",
+                          m?.unreliable ? "text-warn"
+                            : pnl == null ? "text-dim"
+                              : pnl >= 0 ? "text-ok" : "text-danger",
+                        )}>
+                          {m?.unreliable && pnl == null ? "mark bad"
+                            : pnl == null ? "—"
+                              : fmtSol(pnl, 3)}
+                        </div>
+                        {m?.pct != null && (
+                          <div className={cn(
+                            "text-[10px] tabular-nums",
+                            m.unreliable ? "text-warn" : m.pct >= 0 ? "text-ok" : "text-danger",
+                          )}>
+                            {fmtRet(m.pct)}{m.unreliable ? " · last good" : ""}
+                          </div>
+                        )}
+                        {m?.unreliable && m.pct == null && (
+                          <div className="text-[10px] text-warn">awaiting mark</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] tabular-nums text-muted">
+                      <span>inv <span className={toneN(inv)}>{inv == null ? "—" : fmtSol(inv, 4)}</span></span>
+                      <span>fees u <span className={toneN(feeU)}>{fmtSol(feeU, 4)}</span></span>
+                      <span>claimed <span className={toneN(feeC)}>{fmtSol(feeC, 4)}</span></span>
+                      {p.open_cost_sol != null && (
+                        <span>open cost {p.open_cost_sol.toFixed(3)}</span>
                       )}
                     </div>
-                  </li>
+                    {p.range?.min_bin != null && p.range.max_bin != null && (
+                      <div className="mt-2 border-t border-grid pt-1.5">
+                        <RangeBar
+                          minBin={p.range.min_bin}
+                          maxBin={p.range.max_bin}
+                          activeBin={p.range.active_bin}
+                          status={status}
+                          minPrice={p.range.min_price}
+                          maxPrice={p.range.max_price}
+                        />
+                      </div>
+                    )}
+                  </div>
                 );
               })}
-            </ul>
+            </div>
           )}
         </Panel>
 
@@ -155,30 +208,54 @@ export function OverviewPage({
               No closes in this range
             </div>
           ) : (
-            <ul className="divide-y divide-grid">
-              {closes.slice(0, 8).map((r) => (
-                <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 first:pt-0 last:pb-0">
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <span className="w-14 shrink-0 text-[10px] text-dim tabular-nums">{shortTime(r.at)}</span>
-                    <TokenSymbol symbol={r.symbol} mint={r.mint} />
-                    <span className="truncate text-[11px] text-muted">{exitLabel(r.exit_reason)}</span>
-                  </div>
-                  <div className="text-right">
-                    <div className={cn(
-                      "tabular-nums text-[13px] font-semibold",
-                      r.pnl >= 0 ? "text-ok" : "text-danger",
-                    )}>
-                      {fmtSol(r.pnl, 3)}
-                    </div>
-                    {r.pct != null && (
-                      <div className={cn("text-[10px] tabular-nums", r.pct >= 0 ? "text-ok" : "text-danger")}>
-                        {fmtRet(r.pct)}
+            <table className="w-full text-left text-[12px]">
+              <thead className="text-dim">
+                <tr>
+                  <th className="pb-1.5 pr-2 font-normal">When</th>
+                  <th className="pb-1.5 pr-2 font-normal">Symbol</th>
+                  <th className="pb-1.5 pr-2 font-normal">Reason</th>
+                  <th className="pb-1.5 font-normal text-right">PnL breakdown</th>
+                </tr>
+              </thead>
+              <tbody>
+                {closes.slice(0, 8).map((r) => (
+                  <tr key={r.id} className="border-t border-grid align-top">
+                    <td className="py-1.5 pr-2 whitespace-nowrap text-muted">{shortTime(r.at)}</td>
+                    <td className="py-1.5 pr-2"><TokenSymbol symbol={r.symbol} mint={r.mint} /></td>
+                    <td className="py-1.5 pr-2 text-muted">{exitLabel(r.exit_reason)}</td>
+                    <td className="py-1.5 text-right tabular-nums">
+                      <div className={r.pnl >= 0 ? "font-semibold text-ok" : "font-semibold text-danger"}>
+                        {fmtSol(r.pnl, 3)}
+                        {r.pct != null && (
+                          <span className="ml-1 text-[10px] font-normal opacity-80">{fmtRet(r.pct)}</span>
+                        )}
                       </div>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
+                      <div className="mt-0.5 space-y-0.5 text-[10px] text-muted">
+                        <div>
+                          exit <span className={toneN(r.exit_move_sol)}>
+                            {r.exit_move_sol == null ? "—" : fmtSol(r.exit_move_sol, 4)}
+                          </span>
+                          {" · "}fees <span className={toneN(r.fees_sol)}>{fmtSol(r.fees_sol ?? 0, 4)}</span>
+                          {(r.recovered_sol ?? 0) !== 0 && (
+                            <>
+                              {" · "}rec <span className={toneN(r.recovered_sol)}>
+                                {fmtSol(r.recovered_sol ?? 0, 4)}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                        {(r.open_cost_sol != null || r.close_return_sol != null) && (
+                          <div className="text-dim">
+                            cost {r.open_cost_sol?.toFixed(3) ?? "—"} → ret {r.close_return_sol?.toFixed(3) ?? "—"}
+                            {r.entry_sol > 0 && <> · size {r.entry_sol.toFixed(3)}</>}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
           {!!watch?.book.last_24h.by_reason.length && (
             <div className="mt-3 border-t border-grid pt-2">
