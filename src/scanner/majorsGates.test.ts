@@ -86,3 +86,18 @@ describe("pickBestMajorsPerSymbol", () => {
     expect(out.find((x) => x.symbol === "PUMP")!.pool.address).toBe("b");
   });
 });
+
+describe("majorsScore", () => {
+  it("stays on the shared 0–100 scale", () => {
+    const cold = majorsScore(pool({ feeTvl24hPct: 0.08, feeTvl30mPct: 0.05 / 48 }));
+    const hot = majorsScore(pool({ feeTvl24hPct: 0.456, feeTvl30mPct: 0.003214 }));
+    const maxed = majorsScore(pool({ feeTvl24hPct: 2, feeTvl30mPct: 0.1 }));
+    expect(cold).toBeGreaterThanOrEqual(0);
+    expect(cold).toBeLessThan(40);
+    expect(hot).toBeGreaterThan(50);
+    expect(hot).toBeLessThan(100);
+    expect(maxed).toBe(100);
+    // Ranking preserved vs the old raw fee blend
+    expect(hot).toBeGreaterThan(cold);
+  });
+});

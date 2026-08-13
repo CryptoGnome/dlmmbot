@@ -98,6 +98,7 @@ export function ActivityPage({ watch }: { watch: LiveWatch | null }) {
               <tr>
                 <th className="pb-1.5 pr-2 font-normal">When</th>
                 <th className="pb-1.5 pr-2 font-normal">Symbol</th>
+                <th className="pb-1.5 pr-2 font-normal">Sleeve</th>
                 <th className="pb-1.5 pr-2 font-normal text-right">Score</th>
                 <th className="pb-1.5 font-normal text-right">Size</th>
               </tr>
@@ -109,6 +110,7 @@ export function ActivityPage({ watch }: { watch: LiveWatch | null }) {
                   <td className="py-1.5 pr-2">
                     <TokenSymbol symbol={r.symbol} mint={r.mint} />
                   </td>
+                  <td className="py-1.5 pr-2 text-muted">{r.sleeve ?? "meme"}</td>
                   <td className="py-1.5 pr-2 text-right tabular-nums text-ok">
                     {r.score != null ? r.score.toFixed(1) : "—"}
                   </td>

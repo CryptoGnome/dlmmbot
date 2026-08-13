@@ -50,6 +50,16 @@ export function majorsDiscoveryEligible(p: PoolInfo & { extras: RawPoolExtras })
   return ageMs !== null && ageMs >= mj.age_min_days * DAY_MS;
 }
 
+const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+
+/**
+ * Majors parking score on the shared 0–100 decisions scale.
+ * Fee-led (not meme opportunityScore): 55% 24h fee/TVL + 45% 30m annualized.
+ * Saturates at 0.5%/d per leg — typical hot parking pool lands ~60–90.
+ * Old formula (`fee24*10 + fee30m*48`) ranked correctly but printed ~1–6 next to meme 70–90.
+ */
 export function majorsScore(p: PoolInfo): number {
-  return p.feeTvl24hPct * 10 + p.feeTvl30mPct * 48; // weight current 30m fee yield
+  const daily30m = p.feeTvl30mPct * 48;
+  const score = clamp01(p.feeTvl24hPct / 0.5) * 55 + clamp01(daily30m / 0.5) * 45;
+  return Math.round(score * 10) / 10;
 }
