@@ -463,6 +463,8 @@ export function SettingsPage() {
   const [pageTab, setPageTab] = useState<"bot" | "wallet">("bot");
   const [showAdvancedSecrets, setShowAdvancedSecrets] = useState(false);
   const [walletModal, setWalletModal] = useState<"create" | "import" | null>(null);
+  /** When wallet is already ready, hide create/import/unlock until user asks to replace. */
+  const [walletReplaceOpen, setWalletReplaceOpen] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -821,131 +823,173 @@ export function SettingsPage() {
           </Badge>
         }
       >
-        <p className="mb-3 text-[12px] leading-snug text-dim">
-          {presence.how === "env" || presence.how === "unlocked" ? (
-            <>
-              Wallet is already usable
-              {presence.how === "env" ? <> via <span className="text-fg">.env</span></> : <> (unlocked)</>}.
-              Encrypted create/import below is optional. Still use a{" "}
-              <span className="text-warn">burner only</span>.
-            </>
-          ) : presence.how === "encrypted_locked" ? (
-            <>
-              Encrypted wallet is on disk but <span className="text-warn">locked</span>.
-              Unlock below so the bot can trade. Burner only.
-            </>
-          ) : (
-            <>
-              This is the SOL wallet the bot uses. Use a <span className="text-warn">burner only</span> — never your main wallet.
-              Pick one action:
-            </>
-          )}
-        </p>
-        {presence.publicKey && (
-          <div className="mb-3 border border-grid bg-bg px-2 py-2">
-            <div className="text-[10px] tracking-wider text-dim uppercase">Address</div>
-            <p className="mt-0.5 break-all font-mono text-[11px] text-ok">{presence.publicKey}</p>
-          </div>
-        )}
-        {(presence.how === "env" || presence.how === "unlocked") && (
-          <p className="mb-3 text-[11px] text-ok">
-            No action required. Only use Make new / Import if you want to replace this key.
-          </p>
-        )}
-        <div className="mb-3 flex gap-1 border border-grid p-0.5">
-          {([
-            { id: "create" as const, label: "Make new" },
-            { id: "import" as const, label: "Import Phantom" },
-            { id: "unlock" as const, label: "Unlock" },
-          ]).map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              className={`flex-1 px-2 py-1.5 text-[10px] tracking-wider uppercase ${
-                walletTab === t.id ? "bg-ok/15 text-ok" : "text-dim hover:text-muted"
-              }`}
-              onClick={() => setWalletTab(t.id)}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-        <p className="mb-2 text-[11px] text-muted">
-          {walletTab === "create" && "Guided create: warnings, password, retype, then a one-time private-key backup you must confirm."}
-          {walletTab === "import" && "Guided import: same password checks, then encrypt a Phantom burner key on this host."}
-          {walletTab === "unlock" && "Type your password so the bot can use the wallet. Restart the bot after unlocking."}
-        </p>
+        {(() => {
+          const readyQuiet = presence.how === "env" || presence.how === "unlocked";
 
-        {(walletTab === "create" || walletTab === "import") && (
-          <button
-            type="button"
-            className="btn-primary inline-flex items-center gap-1.5"
-            onClick={() => setWalletModal(walletTab)}
-          >
-            <Icon icon={walletTab === "create" ? KeyRound : Wallet} size={12} />
-            {walletTab === "create" ? "Start secure create…" : "Start secure import…"}
-          </button>
-        )}
+          return (
+            <>
+              <p className="mb-3 text-[12px] leading-snug text-dim">
+                {readyQuiet && !walletReplaceOpen ? (
+                  <>
+                    Wallet is already usable
+                    {presence.how === "env" ? <> via <span className="text-fg">.env</span></> : <> (unlocked)</>}.
+                    Still a <span className="text-warn">burner only</span> — never your main wallet.
+                  </>
+                ) : presence.how === "encrypted_locked" ? (
+                  <>
+                    Encrypted wallet is on disk but <span className="text-warn">locked</span>.
+                    Unlock below so the bot can trade. Burner only.
+                  </>
+                ) : readyQuiet && walletReplaceOpen ? (
+                  <>
+                    Replacing will overwrite the key this host uses. Burner only — never your main wallet.
+                    Pick one action:
+                  </>
+                ) : (
+                  <>
+                    This is the SOL wallet the bot uses. Use a <span className="text-warn">burner only</span> — never your main wallet.
+                    Pick one action:
+                  </>
+                )}
+              </p>
+              {presence.publicKey && (
+                <div className="mb-3 border border-grid bg-bg px-2 py-2">
+                  <div className="text-[10px] tracking-wider text-dim uppercase">Address</div>
+                  <p className="mt-0.5 break-all font-mono text-[11px] text-ok">{presence.publicKey}</p>
+                </div>
+              )}
 
-        {walletTab === "unlock" && (
-        <div className="space-y-2">
-          <label className="block space-y-1">
-            <span className="text-[11px] text-muted">Dash password (same as login token)</span>
-            <input
-              className="input-field"
-              type="password"
-              autoComplete="off"
-              value={walletConfirm}
-              onChange={(e) => setWalletConfirm(e.target.value)}
-              placeholder="DASH_TOKEN"
-            />
-          </label>
-          <label className="block space-y-1">
-            <span className="text-[11px] text-muted">Wallet password</span>
-            <input
-              className="input-field"
-              type="password"
-              autoComplete="off"
-              value={walletPass}
-              onChange={(e) => setWalletPass(e.target.value)}
-              placeholder="Passphrase you set earlier"
-            />
-          </label>
-          {secretOnce && (
-            <div className="border border-warn/50 bg-bg p-2 text-[11px] leading-snug text-warn">
-              <div className="mb-1 font-medium">Save this private key somewhere safe — shown once:</div>
-              <div className="break-all font-mono text-[10px]">{secretOnce}</div>
-            </div>
-          )}
-          <button
-            type="button"
-            className="btn-primary inline-flex items-center gap-1.5"
-            disabled={walletBusy || !walletConfirm.trim() || !walletPass}
-            onClick={() => {
-              void (async () => {
-                setWalletBusy(true);
-                setErr(null);
-                setMsg(null);
-                try {
-                  const r = await unlockWallet({ confirm: walletConfirm, passphrase: walletPass });
-                  setSetup(r.status);
-                  setMsg(r.note ?? "Unlocked. Restart the bot if it was already running.");
-                  toast({ title: "Wallet unlocked", detail: r.publicKey.slice(0, 8) + "…", tone: "ok", kind: "event" });
-                  setWalletPass("");
-                } catch (e) {
-                  setErr((e as Error).message);
-                  toast({ title: "Wallet action failed", detail: (e as Error).message, tone: "danger", kind: "fail" });
-                } finally {
-                  setWalletBusy(false);
-                }
-              })();
-            }}
-          >
-            <Icon icon={Unlock} size={12} />
-            {walletBusy ? "Working…" : "Unlock wallet"}
-          </button>
-        </div>
-        )}
+              {readyQuiet && !walletReplaceOpen ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <p className="text-[11px] text-ok">No action required.</p>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1.5 border border-grid px-2.5 py-1.5 text-[11px] tracking-wider text-muted uppercase hover:text-hover"
+                    onClick={() => {
+                      setWalletReplaceOpen(true);
+                      setWalletTab("create");
+                    }}
+                  >
+                    <Icon icon={KeyRound} size={12} />
+                    Make a new…
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {readyQuiet && walletReplaceOpen && (
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <p className="text-[11px] text-warn">
+                        Optional — only if you want to replace the current wallet.
+                      </p>
+                      <button
+                        type="button"
+                        className="shrink-0 text-[11px] tracking-wider text-dim uppercase hover:text-hover"
+                        onClick={() => setWalletReplaceOpen(false)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                  <div className="mb-3 flex gap-1 border border-grid p-0.5">
+                    {([
+                      { id: "create" as const, label: "Make new" },
+                      { id: "import" as const, label: "Import Phantom" },
+                      { id: "unlock" as const, label: "Unlock" },
+                    ]).map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        className={`flex-1 px-2 py-1.5 text-[10px] tracking-wider uppercase ${
+                          walletTab === t.id ? "bg-ok/15 text-ok" : "text-dim hover:text-muted"
+                        }`}
+                        onClick={() => setWalletTab(t.id)}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mb-2 text-[11px] text-muted">
+                    {walletTab === "create" && "Guided create: warnings, password, retype, then a one-time private-key backup you must confirm."}
+                    {walletTab === "import" && "Guided import: same password checks, then encrypt a Phantom burner key on this host."}
+                    {walletTab === "unlock" && "Type your password so the bot can use the wallet. Restart the bot after unlocking."}
+                  </p>
+
+                  {(walletTab === "create" || walletTab === "import") && (
+                    <button
+                      type="button"
+                      className="btn-primary inline-flex items-center gap-1.5"
+                      onClick={() => setWalletModal(walletTab)}
+                    >
+                      <Icon icon={walletTab === "create" ? KeyRound : Wallet} size={12} />
+                      {walletTab === "create" ? "Start secure create…" : "Start secure import…"}
+                    </button>
+                  )}
+
+                  {walletTab === "unlock" && (
+                    <div className="space-y-2">
+                      <label className="block space-y-1">
+                        <span className="text-[11px] text-muted">Dash password (same as login token)</span>
+                        <input
+                          className="input-field"
+                          type="password"
+                          autoComplete="off"
+                          value={walletConfirm}
+                          onChange={(e) => setWalletConfirm(e.target.value)}
+                          placeholder="DASH_TOKEN"
+                        />
+                      </label>
+                      <label className="block space-y-1">
+                        <span className="text-[11px] text-muted">Wallet password</span>
+                        <input
+                          className="input-field"
+                          type="password"
+                          autoComplete="off"
+                          value={walletPass}
+                          onChange={(e) => setWalletPass(e.target.value)}
+                          placeholder="Passphrase you set earlier"
+                        />
+                      </label>
+                      {secretOnce && (
+                        <div className="border border-warn/50 bg-bg p-2 text-[11px] leading-snug text-warn">
+                          <div className="mb-1 font-medium">Save this private key somewhere safe — shown once:</div>
+                          <div className="break-all font-mono text-[10px]">{secretOnce}</div>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        className="btn-primary inline-flex items-center gap-1.5"
+                        disabled={walletBusy || !walletConfirm.trim() || !walletPass}
+                        onClick={() => {
+                          void (async () => {
+                            setWalletBusy(true);
+                            setErr(null);
+                            setMsg(null);
+                            try {
+                              const r = await unlockWallet({ confirm: walletConfirm, passphrase: walletPass });
+                              setSetup(r.status);
+                              setMsg(r.note ?? "Unlocked. Restart the bot if it was already running.");
+                              toast({ title: "Wallet unlocked", detail: r.publicKey.slice(0, 8) + "…", tone: "ok", kind: "event" });
+                              setWalletPass("");
+                              setWalletReplaceOpen(false);
+                            } catch (e) {
+                              setErr((e as Error).message);
+                              toast({ title: "Wallet action failed", detail: (e as Error).message, tone: "danger", kind: "fail" });
+                            } finally {
+                              setWalletBusy(false);
+                            }
+                          })();
+                        }}
+                      >
+                        <Icon icon={Unlock} size={12} />
+                        {walletBusy ? "Working…" : "Unlock wallet"}
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          );
+        })()}
       </Panel>
 
       {walletModal && (
@@ -959,6 +1003,7 @@ export function SettingsPage() {
             setSecretOnce(once);
             setWalletModal(null);
             setWalletPass("");
+            setWalletReplaceOpen(false);
             setMsg(
               once
                 ? "Wallet created and backup confirmed."
