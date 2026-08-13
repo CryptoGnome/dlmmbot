@@ -1,0 +1,122 @@
+/**
+ * DLMM Bot docs — match marketing / dashboard tokens.
+ * bg #0D0D0D · ok #00FF85 · accent #1E90FF · hover #FF0099
+ */
+
+:root,
+.dark {
+  --vp-c-bg: #0d0d0d;
+  --vp-c-bg-alt: #111111;
+  --vp-c-bg-elv: #141414;
+  --vp-c-bg-soft: #141414;
+
+  --vp-c-border: #2a2a2a;
+  --vp-c-divider: #2a2a2a;
+  --vp-c-gutter: #2a2a2a;
+
+  --vp-c-text-1: #ffffff;
+  --vp-c-text-2: #a3a3a3;
+  --vp-c-text-3: #6b6b6b;
+
+  --vp-c-brand-1: #00ff85;
+  --vp-c-brand-2: #1e90ff;
+  --vp-c-brand-3: #00cc6a;
+  --vp-c-brand-soft: rgba(0, 255, 133, 0.12);
+
+  --vp-c-tip-1: #00ff85;
+  --vp-c-tip-soft: rgba(0, 255, 133, 0.1);
+  --vp-c-warning-1: #ffb020;
+  --vp-c-warning-soft: rgba(255, 176, 32, 0.12);
+  --vp-c-danger-1: #ff4d6a;
+  --vp-c-danger-soft: rgba(255, 77, 106, 0.12);
+
+  --vp-c-default-1: #2a2a2a;
+  --vp-c-default-2: #1a1a1a;
+  --vp-c-default-3: #141414;
+  --vp-c-default-soft: #141414;
+
+  --vp-button-brand-bg: #f4f4f5;
+  --vp-button-brand-text: #0d0d0d;
+  --vp-button-brand-hover-bg: #ff0099;
+  --vp-button-brand-hover-text: #ffffff;
+  --vp-button-brand-active-bg: #ff0099;
+
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(120deg, #00ff85 20%, #1e90ff 80%);
+
+  --vp-font-family-base: "IBM Plex Sans", system-ui, sans-serif;
+  --vp-font-family-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --vp-code-block-bg: #111111;
+  --vp-code-copy-code-bg: #1a1a1a;
+  --vp-code-copy-code-hover-bg: #2a2a2a;
+
+  color-scheme: dark;
+}
+
+html:not(.dark) {
+  color-scheme: dark;
+}
+
+.VPNavBar,
+.VPSidebar,
+.VPLocalNav,
+.VPDocAside {
+  --vp-c-bg: #0d0d0d;
+}
+
+.VPNavBar .title {
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.pick-grid {
+  display: grid;
+  gap: 1rem;
+  margin: 1.5rem 0 2rem;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 640px) {
+  .pick-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.pick {
+  display: block;
+  border: 1px solid #2a2a2a;
+  background: #141414;
+  padding: 1.25rem 1.35rem;
+  text-decoration: none !important;
+  color: inherit !important;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.pick:hover {
+  border-color: #00ff85;
+  background: rgba(0, 255, 133, 0.06);
+}
+.pick .tag {
+  display: inline-block;
+  margin-bottom: 0.5rem;
+  border: 1px solid rgba(0, 255, 133, 0.5);
+  color: #00ff85;
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.45rem;
+}
+.pick .tag.ops {
+  border-color: rgba(255, 176, 32, 0.55);
+  color: #ffb020;
+}
+.pick h3 {
+  margin: 0 0 0.4rem;
+  font-size: 1.1rem;
+  color: #fff;
+}
+.pick p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: #a3a3a3;
+}

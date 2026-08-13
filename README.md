@@ -4,6 +4,8 @@ Automated **Meteora DLMM** liquidity bot for Solana.
 
 **Site:** [dlmmbot.com](https://dlmmbot.com) · **Docs:** [dlmmbot.com/setup](https://dlmmbot.com/setup/)
 
+Setup docs are **VitePress** (`docs-site/`). Edit markdown there, then `npm run docs:build` (writes into `docs/setup/`). Marketing homepage stays `docs/index.html`.
+
 Scans hot SOL-quoted meme pools, vets the token, opens a **one-sided SOL** LP below price, then exits by fixed rules. PnL lives in SQLite. **Paper first** — live is double-locked (config + env).
 
 > Memecoin LP can wipe a wallet. Not financial advice. Burner only.
@@ -12,8 +14,8 @@ Scans hot SOL-quoted meme pools, vets the token, opens a **one-sided SOL** LP be
 
 | Path | Who it’s for | Link |
 |---|---|---|
-| **Easy — Railway** | Most users (one service, automated config) | [Docs → Easy](https://dlmmbot.com/setup/easy.html) · [Sign up](https://railway.com?referralCode=SCj9lN) |
-| **Advanced — local / VPS / PM2** | You already have a box | [Docs → Advanced](https://dlmmbot.com/setup/advanced.html) |
+| **Easy — Railway** | Most users (one service, automated config) | [Docs → Easy](https://dlmmbot.com/setup/easy) · [Sign up](https://railway.com?referralCode=SCj9lN) |
+| **Advanced — local / VPS / PM2** | You already have a box | [Docs → Advanced](https://dlmmbot.com/setup/advanced) |
 
 **Railway (shortest path):** Deploy `CryptoGnome/dlmmbot` → attach volume at `/app/data` → Generate domain → open the URL (token is in deploy logs if unset) → first-run setup wizard (RPC, encrypted wallet create/import, paper/live) or Settings.
 

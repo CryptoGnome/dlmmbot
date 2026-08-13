@@ -1,223 +1,49 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Advanced setup — DLMM Bot</title>
-  <meta name="description" content="Run DLMM Bot locally or on a VPS with PM2 and auto-deploy." />
-  <link rel="canonical" href="https://dlmmbot.com/setup/advanced.html" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,650;1,500&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../assets/site.css" />
-</head>
-<body>
-  <header class="nav">
-    <div class="nav-inner">
-      <a class="brand" href="../">dlmm<span>bot</span></a>
-      <nav class="nav-links" aria-label="Primary">
-        <a href="./">Docs</a>
-        <a href="easy.html">Easy</a>
-        <a href="advanced.html">Advanced</a>
-        <a href="https://github.com/CryptoGnome/dlmmbot">GitHub</a>
-      </nav>
-      <div class="nav-actions">
-        <a class="btn btn-primary btn-sm" href="easy.html">Easy setup</a>
-      </div>
-    </div>
-  </header>
-
-  <div class="wrap">
-    <header class="doc-hero">
-      <h1>Advanced setup</h1>
-      <p class="lede">
-        For people with a server, or who want to run on their own PC.
-        Most newcomers should use <a href="easy.html">Easy setup (Railway)</a>.
-      </p>
-      <p class="warn">Same risk rules: paper first, burner only, never commit <code>.env</code>.</p>
-    </header>
-
-    <div class="doc-layout">
-      <aside class="toc" aria-label="On this page">
-        <h2>On this page</h2>
-        <ol>
-          <li><a href="#when">When to use</a></li>
-          <li><a href="#local">Local paper</a></li>
-          <li><a href="#commands">Commands</a></li>
-          <li><a href="#dash">Dashboard</a></li>
-          <li><a href="#keys">Keys &amp; live</a></li>
-          <li><a href="#pm2">PM2 / VPS</a></li>
-          <li><a href="#autodeploy">Auto-deploy</a></li>
-          <li><a href="#remote-dash">Remote dash</a></li>
-          <li><a href="#troubleshoot">Troubleshooting</a></li>
-        </ol>
-      </aside>
-
-      <div class="doc-main">
-        <section id="when">
-          <h2>When to use this</h2>
-          <div class="cards">
-            <div class="card">
-              <h3>Easy (Railway)</h3>
-              <p>No server. Public HTTPS. Auto-redeploy.
-                <a href="https://railway.com?referralCode=SCj9lN" target="_blank" rel="noreferrer">Sign up</a>
-                · <a href="easy.html">guide</a></p>
-            </div>
-            <div class="card">
-              <h3>This guide</h3>
-              <p>VPS / home box / local PC with full control.</p>
-            </div>
-            <div class="card">
-              <h3>Same bot</h3>
-              <p>Identical code and paper/live gates.</p>
-            </div>
-          </div>
-        </section>
-
-        <section id="local">
-          <h2>Local install (paper)</h2>
-          <table class="req">
-            <thead><tr><th>Need</th><th>Get it</th><th>Check</th></tr></thead>
-            <tbody>
-              <tr>
-                <td><strong>Node.js 20+</strong></td>
-                <td><a href="https://nodejs.org" target="_blank" rel="noreferrer">nodejs.org</a></td>
-                <td><code>node -v</code></td>
-              </tr>
-              <tr>
-                <td><strong>Git</strong></td>
-                <td><a href="https://git-scm.com" target="_blank" rel="noreferrer">git-scm.com</a></td>
-                <td><code>git --version</code></td>
-              </tr>
-            </tbody>
-          </table>
-          <ol class="steps">
-            <li>
-              <h3>Clone &amp; install</h3>
-              <pre><button type="button" class="copy" data-copy>Copy</button><code>git clone https://github.com/CryptoGnome/dlmmbot.git
-cd dlmmbot
-npm install</code></pre>
-              <p><code>better-sqlite3</code> compiling is normal. Windows may need VS Build Tools.</p>
-            </li>
-            <li>
-              <h3>Create <code>.env</code></h3>
-              <pre><button type="button" class="copy" data-copy>Copy</button><code>cp .env.example .env</code></pre>
-              <pre><button type="button" class="copy" data-copy>Copy</button><code>FARMER_MODE=paper
-RPC_URL=https://api.mainnet-beta.solana.com</code></pre>
-            </li>
-            <li>
-              <h3>Force paper in runtime config</h3>
-              <p>
-                First run seeds gitignored <code>data/config.toml</code> from the repo template.
-                Edit that file (or use Settings) — not the tracked <code>config.toml</code>.
-              </p>
-              <pre><button type="button" class="copy" data-copy>Copy</button><code># data/config.toml
-[exec]
-mode = "paper"</code></pre>
-              <p class="note">Live needs <strong>both</strong> this and <code>FARMER_MODE=live</code>.</p>
-            </li>
-            <li>
-              <h3>Run</h3>
-              <pre><button type="button" class="copy" data-copy>Copy</button><code>npm run run</code></pre>
-              <pre><button type="button" class="copy" data-copy>Copy</button><code>npm run status
-npm run halt</code></pre>
-            </li>
-          </ol>
-        </section>
-
-        <section id="commands">
-          <h2>Commands</h2>
-          <pre><button type="button" class="copy" data-copy>Copy</button><code>npm run scan | vet | run | status | halt | force-close | test
-npm run dash:build &amp;&amp; npm run dash</code></pre>
-        </section>
-
-        <section id="dash">
-          <h2>Local dashboard</h2>
-          <pre><button type="button" class="copy" data-copy>Copy</button><code>DASH_TOKEN=pick-a-long-random-password
-DASH_PORT=8787</code></pre>
-          <pre><button type="button" class="copy" data-copy>Copy</button><code>npm run dash:build
-npm run dash</code></pre>
-          <p>Open <a href="http://localhost:8787">http://localhost:8787</a> with that token.</p>
-        </section>
-
-        <section id="keys">
-          <h2>Keys &amp; going live</h2>
-          <p>Phantom burner → <code>WALLET_PRIVATE_KEY</code>, private RPC, Jupiter key.</p>
-          <pre><button type="button" class="copy" data-copy>Copy</button><code># data/.env (seeded from .env on first run)
-FARMER_MODE=live
-RPC_URL=https://your-private-rpc
-JUPITER_API_KEY=…
-WALLET_PRIVATE_KEY=…</code></pre>
-          <pre><button type="button" class="copy" data-copy>Copy</button><code># data/config.toml
-[exec]
-mode = "live"</code></pre>
-          <p class="note danger">Burner only. One bot process per wallet/DB.</p>
-        </section>
-
-        <section id="pm2">
-          <h2>PM2 on a VPS</h2>
-          <pre><button type="button" class="copy" data-copy>Copy</button><code>npm install -g pm2
-pm2 start deploy/ecosystem.config.cjs --only meteora-farmer
-pm2 start deploy/ecosystem.config.cjs --only meteora-dash
-pm2 save
-pm2 startup
-pm2 logs meteora-farmer</code></pre>
-          <p>
-            Ecosystem sets <code>FARMER_CONFIG_PATH</code> / <code>FARMER_ENV_PATH</code> /
-            <code>FARMER_DB_PATH</code> under <code>data/</code> so Settings never dirties git.
-            <code>meteora-deploy</code> in the same ecosystem is the git pull watcher —
-            start it only if you want auto-updates from <code>master</code>.
-          </p>
-        </section>
-
-        <section id="autodeploy">
-          <h2>Auto-deploy</h2>
-          <pre><button type="button" class="copy" data-copy>Copy</button><code>pm2 start deploy/ecosystem.config.cjs --only meteora-deploy
-pm2 save</code></pre>
-          <p class="note">
-            Don’t SCP a dirty tree and expect CURRENT — push + pull (or let the watcher do it).
-          </p>
-        </section>
-
-        <section id="remote-dash">
-          <h2>Dashboard from outside</h2>
-          <ul>
-            <li><strong>Tailscale / ZeroTier</strong> — private access from your phone</li>
-            <li><strong>Cloudflare Tunnel</strong> — public HTTPS without opening ports</li>
-            <li><strong>Reverse proxy + HTTPS</strong> on a VPS with a domain</li>
-          </ul>
-          <p class="note danger">
-            Don’t expose <code>:8787</code> raw without a strong <code>DASH_TOKEN</code> (and HTTPS).
-          </p>
-        </section>
-
-        <section id="troubleshoot">
-          <h2>Troubleshooting</h2>
-          <table class="req">
-            <thead><tr><th>Symptom</th><th>Fix</th></tr></thead>
-            <tbody>
-              <tr><td><code>better-sqlite3</code> build fail</td><td>VS Build Tools / <code>build-essential</code></td></tr>
-              <tr><td>Already running / lock</td><td>Only if sure: <code>npm run release</code></td></tr>
-              <tr><td>BEHIND on version pill</td><td>Start <code>meteora-deploy</code> or <code>git pull</code></td></tr>
-              <tr><td>Want the simple path</td><td><a href="easy.html">Easy setup (Railway)</a></td></tr>
-            </tbody>
-          </table>
-        </section>
-      </div>
-    </div>
-  </div>
-
-  <footer class="site-footer">
-    <div class="wrap footer-row">
-      <a class="brand" href="../">dlmm<span>bot</span></a>
-      <div class="footer-links">
-        <a href="./">Docs hub</a>
-        <a href="easy.html">Easy</a>
-        <a href="https://github.com/CryptoGnome/dlmmbot">GitHub</a>
-      </div>
-    </div>
-    <div class="wrap footer-note">Paper first. Burner only.</div>
-  </footer>
-  <script src="../assets/site.js"></script>
-</body>
+<html lang="en-US" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Advanced setup | DLMM Bot</title>
+    <meta name="description" content="Run DLMM Bot locally or on a VPS with PM2 and auto-deploy.">
+    <meta name="generator" content="VitePress v1.6.4">
+    <link rel="preload stylesheet" href="/setup/assets/style.oRt384yb.css" as="style">
+    <link rel="preload stylesheet" href="/setup/vp-icons.css" as="style">
+    
+    <script type="module" src="/setup/assets/app.BkFxVy7q.js"></script>
+    <link rel="modulepreload" href="/setup/assets/chunks/theme.f89SUGaK.js">
+    <link rel="modulepreload" href="/setup/assets/chunks/framework.Cz0TtJv6.js">
+    <link rel="modulepreload" href="/setup/assets/advanced.md.fwYXBvO_.lean.js">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,650;1,500&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap">
+    <meta name="theme-color" content="#0D0D0D">
+    <script id="check-dark-mode">document.documentElement.classList.add("dark");</script>
+    <script id="check-mac-os">document.documentElement.classList.toggle("mac",/Mac|iPhone|iPod|iPad/i.test(navigator.platform));</script>
+  </head>
+  <body>
+    <div id="app"><div class="Layout" data-v-5d98c3a5><!--[--><!--]--><!--[--><span tabindex="-1" data-v-0b0ada53></span><a href="#VPContent" class="VPSkipLink visually-hidden" data-v-0b0ada53>Skip to content</a><!--]--><!----><header class="VPNav" data-v-5d98c3a5 data-v-ae24b3ad><div class="VPNavBar" data-v-ae24b3ad data-v-6aa21345><div class="wrapper" data-v-6aa21345><div class="container" data-v-6aa21345><div class="title" data-v-6aa21345><div class="VPNavBarTitle has-sidebar" data-v-6aa21345 data-v-1168a8e4><a class="title" href="/setup/" data-v-1168a8e4><!--[--><!--]--><!----><span data-v-1168a8e4>dlmmbot</span><!--[--><!--]--></a></div></div><div class="content" data-v-6aa21345><div class="content-body" data-v-6aa21345><!--[--><!--]--><div class="VPNavBarSearch search" data-v-6aa21345><!--[--><!----><div id="local-search"><button type="button" class="DocSearch DocSearch-Button" aria-label="Search"><span class="DocSearch-Button-Container"><span class="vp-icon DocSearch-Search-Icon"></span><span class="DocSearch-Button-Placeholder">Search</span></span><span class="DocSearch-Button-Keys"><kbd class="DocSearch-Button-Key"></kbd><kbd class="DocSearch-Button-Key">K</kbd></span></button></div><!--]--></div><nav aria-labelledby="main-nav-aria-label" class="VPNavBarMenu menu" data-v-6aa21345 data-v-dc692963><span id="main-nav-aria-label" class="visually-hidden" data-v-dc692963> Main Navigation </span><!--[--><!--[--><a class="VPLink link vp-external-link-icon VPNavBarMenuLink" href="https://dlmmbot.com/" target="_blank" rel="noreferrer" tabindex="0" data-v-dc692963 data-v-e56f3d57><!--[--><span data-v-e56f3d57>Home</span><!--]--></a><!--]--><!--[--><a class="VPLink link VPNavBarMenuLink" href="/setup/easy" tabindex="0" data-v-dc692963 data-v-e56f3d57><!--[--><span data-v-e56f3d57>Easy (Railway)</span><!--]--></a><!--]--><!--[--><a class="VPLink link VPNavBarMenuLink active" href="/setup/advanced" tabindex="0" data-v-dc692963 data-v-e56f3d57><!--[--><span data-v-e56f3d57>Advanced</span><!--]--></a><!--]--><!--[--><a class="VPLink link vp-external-link-icon VPNavBarMenuLink" href="https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md" target="_blank" rel="noreferrer" tabindex="0" data-v-dc692963 data-v-e56f3d57><!--[--><span data-v-e56f3d57>Strategy</span><!--]--></a><!--]--><!--[--><a class="VPLink link vp-external-link-icon VPNavBarMenuLink" href="https://github.com/CryptoGnome/dlmmbot" target="_blank" rel="noreferrer" tabindex="0" data-v-dc692963 data-v-e56f3d57><!--[--><span data-v-e56f3d57>GitHub</span><!--]--></a><!--]--><!--]--></nav><!----><!----><div class="VPSocialLinks VPNavBarSocialLinks social-links" data-v-6aa21345 data-v-0394ad82 data-v-7bc22406><!--[--><a class="VPSocialLink no-icon" href="https://github.com/CryptoGnome/dlmmbot" aria-label="github" target="_blank" rel="noopener" data-v-7bc22406 data-v-bd121fe5><span class="vpi-social-github"></span></a><!--]--></div><div class="VPFlyout VPNavBarExtra extra" data-v-6aa21345 data-v-bb2aa2f0 data-v-cf11d7a2><button type="button" class="button" aria-haspopup="true" aria-expanded="false" aria-label="extra navigation" data-v-cf11d7a2><span class="vpi-more-horizontal icon" data-v-cf11d7a2></span></button><div class="menu" data-v-cf11d7a2><div class="VPMenu" data-v-cf11d7a2 data-v-b98bc113><!----><!--[--><!--[--><!----><!----><div class="group" data-v-bb2aa2f0><div class="item social-links" data-v-bb2aa2f0><div class="VPSocialLinks social-links-list" data-v-bb2aa2f0 data-v-7bc22406><!--[--><a class="VPSocialLink no-icon" href="https://github.com/CryptoGnome/dlmmbot" aria-label="github" target="_blank" rel="noopener" data-v-7bc22406 data-v-bd121fe5><span class="vpi-social-github"></span></a><!--]--></div></div></div><!--]--><!--]--></div></div></div><!--[--><!--]--><button type="button" class="VPNavBarHamburger hamburger" aria-label="mobile navigation" aria-expanded="false" aria-controls="VPNavScreen" data-v-6aa21345 data-v-e5dd9c1c><span class="container" data-v-e5dd9c1c><span class="top" data-v-e5dd9c1c></span><span class="middle" data-v-e5dd9c1c></span><span class="bottom" data-v-e5dd9c1c></span></span></button></div></div></div></div><div class="divider" data-v-6aa21345><div class="divider-line" data-v-6aa21345></div></div></div><!----></header><div class="VPLocalNav has-sidebar empty" data-v-5d98c3a5 data-v-a6f0e41e><div class="container" data-v-a6f0e41e><button class="menu" aria-expanded="false" aria-controls="VPSidebarNav" data-v-a6f0e41e><span class="vpi-align-left menu-icon" data-v-a6f0e41e></span><span class="menu-text" data-v-a6f0e41e>Menu</span></button><div class="VPLocalNavOutlineDropdown" style="--vp-vh:0px;" data-v-a6f0e41e data-v-8a42e2b4><button data-v-8a42e2b4>Return to top</button><!----></div></div></div><aside class="VPSidebar" data-v-5d98c3a5 data-v-319d5ca6><div class="curtain" data-v-319d5ca6></div><nav class="nav" id="VPSidebarNav" aria-labelledby="sidebar-aria-label" tabindex="-1" data-v-319d5ca6><span class="visually-hidden" id="sidebar-aria-label" data-v-319d5ca6> Sidebar Navigation </span><!--[--><!--]--><!--[--><div class="no-transition group" data-v-c40bc020><section class="VPSidebarItem level-0 has-active" data-v-c40bc020 data-v-b3fd67f8><div class="item" role="button" tabindex="0" data-v-b3fd67f8><div class="indicator" data-v-b3fd67f8></div><h2 class="text" data-v-b3fd67f8>Setup</h2><!----></div><div class="items" data-v-b3fd67f8><!--[--><div class="VPSidebarItem level-1 is-link" data-v-b3fd67f8><div class="item" data-v-b3fd67f8><div class="indicator" data-v-b3fd67f8></div><a class="VPLink link link" href="/setup/" data-v-b3fd67f8><!--[--><p class="text" data-v-b3fd67f8>Choose a path</p><!--]--></a><!----></div><!----></div><div class="VPSidebarItem level-1 is-link" data-v-b3fd67f8><div class="item" data-v-b3fd67f8><div class="indicator" data-v-b3fd67f8></div><a class="VPLink link link" href="/setup/easy" data-v-b3fd67f8><!--[--><p class="text" data-v-b3fd67f8>Easy — Railway</p><!--]--></a><!----></div><!----></div><div class="VPSidebarItem level-1 is-link" data-v-b3fd67f8><div class="item" data-v-b3fd67f8><div class="indicator" data-v-b3fd67f8></div><a class="VPLink link link" href="/setup/advanced" data-v-b3fd67f8><!--[--><p class="text" data-v-b3fd67f8>Advanced — local / VPS</p><!--]--></a><!----></div><!----></div><!--]--></div></section></div><div class="no-transition group" data-v-c40bc020><section class="VPSidebarItem level-0" data-v-c40bc020 data-v-b3fd67f8><div class="item" role="button" tabindex="0" data-v-b3fd67f8><div class="indicator" data-v-b3fd67f8></div><h2 class="text" data-v-b3fd67f8>Reference</h2><!----></div><div class="items" data-v-b3fd67f8><!--[--><div class="VPSidebarItem level-1 is-link" data-v-b3fd67f8><div class="item" data-v-b3fd67f8><div class="indicator" data-v-b3fd67f8></div><a class="VPLink link vp-external-link-icon link" href="https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md" target="_blank" rel="noreferrer" data-v-b3fd67f8><!--[--><p class="text" data-v-b3fd67f8>STRATEGY.md</p><!--]--></a><!----></div><!----></div><div class="VPSidebarItem level-1 is-link" data-v-b3fd67f8><div class="item" data-v-b3fd67f8><div class="indicator" data-v-b3fd67f8></div><a class="VPLink link vp-external-link-icon link" href="https://github.com/CryptoGnome/dlmmbot/blob/master/DEPLOY.md" target="_blank" rel="noreferrer" data-v-b3fd67f8><!--[--><p class="text" data-v-b3fd67f8>DEPLOY.md</p><!--]--></a><!----></div><!----></div><!--]--></div></section></div><!--]--><!--[--><!--]--></nav></aside><div class="VPContent has-sidebar" id="VPContent" data-v-5d98c3a5 data-v-1428d186><div class="VPDoc has-sidebar has-aside" data-v-1428d186 data-v-39a288b8><!--[--><!--]--><div class="container" data-v-39a288b8><div class="aside" data-v-39a288b8><div class="aside-curtain" data-v-39a288b8></div><div class="aside-container" data-v-39a288b8><div class="aside-content" data-v-39a288b8><div class="VPDocAside" data-v-39a288b8 data-v-3f215769><!--[--><!--]--><!--[--><!--]--><nav aria-labelledby="doc-outline-aria-label" class="VPDocAsideOutline" data-v-3f215769 data-v-a5bbad30><div class="content" data-v-a5bbad30><div class="outline-marker" data-v-a5bbad30></div><div aria-level="2" class="outline-title" id="doc-outline-aria-label" role="heading" data-v-a5bbad30>On this page</div><ul class="VPDocOutlineItem root" data-v-a5bbad30 data-v-b933a997><!--[--><!--]--></ul></div></nav><!--[--><!--]--><div class="spacer" data-v-3f215769></div><!--[--><!--]--><!----><!--[--><!--]--><!--[--><!--]--></div></div></div></div><div class="content" data-v-39a288b8><div class="content-container" data-v-39a288b8><!--[--><!--]--><main class="main" data-v-39a288b8><div style="position:relative;" class="vp-doc _setup_advanced" data-v-39a288b8><div><h1 id="advanced-setup" tabindex="-1">Advanced setup <a class="header-anchor" href="#advanced-setup" aria-label="Permalink to &quot;Advanced setup&quot;">​</a></h1><p>For people with a server, or who want to run on their own PC. Most newcomers should use <a href="./easy">Easy setup (Railway)</a>.</p><div class="warning custom-block"><p class="custom-block-title">WARNING</p><p>Same risk rules: paper first, burner only, never commit <code>.env</code>.</p></div><h2 id="when-to-use-this" tabindex="-1">When to use this <a class="header-anchor" href="#when-to-use-this" aria-label="Permalink to &quot;When to use this&quot;">​</a></h2><table tabindex="0"><thead><tr><th>Path</th><th>Best for</th></tr></thead><tbody><tr><td><a href="./easy">Easy (Railway)</a></td><td>No server. Public HTTPS. Auto-redeploy.</td></tr><tr><td><strong>This guide</strong></td><td>VPS / home box / local PC with full control.</td></tr><tr><td>Same bot</td><td>Identical code and paper/live gates.</td></tr></tbody></table><h2 id="local-install-paper" tabindex="-1">Local install (paper) <a class="header-anchor" href="#local-install-paper" aria-label="Permalink to &quot;Local install (paper)&quot;">​</a></h2><table tabindex="0"><thead><tr><th>Need</th><th>Get it</th><th>Check</th></tr></thead><tbody><tr><td><strong>Node.js 20+</strong></td><td><a href="https://nodejs.org" target="_blank" rel="noreferrer">nodejs.org</a></td><td><code>node -v</code></td></tr><tr><td><strong>Git</strong></td><td><a href="https://git-scm.com" target="_blank" rel="noreferrer">git-scm.com</a></td><td><code>git --version</code></td></tr></tbody></table><h3 id="_1-clone-install" tabindex="-1">1. Clone &amp; install <a class="header-anchor" href="#_1-clone-install" aria-label="Permalink to &quot;1. Clone &amp; install&quot;">​</a></h3><div class="language-bash vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre class="shiki shiki-themes github-light github-dark vp-code" tabindex="0"><code><span class="line"><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;">git</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> clone</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> https://github.com/CryptoGnome/dlmmbot.git</span></span>
+<span class="line"><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;">cd</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> dlmmbot</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;">npm</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> install</span></span></code></pre></div><p><code>better-sqlite3</code> compiling is normal. Windows may need VS Build Tools.</p><h3 id="_2-create-env" tabindex="-1">2. Create <code>.env</code> <a class="header-anchor" href="#_2-create-env" aria-label="Permalink to &quot;2. Create `.env`&quot;">​</a></h3><div class="language-bash vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre class="shiki shiki-themes github-light github-dark vp-code" tabindex="0"><code><span class="line"><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;">cp</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> .env.example</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> .env</span></span></code></pre></div><div class="language-bash vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre class="shiki shiki-themes github-light github-dark vp-code" tabindex="0"><code><span class="line"><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">FARMER_MODE</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;">=</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;">paper</span></span>
+<span class="line"><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">RPC_URL</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;">=</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;">https://api.mainnet-beta.solana.com</span></span></code></pre></div><h3 id="_3-force-paper-in-runtime-config" tabindex="-1">3. Force paper in runtime config <a class="header-anchor" href="#_3-force-paper-in-runtime-config" aria-label="Permalink to &quot;3. Force paper in runtime config&quot;">​</a></h3><p>First run seeds gitignored <code>data/config.toml</code> from the repo template. Edit that file (or use Settings) — not the tracked <code>config.toml</code>.</p><div class="language-toml vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">toml</span><pre class="shiki shiki-themes github-light github-dark vp-code" tabindex="0"><code><span class="line"><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;"># data/config.toml</span></span>
+<span class="line"><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">[</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;">exec</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">]</span></span>
+<span class="line"><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">mode = </span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;">&quot;paper&quot;</span></span></code></pre></div><div class="tip custom-block"><p class="custom-block-title">TIP</p><p>Live needs <strong>both</strong> this and <code>FARMER_MODE=live</code>.</p></div><h3 id="_4-run" tabindex="-1">4. Run <a class="header-anchor" href="#_4-run" aria-label="Permalink to &quot;4. Run&quot;">​</a></h3><div class="language-bash vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre class="shiki shiki-themes github-light github-dark vp-code" tabindex="0"><code><span class="line"><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;">npm</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> run</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> run</span></span></code></pre></div><div class="language-bash vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre class="shiki shiki-themes github-light github-dark vp-code" tabindex="0"><code><span class="line"><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;">npm</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> run</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> status</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;">npm</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> run</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> halt</span></span></code></pre></div><h2 id="commands" tabindex="-1">Commands <a class="header-anchor" href="#commands" aria-label="Permalink to &quot;Commands&quot;">​</a></h2><div class="language-bash vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre class="shiki shiki-themes github-light github-dark vp-code" tabindex="0"><code><span class="line"><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;">npm</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> run</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> scan</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;"> |</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;"> vet</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;"> |</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;"> run</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;"> |</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;"> status</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;"> |</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;"> halt</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;"> |</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;"> force-close</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;"> |</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;"> test</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;">npm</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> run</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> dash:build</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> &amp;&amp; </span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;">npm</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> run</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> dash</span></span></code></pre></div><h2 id="local-dashboard" tabindex="-1">Local dashboard <a class="header-anchor" href="#local-dashboard" aria-label="Permalink to &quot;Local dashboard&quot;">​</a></h2><div class="language-bash vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre class="shiki shiki-themes github-light github-dark vp-code" tabindex="0"><code><span class="line"><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">DASH_TOKEN</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;">=</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;">pick-a-long-random-password</span></span>
+<span class="line"><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">DASH_PORT</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;">=</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;">8787</span></span></code></pre></div><div class="language-bash vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre class="shiki shiki-themes github-light github-dark vp-code" tabindex="0"><code><span class="line"><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;">npm</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> run</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> dash:build</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;">npm</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> run</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> dash</span></span></code></pre></div><p>Open <a href="http://localhost:8787" target="_blank" rel="noreferrer">http://localhost:8787</a> with that token.</p><h2 id="keys-going-live" tabindex="-1">Keys &amp; going live <a class="header-anchor" href="#keys-going-live" aria-label="Permalink to &quot;Keys &amp; going live&quot;">​</a></h2><p>Phantom burner → <code>WALLET_PRIVATE_KEY</code>, private RPC, Jupiter key.</p><div class="language-bash vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre class="shiki shiki-themes github-light github-dark vp-code" tabindex="0"><code><span class="line"><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;"># data/.env (seeded from .env on first run)</span></span>
+<span class="line"><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">FARMER_MODE</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;">=</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;">live</span></span>
+<span class="line"><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">RPC_URL</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;">=</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;">https://your-private-rpc</span></span>
+<span class="line"><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">JUPITER_API_KEY</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;">=</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;">…</span></span>
+<span class="line"><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">WALLET_PRIVATE_KEY</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;">=</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;">…</span></span></code></pre></div><div class="language-toml vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">toml</span><pre class="shiki shiki-themes github-light github-dark vp-code" tabindex="0"><code><span class="line"><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;"># data/config.toml</span></span>
+<span class="line"><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">[</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;">exec</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">]</span></span>
+<span class="line"><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">mode = </span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;">&quot;live&quot;</span></span></code></pre></div><div class="danger custom-block"><p class="custom-block-title">Burner only</p><p>One bot process per wallet/DB.</p></div><h2 id="pm2-on-a-vps" tabindex="-1">PM2 on a VPS <a class="header-anchor" href="#pm2-on-a-vps" aria-label="Permalink to &quot;PM2 on a VPS&quot;">​</a></h2><div class="language-bash vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre class="shiki shiki-themes github-light github-dark vp-code" tabindex="0"><code><span class="line"><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;">npm</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> install</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;"> -g</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> pm2</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;">pm2</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> start</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> deploy/ecosystem.config.cjs</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;"> --only</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> meteora-farmer</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;">pm2</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> start</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> deploy/ecosystem.config.cjs</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;"> --only</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> meteora-dash</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;">pm2</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> save</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;">pm2</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> startup</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;">pm2</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> logs</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> meteora-farmer</span></span></code></pre></div><p>Ecosystem sets <code>FARMER_CONFIG_PATH</code> / <code>FARMER_ENV_PATH</code> / <code>FARMER_DB_PATH</code> under <code>data/</code> so Settings never dirties git. <code>meteora-deploy</code> in the same ecosystem is the git pull watcher — start it only if you want auto-updates from <code>master</code>.</p><h2 id="auto-deploy" tabindex="-1">Auto-deploy <a class="header-anchor" href="#auto-deploy" aria-label="Permalink to &quot;Auto-deploy&quot;">​</a></h2><div class="language-bash vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang">bash</span><pre class="shiki shiki-themes github-light github-dark vp-code" tabindex="0"><code><span class="line"><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;">pm2</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> start</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> deploy/ecosystem.config.cjs</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;"> --only</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> meteora-deploy</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;">pm2</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;"> save</span></span></code></pre></div><div class="tip custom-block"><p class="custom-block-title">TIP</p><p>Don’t SCP a dirty tree and expect CURRENT — push + pull (or let the watcher do it).</p></div><h2 id="dashboard-from-outside" tabindex="-1">Dashboard from outside <a class="header-anchor" href="#dashboard-from-outside" aria-label="Permalink to &quot;Dashboard from outside&quot;">​</a></h2><ul><li><strong>Tailscale / ZeroTier</strong> — private access from your phone</li><li><strong>Cloudflare Tunnel</strong> — public HTTPS without opening ports</li><li><strong>Reverse proxy + HTTPS</strong> on a VPS with a domain</li></ul><div class="danger custom-block"><p class="custom-block-title">DANGER</p><p>Don’t expose <code>:8787</code> raw without a strong <code>DASH_TOKEN</code> (and HTTPS).</p></div><h2 id="troubleshooting" tabindex="-1">Troubleshooting <a class="header-anchor" href="#troubleshooting" aria-label="Permalink to &quot;Troubleshooting&quot;">​</a></h2><table tabindex="0"><thead><tr><th>Symptom</th><th>Fix</th></tr></thead><tbody><tr><td><code>better-sqlite3</code> build fail</td><td>VS Build Tools / <code>build-essential</code></td></tr><tr><td>Already running / lock</td><td>Only if sure: <code>npm run release</code></td></tr><tr><td>BEHIND on version pill</td><td>Start <code>meteora-deploy</code> or <code>git pull</code></td></tr><tr><td>Want the simple path</td><td><a href="./easy">Easy setup (Railway)</a></td></tr></tbody></table></div></div></main><footer class="VPDocFooter" data-v-39a288b8 data-v-e257564d><!--[--><!--]--><div class="edit-info" data-v-e257564d><div class="edit-link" data-v-e257564d><a class="VPLink link vp-external-link-icon no-icon edit-link-button" href="https://github.com/CryptoGnome/dlmmbot/edit/master/docs-site/docs/advanced.md" target="_blank" rel="noreferrer" data-v-e257564d><!--[--><span class="vpi-square-pen edit-link-icon" data-v-e257564d></span> Edit this page<!--]--></a></div><!----></div><nav class="prev-next" aria-labelledby="doc-footer-aria-label" data-v-e257564d><span class="visually-hidden" id="doc-footer-aria-label" data-v-e257564d>Pager</span><div class="pager" data-v-e257564d><a class="VPLink link pager-link prev" href="/setup/easy" data-v-e257564d><!--[--><span class="desc" data-v-e257564d>Previous page</span><span class="title" data-v-e257564d>Easy — Railway</span><!--]--></a></div><div class="pager" data-v-e257564d><a class="VPLink link vp-external-link-icon pager-link next" href="https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md" target="_blank" rel="noreferrer" data-v-e257564d><!--[--><span class="desc" data-v-e257564d>Next page</span><span class="title" data-v-e257564d>STRATEGY.md</span><!--]--></a></div></nav></footer><!--[--><!--]--></div></div></div><!--[--><!--]--></div></div><footer class="VPFooter has-sidebar" data-v-5d98c3a5 data-v-e315a0ad><div class="container" data-v-e315a0ad><p class="message" data-v-e315a0ad>Paper first. Burner only. Not financial advice.</p><p class="copyright" data-v-e315a0ad>DLMM Bot</p></div></footer><!--[--><!--]--></div></div>
+    <script>window.__VP_HASH_MAP__=JSON.parse("{\"advanced.md\":\"fwYXBvO_\",\"easy.md\":\"CeAx_RYY\",\"index.md\":\"DHxb_Exb\"}");window.__VP_SITE_DATA__=JSON.parse("{\"lang\":\"en-US\",\"dir\":\"ltr\",\"title\":\"DLMM Bot\",\"description\":\"Setup docs for DLMM Bot — Railway easy path or local / VPS advanced.\",\"base\":\"/setup/\",\"head\":[],\"router\":{\"prefetchLinks\":true},\"appearance\":\"force-dark\",\"themeConfig\":{\"siteTitle\":\"dlmmbot\",\"nav\":[{\"text\":\"Home\",\"link\":\"https://dlmmbot.com/\"},{\"text\":\"Easy (Railway)\",\"link\":\"/easy\"},{\"text\":\"Advanced\",\"link\":\"/advanced\"},{\"text\":\"Strategy\",\"link\":\"https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md\"},{\"text\":\"GitHub\",\"link\":\"https://github.com/CryptoGnome/dlmmbot\"}],\"sidebar\":[{\"text\":\"Setup\",\"items\":[{\"text\":\"Choose a path\",\"link\":\"/\"},{\"text\":\"Easy — Railway\",\"link\":\"/easy\"},{\"text\":\"Advanced — local / VPS\",\"link\":\"/advanced\"}]},{\"text\":\"Reference\",\"items\":[{\"text\":\"STRATEGY.md\",\"link\":\"https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md\"},{\"text\":\"DEPLOY.md\",\"link\":\"https://github.com/CryptoGnome/dlmmbot/blob/master/DEPLOY.md\"}]}],\"socialLinks\":[{\"icon\":\"github\",\"link\":\"https://github.com/CryptoGnome/dlmmbot\"}],\"footer\":{\"message\":\"Paper first. Burner only. Not financial advice.\",\"copyright\":\"DLMM Bot\"},\"search\":{\"provider\":\"local\"},\"outline\":{\"level\":[2,3],\"label\":\"On this page\"},\"editLink\":{\"pattern\":\"https://github.com/CryptoGnome/dlmmbot/edit/master/docs-site/docs/:path\",\"text\":\"Edit this page\"},\"lastUpdated\":{\"text\":\"Updated\"}},\"locales\":{},\"scrollOffset\":134,\"cleanUrls\":true}");</script>
+    
+  </body>
 </html>

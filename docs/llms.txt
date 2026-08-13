@@ -9,8 +9,8 @@ Railway signup: https://railway.com?referralCode=SCj9lN
 
 ## Docs
 
-- [Easy setup (Railway)](https://dlmmbot.com/setup/easy.html): one service, volume at `/app/data`, public domain, dashboard wizard
-- [Advanced setup](https://dlmmbot.com/setup/advanced.html): local / VPS / PM2
+- [Easy setup (Railway)](https://dlmmbot.com/setup/easy): one service, volume at `/app/data`, public domain, dashboard wizard
+- [Advanced setup](https://dlmmbot.com/setup/advanced): local / VPS / PM2
 - [Full text for agents](https://dlmmbot.com/llms-full.txt): longer product summary
 - [Strategy (repo)](https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md): exits and risk rules
 

@@ -1,3 +1,4 @@
 # Ensure /setup resolves to the docs hub
 /setup /setup/ 301
-
+/setup/easy.html /setup/easy 301
+/setup/advanced.html /setup/advanced 301

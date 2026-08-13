@@ -20,6 +20,8 @@
     "simulate-zap": "tsx deploy/simulate-zap.ts",
     "dash": "node deploy/dashboard-server.mjs",
     "dash:build": "npm --prefix dashboard ci && npm --prefix dashboard run build",
+    "docs:dev": "npm --prefix docs-site run dev",
+    "docs:build": "npm --prefix docs-site ci && npm --prefix docs-site run build",
     "railway:start": "node deploy/railway-start.mjs",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
