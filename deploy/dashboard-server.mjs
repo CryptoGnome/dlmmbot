@@ -369,6 +369,7 @@ const server = createServer(async (req, res) => {
 
 /** @type {Map<import('ws').WebSocket, { range: string }>} */
 const clients = new Map();
+let watchPushBusy = false;
 
 const wss = new WebSocketServer({ noServer: true });
 
@@ -431,6 +432,8 @@ wss.on("connection", (ws) => {
 
 setInterval(() => {
   if (clients.size === 0) return;
+  if (watchPushBusy) return;
+  watchPushBusy = true;
   getWatchSnapshot()
     .then((data) => {
       const payload = JSON.stringify({ type: "watch", data });
@@ -443,7 +446,8 @@ setInterval(() => {
       for (const ws of clients.keys()) {
         if (ws.readyState === 1) ws.send(payload);
       }
-    });
+    })
+    .finally(() => { watchPushBusy = false; });
 }, WATCH_MS);
 
 setInterval(() => {

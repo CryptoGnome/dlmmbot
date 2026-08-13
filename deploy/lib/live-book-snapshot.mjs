@@ -5,8 +5,11 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createRequire } from "node:module";
-import { execSync } from "node:child_process";
+import { exec, execSync } from "node:child_process";
+import { promisify } from "node:util";
 import { runtimePaths } from "./runtime-paths.mjs";
+
+const execAsync = promisify(exec);
 
 const require = createRequire(import.meta.url);
 
@@ -186,30 +189,55 @@ function tomlBool(toml, key) {
   return m ? m[1] === "true" : null;
 }
 
-/** Meteora DLMM portfolio totals — same source as app.meteora.ag/portfolio. */
+/** Meteora DLMM portfolio totals — same source as app.meteora.ag/portfolio.
+ * Stale-while-revalidate: never block the 3s WS tick on sync curl (was ~5s).
+ */
+let meteoraCache = { at: 0, wallet: null, data: null, pending: null };
+const METEORA_TTL_MS = Number(process.env.DASH_METEORA_TTL_MS || 120_000);
+
 function fetchMeteoraPortfolio(wallet) {
   if (!wallet) return null;
-  try {
-    const total = JSON.parse(execSync(
-      `curl -sS --max-time 4 "https://dlmm.datapi.meteora.ag/portfolio/total?user=${wallet}"`,
-      { encoding: "utf8" },
-    ));
-    const open = JSON.parse(execSync(
-      `curl -sS --max-time 4 "https://dlmm.datapi.meteora.ag/portfolio/open?user=${wallet}&page_size=20"`,
-      { encoding: "utf8" },
-    ));
-    return {
-      closed_n: total.totalClosedPositions ?? null,
-      closed_pnl_sol: total.totalPnlSol != null ? Math.round(Number(total.totalPnlSol) * 1e6) / 1e6 : null,
-      closed_pct: total.totalPnlSolPctChange != null ? Math.round(Number(total.totalPnlSolPctChange) * 1e4) / 1e4 : null,
-      open_n: open.totalPositions ?? open.total?.totalPositions ?? null,
-      open_bal_sol: open.total?.balancesSol != null ? Math.round(Number(open.total.balancesSol) * 1e6) / 1e6 : null,
-      open_pnl_sol: open.total?.pnlSol != null ? Math.round(Number(open.total.pnlSol) * 1e6) / 1e6 : null,
-      source: "dlmm.datapi.meteora.ag",
-    };
-  } catch {
-    return null;
+  const now = Date.now();
+  const hit = meteoraCache.wallet === wallet ? meteoraCache.data : null;
+  const fresh = hit && now - meteoraCache.at < METEORA_TTL_MS;
+  if (fresh) return hit;
+
+  if (!meteoraCache.pending || meteoraCache.wallet !== wallet) {
+    meteoraCache.wallet = wallet;
+    meteoraCache.pending = (async () => {
+      try {
+        const [totalRes, openRes] = await Promise.all([
+          execAsync(
+            `curl -sS --max-time 4 "https://dlmm.datapi.meteora.ag/portfolio/total?user=${wallet}"`,
+            { encoding: "utf8" },
+          ),
+          execAsync(
+            `curl -sS --max-time 4 "https://dlmm.datapi.meteora.ag/portfolio/open?user=${wallet}&page_size=20"`,
+            { encoding: "utf8" },
+          ),
+        ]);
+        const total = JSON.parse(totalRes.stdout);
+        const open = JSON.parse(openRes.stdout);
+        meteoraCache = {
+          at: Date.now(),
+          wallet,
+          data: {
+            closed_n: total.totalClosedPositions ?? null,
+            closed_pnl_sol: total.totalPnlSol != null ? Math.round(Number(total.totalPnlSol) * 1e6) / 1e6 : null,
+            closed_pct: total.totalPnlSolPctChange != null ? Math.round(Number(total.totalPnlSolPctChange) * 1e4) / 1e4 : null,
+            open_n: open.totalPositions ?? open.total?.totalPositions ?? null,
+            open_bal_sol: open.total?.balancesSol != null ? Math.round(Number(open.total.balancesSol) * 1e6) / 1e6 : null,
+            open_pnl_sol: open.total?.pnlSol != null ? Math.round(Number(open.total.pnlSol) * 1e6) / 1e6 : null,
+            source: "dlmm.datapi.meteora.ag",
+          },
+          pending: null,
+        };
+      } catch {
+        meteoraCache.pending = null;
+      }
+    })();
   }
+  return hit;
 }
 
 function openDb(root) {

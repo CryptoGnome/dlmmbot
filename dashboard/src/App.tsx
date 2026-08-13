@@ -147,7 +147,7 @@ export default function App() {
         {tab === "settings" && <SettingsPage />}
 
         <footer className="px-1 pb-2 text-[10px] text-dim">
-          Live watch · history on range · updated {updated ? clockTime(updated) : "—"} ET
+          Live watch · WS every ~3s · marks every poll (~15s) · updated {updated ? clockTime(updated) : "—"} ET
           {fromCache ? " · showing cache" : ""}
           {tab === "settings" ? " · config writes enabled" : ""}
         </footer>

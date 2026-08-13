@@ -80,6 +80,11 @@ export function OpenPositionCard({ p }: { p: OpenPos }) {
             <span title="When the bot opened this position">
               Opened {shortTime(p.opened)}
             </span>
+            {m?.age_s != null && (
+              <span title="Seconds since the bot last marked this position on-chain">
+                Marked <span className="tabular-nums text-fg">{Math.round(m.age_s)}s</span> ago
+              </span>
+            )}
             {m?.value_sol != null && (
               <span title="Estimated SOL you’d get back right now (LP + unclaimed fees)">
                 Worth now <span className="tabular-nums text-fg">{m.value_sol.toFixed(3)}</span>
