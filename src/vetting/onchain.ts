@@ -3,6 +3,7 @@ import { env } from "../config.js";
 
 // Fresh on-chain token checks — never cached, run at entry time.
 // Uses jsonParsed RPC so we don't hand-roll SPL layouts.
+// Holder concentration (AMM-stripped) lives in holders.ts; funding clusters in clusters.ts.
 
 export interface OnchainTokenFacts {
   mintAuthority: string | null;
@@ -11,7 +12,7 @@ export interface OnchainTokenFacts {
   token2022Extensions: string[];
   supplyRaw: number;
   decimals: number;
-  /** Top raw token accounts (largest 20) — includes pool vaults; caller must exclude labeled AMM accounts. */
+  /** Top raw token accounts (largest 20) — includes pool vaults; strip via holders.ts. */
   largestAccounts: Array<{ address: string; amountRaw: number; pctOfSupply: number }>;
 }
 
@@ -37,8 +38,7 @@ export async function fetchTokenFacts(mint: string): Promise<OnchainTokenFacts> 
     extensions?: Array<{ extension: string }>;
   };
 
-  // Best-effort: heavy call, rate-limited hard on the public RPC. Holder
-  // concentration falls back to RugCheck topHolders in vet.ts when empty.
+  // Best-effort: heavy call. Empty → holders.ts / RugCheck degrade.
   const largest = await c.getTokenLargestAccounts(mintPk).catch(() => ({ value: [] as never[] }));
   const supplyRaw = Number(parsed.supply);
 
@@ -56,12 +56,3 @@ export async function fetchTokenFacts(mint: string): Promise<OnchainTokenFacts> 
     })),
   };
 }
-
-// TODO(phase 2): resolve token-account -> owner and exclude labeled AMM
-// vaults/lockers/burn (our knownAccounts registry) before computing holder
-// concentration. Until then holder pcts from largestAccounts OVERCOUNT because
-// pool vaults look like whales — vet.ts compensates by cross-checking
-// RugCheck's topHolders (which already excludes known AMMs).
-
-// TODO(phase 2): sniper/funding-cluster detection via parsed early tx history
-// (clusters.ts) — wallets funded by one source + launch-slot buyers.
