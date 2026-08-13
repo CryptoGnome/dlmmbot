@@ -34,14 +34,14 @@ Repo `config.toml` is a template. Live knobs, `.env`, and SQLite live under giti
 (`FARMER_CONFIG_PATH`, `FARMER_ENV_PATH`, `FARMER_DB_PATH`). On Railway that is the volume at
 `/app/data`. Settings writes never dirty the git checkout — DIRTY on the dash means real code drift.
 
-Settings also exposes encrypted wallet create / import / unlock later. Set WALLET_PASSPHRASE on Railway to unlock on boot before the farmer starts.
+Settings also exposes encrypted wallet create / import / unlock on the Wallet & secrets tab. Set WALLET_PASSPHRASE on Railway to unlock on boot before the farmer starts.
 
 ## Dashboard features
 
 - Live watch over WebSocket: positions, heartbeat, cluster brake, build/sync pill
 - Activity feed with signed SOL coloring (inflows green, outflows red)
 - Toasts for new entries/exits/fails/cluster/events and link/heartbeat edges (max two visible; pressure shortens TTL)
-- Settings: sizing, risk, pool filters, secrets vault, encrypted wallet
+- Settings: Bot settings (sizing, risk, filters) and Wallet & secrets (vault, encrypted wallet)
 - Research page: public X credits (not partners/signals)
 
 ## Safety model

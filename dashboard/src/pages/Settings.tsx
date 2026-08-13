@@ -436,6 +436,7 @@ export function SettingsPage() {
   const [walletSecret, setWalletSecret] = useState("");
   const [walletBusy, setWalletBusy] = useState(false);
   const [secretOnce, setSecretOnce] = useState<string | null>(null);
+  const [pageTab, setPageTab] = useState<"bot" | "wallet">("bot");
 
   const load = async () => {
     setLoading(true);
@@ -656,23 +657,29 @@ export function SettingsPage() {
     );
   };
 
+  const walletBadgeTone = setup?.wallet.unlocked ? "ok" : setup?.wallet.encrypted ? "warn" : "fg";
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display flex items-center gap-2 text-lg font-semibold tracking-wide">
-            <Icon icon={SettingsIcon} size={18} className="text-accent" />
+            <Icon icon={pageTab === "bot" ? SettingsIcon : Wallet} size={18} className="text-accent" />
             Settings
           </h1>
           <p className="text-[11px] text-dim">
-            Sliders & percentages — advanced knobs stay in config.toml.
+            {pageTab === "bot"
+              ? "Bot knobs — advanced keys stay in config.toml."
+              : "Encrypted wallet and secrets vault — kept off the bot knobs page."}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" className="btn-primary inline-flex items-center gap-1.5" disabled={!dirtyCount || saving} onClick={() => void save()}>
-            <Icon icon={Save} size={12} />
-            {saving ? "Saving…" : dirtyCount ? `Save ${dirtyCount}` : "Saved"}
-          </button>
+          {pageTab === "bot" && (
+            <button type="button" className="btn-primary inline-flex items-center gap-1.5" disabled={!dirtyCount || saving} onClick={() => void save()}>
+              <Icon icon={Save} size={12} />
+              {saving ? "Saving…" : dirtyCount ? `Save ${dirtyCount}` : "Saved"}
+            </button>
+          )}
           <button
             type="button"
             className="inline-flex items-center gap-1.5 border border-grid px-3 py-1.5 text-[11px] tracking-wider text-muted uppercase hover:text-hover"
@@ -685,11 +692,38 @@ export function SettingsPage() {
         </div>
       </div>
 
+      <div className="flex gap-1 border border-grid p-0.5">
+        <button
+          type="button"
+          className={`inline-flex flex-1 items-center justify-center gap-1.5 px-3 py-2 text-[11px] tracking-wider uppercase ${
+            pageTab === "bot" ? "bg-ok/15 text-ok" : "text-dim hover:text-muted"
+          }`}
+          onClick={() => setPageTab("bot")}
+        >
+          <Icon icon={SettingsIcon} size={12} />
+          Bot settings
+          {dirtyCount > 0 && <Badge tone="accent">{dirtyCount}</Badge>}
+        </button>
+        <button
+          type="button"
+          className={`inline-flex flex-1 items-center justify-center gap-1.5 px-3 py-2 text-[11px] tracking-wider uppercase ${
+            pageTab === "wallet" ? "bg-ok/15 text-ok" : "text-dim hover:text-muted"
+          }`}
+          onClick={() => setPageTab("wallet")}
+        >
+          <Icon icon={Wallet} size={12} />
+          Wallet & secrets
+          <Badge tone={walletBadgeTone}>
+            {setup?.wallet.unlocked ? "unlocked" : setup?.wallet.encrypted ? "locked" : "none"}
+          </Badge>
+        </button>
+      </div>
+
       {err && <div className="border border-danger/60 bg-panel px-3 py-2 text-danger text-[11px]">{err}</div>}
       {msg && <div className="border border-ok/60 bg-panel px-3 py-2 text-ok text-[11px]">{msg}</div>}
       {loading && <div className="text-[12px] text-dim">Loading…</div>}
 
-      {!loading && GROUPS.map((g) => (
+      {!loading && pageTab === "bot" && GROUPS.map((g) => (
         <Panel key={g.title} title={g.title} right={<Badge tone="accent">{g.fields.filter((f) => f.path in (config ?? {})).length}</Badge>}>
           {g.blurb && <p className="mb-3 text-[11px] text-dim">{g.blurb}</p>}
           <div className="flex flex-wrap gap-x-8 gap-y-4">
@@ -698,6 +732,8 @@ export function SettingsPage() {
         </Panel>
       ))}
 
+      {!loading && pageTab === "wallet" && (
+      <>
       <Panel title="Runtime" right={<Badge tone="ok">safe</Badge>}>
         <p className="mb-2 text-[11px] text-dim">
           Non-secret process status only. RPC, wallet, and keys never appear here.
@@ -730,7 +766,7 @@ export function SettingsPage() {
       <Panel
         title="Encrypted wallet"
         right={
-          <Badge tone={setup?.wallet.unlocked ? "ok" : setup?.wallet.encrypted ? "warn" : "fg"}>
+          <Badge tone={walletBadgeTone}>
             {setup?.wallet.unlocked ? "unlocked" : setup?.wallet.encrypted ? "locked" : "none"}
           </Badge>
         }
@@ -961,6 +997,8 @@ export function SettingsPage() {
           </div>
         )}
       </Panel>
+      </>
+      )}
     </div>
   );
 }
