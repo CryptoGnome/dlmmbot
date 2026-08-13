@@ -23,9 +23,9 @@ import type { Position } from "../types.js";
 import { vetToken } from "../vetting/vet.js";
 
 // STRATEGY.md §4 — the P0–P5 state machine, strict priority order.
-// Live: P0 (TVL/price/rugcheck + GMGN holder-watch), P1–P5, escape hatch,
-// follow mode, residual sweep, heartbeat. Still deferred: Zap SDK path,
-// funding-cluster snipers, second tranche, compound/hybrid fee dest.
+// Live: P0 (TVL/price/rugcheck + GMGN holder-watch for dump/whale), P1–P5,
+// escape hatch, follow mode, residual sweep, heartbeat. Still deferred: Zap SDK,
+// second tranche, compound/hybrid fee dest.
 
 const HALT_FILE = resolve(process.cwd(), "HALT");
 const LOCK_FILE = resolve(process.cwd(), "data", "farmer.lock");
@@ -346,8 +346,7 @@ export async function managePositions(exec: Executor): Promise<void> {
       const ageH = (now() - pos.entryTs) / 3600;
       const valueFrac = pos.entrySol > 0 ? mark.valueSol / pos.entrySol : 1;
 
-      // --- P0 SAFETY: pool death, price crash, TVL drain, rugcheck flip ---
-      // TODO(phase 2, live): wallet-dump / new-whale via tx stream.
+      // --- P0 SAFETY: pool death, price crash, TVL drain, rugcheck flip, holder watch ---
       const crashed = mark.price > 0 && pos.entryPrice > 0 &&
         ((mark.price - pos.entryPrice) / pos.entryPrice) * 100 <= m.safety_price_crash_pct;
       const tvlDrained = mark.tvlUsd > 0 && tvlDropTriggered(pos.id, mark.tvlUsd);
