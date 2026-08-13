@@ -883,11 +883,17 @@ export class LiveExecutor implements Executor {
         .map((r) => r.token_mint)
     );
     const recovered: Array<{ mint: string; symbol: string; soldSol: number; positionId: number | null }> = [];
-    const closable: Array<{ pubkey: PublicKey; programId: PublicKey }> = [];
+    const closable: Array<{ pubkey: PublicKey; programId: PublicKey; mint: string; symbol: string }> = [];
     const TOKEN_PROGRAMS = [
       new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
       new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"),
     ];
+    const symFor = (mint: string) => {
+      const owner = db.prepare(
+        "SELECT id, symbol FROM positions WHERE token_mint = ? ORDER BY id DESC LIMIT 1"
+      ).get(mint) as { id: number; symbol: string } | undefined;
+      return { owner, symbol: owner?.symbol ?? mint.slice(0, 8) };
+    };
     for (const programId of TOKEN_PROGRAMS) {
       const accs = await this.connection.getParsedTokenAccountsByOwner(this.wallet.publicKey, { programId });
       for (const acc of accs.value) {
@@ -899,16 +905,16 @@ export class LiveExecutor implements Executor {
         // entry price == exit price) while a flat round trip reusing an existing
         // account measured -0.00005 (BUTTHOLE pos#20). The rent WAS the loss.
         if (info.tokenAmount.amount === "0") {
-          if (this.mintIsIdle(info.mint)) closable.push({ pubkey: acc.pubkey, programId });
+          if (this.mintIsIdle(info.mint)) {
+            const { symbol } = symFor(info.mint);
+            closable.push({ pubkey: acc.pubkey, programId, mint: info.mint, symbol });
+          }
           continue;
         }
         const raw = BigInt(info.tokenAmount.amount);
         const quoted = await quoteToSolLamports(info.mint, raw);
         if (quoted === null || quoted < minSol * 1e9) continue;
-        const owner = db.prepare(
-          "SELECT id, symbol FROM positions WHERE token_mint = ? ORDER BY id DESC LIMIT 1"
-        ).get(info.mint) as { id: number; symbol: string } | undefined;
-        const symbol = owner?.symbol ?? info.mint.slice(0, 8);
+        const { owner, symbol } = symFor(info.mint);
         try {
           const res = await this.tokenToSol(info.mint, raw, config().exec.exit_slippage_bps);
           if (!res) continue;
@@ -942,7 +948,9 @@ export class LiveExecutor implements Executor {
   }
 
   /** Reclaim rent from emptied token accounts. Best-effort: never throws. */
-  private async closeEmptyAccounts(accounts: Array<{ pubkey: PublicKey; programId: PublicKey }>): Promise<void> {
+  private async closeEmptyAccounts(
+    accounts: Array<{ pubkey: PublicKey; programId: PublicKey; mint: string; symbol: string }>,
+  ): Promise<void> {
     const BATCH = 12; // close ix are tiny, but leave room for the priority-fee ix
     for (let i = 0; i < accounts.length; i += BATCH) {
       const batch = accounts.slice(i, i + BATCH);
@@ -952,10 +960,15 @@ export class LiveExecutor implements Executor {
       try {
         const sig = await this.send(tx);
         const delta = await this.walletDelta([sig]);
+        const tokens = batch.map((a) => ({ mint: a.mint, symbol: a.symbol, account: a.pubkey.toBase58() }));
         getDb().prepare(
           "INSERT INTO events (position_id, ts, type, tx_sig, sol_delta, detail_json) VALUES (NULL, ?, 'rent_reclaim', ?, ?, ?)"
-        ).run(now(), sig, delta ?? 0, JSON.stringify({ accounts: batch.map((a) => a.pubkey.toBase58()) }));
-        console.log(`[live] 🧹 reclaimed rent from ${batch.length} empty token account(s) — +${(delta ?? 0).toFixed(5)} SOL (tx ${sig})`);
+        ).run(now(), sig, delta ?? 0, JSON.stringify({
+          accounts: tokens.map((t) => t.account),
+          tokens,
+        }));
+        const syms = [...new Set(tokens.map((t) => t.symbol))].join(",");
+        console.log(`[live] 🧹 reclaimed rent ${syms} (${batch.length} acct) — +${(delta ?? 0).toFixed(5)} SOL (tx ${sig})`);
       } catch (e) {
         console.error("[live] rent reclaim failed:", (e as Error).message.split("\n")[0]);
       }

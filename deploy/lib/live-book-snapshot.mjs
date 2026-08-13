@@ -600,7 +600,7 @@ export function buildLiveBookSnapshot(root) {
     }
 
     for (const r of db.prepare(
-      `SELECT e.ts, datetime(e.ts,'unixepoch') at, e.type, e.position_id,
+      `SELECT e.ts, datetime(e.ts,'unixepoch') at, e.type, e.position_id, e.detail_json,
               ROUND(e.sol_delta,4) sol_delta, p.symbol, p.token_mint AS mint, p.pool
        FROM events e
        LEFT JOIN positions p ON p.id = e.position_id
@@ -608,12 +608,36 @@ export function buildLiveBookSnapshot(root) {
          AND e.type IN ('claim','profit_lock','rebalance','rebalance_partial','rent_reclaim','force_close')
        ORDER BY e.ts DESC LIMIT 30`
     ).all(activitySince)) {
+      let symbol = r.symbol || null;
+      let mint = r.mint || null;
+      let detailExtra = null;
+      try {
+        const j = r.detail_json ? JSON.parse(r.detail_json) : null;
+        const tokens = Array.isArray(j?.tokens) ? j.tokens : null;
+        if (tokens?.length) {
+          const syms = [...new Set(tokens.map((t) => t?.symbol).filter(Boolean))];
+          const mints = [...new Set(tokens.map((t) => t?.mint).filter(Boolean))];
+          if (!symbol && syms.length) symbol = syms.join("+");
+          if (!mint && mints.length === 1) mint = mints[0];
+          if (tokens.length > 1) detailExtra = `${tokens.length} accounts`;
+        } else if (!symbol && (j?.symbol || j?.mint)) {
+          symbol = j.symbol || String(j.mint).slice(0, 8);
+          mint = mint || j.mint || null;
+        }
+      } catch { /* */ }
+      if (!symbol && mint) {
+        const tok = db.prepare("SELECT symbol FROM tokens WHERE mint = ?").get(mint);
+        symbol = tok?.symbol || mint.slice(0, 8);
+      }
       activity.push({
         ts: r.ts, at: r.at, kind: "event",
-        symbol: r.symbol || (r.type === "rent_reclaim" ? "wallet" : "?"),
-        mint: r.mint || null, pool: r.pool || null,
+        symbol: symbol || "?",
+        mint, pool: r.pool || null,
         score: null, size: r.sol_delta, sleeve: null, gate: r.type, pnl: r.sol_delta,
-        detail: r.position_id != null ? `#${r.position_id}` : null,
+        detail: [
+          r.position_id != null ? `#${r.position_id}` : null,
+          detailExtra,
+        ].filter(Boolean).join(" · ") || null,
       });
     }
 

@@ -53,8 +53,11 @@ export function ActivityFeedList({
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                {it.symbol && it.symbol !== "?" ? (
-                  <TokenSymbol symbol={it.symbol} mint={it.mint} />
+                {(it.symbol && it.symbol !== "?") || it.mint ? (
+                  <TokenSymbol
+                    symbol={it.symbol && it.symbol !== "?" ? it.symbol : (it.mint?.slice(0, 6) ?? "?")}
+                    mint={it.mint}
+                  />
                 ) : null}
                 <span className={cn(dense ? "text-[12px]" : "text-[13px]", tone === "text-muted" ? "text-fg" : tone)}>
                   {it.label}

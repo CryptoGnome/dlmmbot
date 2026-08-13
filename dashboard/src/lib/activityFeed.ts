@@ -23,10 +23,9 @@ function toneFor(kind: FeedKind, pnl?: number | null): FeedItem["tone"] {
 }
 
 function labelFor(e: ActivityEvent): string {
-  const sym = e.symbol || "?";
   switch (e.kind) {
     case "entry":
-      return e.symbol && e.symbol !== "?" ? "entered" : `entered ${sym}`;
+      return "entered";
     case "exit":
       return `closed · ${exitLabel(e.gate)}`;
     case "fail":
@@ -34,11 +33,11 @@ function labelFor(e: ActivityEvent): string {
     case "skip":
       return "skipped";
     case "event":
-      return (e.gate ?? "event").replace(/_/g, " ");
+      return gateLabel(e.gate ?? "event");
     case "cluster":
       return `cluster · ${exitLabel(e.gate)}`;
     default:
-      return sym;
+      return e.symbol && e.symbol !== "?" ? e.symbol : "?";
   }
 }
 
