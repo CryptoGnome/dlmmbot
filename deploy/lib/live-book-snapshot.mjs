@@ -119,7 +119,7 @@ function buildGitInfo(root) {
   }
 
   let version = "0.0.0";
-  let repoUrl = "https://github.com/CryptoGnome/meteora-farmer";
+  let repoUrl = "https://github.com/CryptoGnome/dlmmbot";
   try {
     const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
     version = pkg.version || version;

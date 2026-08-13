@@ -1,6 +1,6 @@
-# meteora-farmer
+# DLMM Bot
 
-Automated **Meteora DLMM** liquidity bot for Solana.
+Automated **Meteora DLMM** liquidity bot for Solana (`dlmmbot.com`).
 
 Scans hot SOL-quoted meme pools, vets the token, opens a **one-sided SOL** LP below price, then exits by fixed rules. PnL lives in SQLite. **Paper first** — live is double-locked (config + env).
 

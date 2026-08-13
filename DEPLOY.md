@@ -3,8 +3,8 @@
 ## One-time setup
 
 ```bash
-git clone https://github.com/CryptoGnome/meteora-farmer.git
-cd meteora-farmer
+git clone https://github.com/CryptoGnome/dlmmbot.git
+cd dlmmbot
 npm install
 cp .env.example .env        # then fill in: RPC_URL, JUPITER_API_KEY, GMGN_API_KEY
 npm i -g pm2

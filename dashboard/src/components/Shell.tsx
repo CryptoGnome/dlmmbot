@@ -50,7 +50,7 @@ function BuildPill({ build }: { build: LiveWatch["build"] }) {
   const href = build.commits_url
     ?? (build.repo_url
       ? `${build.repo_url.replace(/\/$/, "")}/commits/${encodeURIComponent(branch)}`
-      : "https://github.com/CryptoGnome/meteora-farmer/commits/master");
+      : "https://github.com/CryptoGnome/dlmmbot/commits/master");
   return (
     <a
       href={href}
