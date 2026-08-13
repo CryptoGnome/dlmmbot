@@ -14,12 +14,15 @@ export interface LiveWatch {
     origin?: string | null;
     /** current | behind | ahead | diverged | unknown */
     sync?: string;
+    behind_count?: number;
     repo_url?: string | null;
     release_url?: string | null;
     commits_url?: string | null;
     /** Bot process `git describe` from heartbeat (may differ from disk HEAD). */
     running?: string | null;
     fetched_at?: number | null;
+    recent?: Array<{ sha: string | null; subject: string; at: string | null; ts: number | null }>;
+    pending?: Array<{ sha: string | null; subject: string; at: string | null; ts: number | null }>;
     fix_sha: string | null;
     fix_ts: number;
     fix_at: string;

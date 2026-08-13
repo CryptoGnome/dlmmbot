@@ -15,6 +15,7 @@ import {
   OctagonX,
   PauseCircle,
   RefreshCw,
+  ScrollText,
   Settings,
   ShieldAlert,
   SkipForward,
@@ -35,6 +36,7 @@ export const tabIcon: Record<TabId, LucideIcon> = {
   analytics: LineChart,
   activity: Activity,
   research: Microscope,
+  changes: ScrollText,
   settings: Settings,
 };
 

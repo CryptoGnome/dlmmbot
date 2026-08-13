@@ -17,7 +17,8 @@ Railway signup: https://railway.com?referralCode=SCj9lN
 ## Product facts
 
 - Scans SOL-quoted Meteora DLMM pools, vets tokens, opens one-sided SOL LP, exits by fixed rules
-- Dashboard: overview, book, analytics, activity feed, research credits, settings
+- Dashboard: overview, book, analytics, activity feed, changes/changelog, research credits, settings
+- Update toasts when GitHub is ahead or the bot restarts on a new build; BEHIND build pill pulses
 - First-run setup wizard: RPC, encrypted wallet (create or Phantom import), paper/live mode
 - Live requires both `FARMER_MODE=live` and `[exec].mode = "live"`
 - Runtime config/env/db live under gitignored `data/` (repo `config.toml` is a template)

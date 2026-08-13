@@ -133,6 +133,29 @@ function buildGitInfo(root) {
   const releaseUrl = `${repoUrl}/releases`;
   const commitsUrl = `${repoUrl}/commits/${branch}`;
 
+  const parseLog = (raw) => {
+    if (!raw) return [];
+    return raw.split("\n").filter(Boolean).map((line) => {
+      const [sha, ts, ...rest] = line.split("\t");
+      const subject = rest.join("\t").trim();
+      const n = Number(ts);
+      return {
+        sha: sha || null,
+        subject: subject || "(no subject)",
+        at: Number.isFinite(n) ? new Date(n * 1000).toISOString() : null,
+        ts: Number.isFinite(n) ? n : null,
+      };
+    }).filter((c) => c.sha);
+  };
+
+  const recent = parseLog(git(root, "git log -20 --pretty=format:%h%x09%ct%x09%s"));
+  let pending = [];
+  let behindCount = 0;
+  if (sync === "behind" && originFull) {
+    behindCount = Number(git(root, `git rev-list --count HEAD..${originFull}`)) || 0;
+    pending = parseLog(git(root, `git log HEAD..${originFull} -20 --pretty=format:%h%x09%ct%x09%s`));
+  }
+
   return {
     version,
     branch,
@@ -142,11 +165,14 @@ function buildGitInfo(root) {
     dirty,
     origin,
     sync,
+    behind_count: behindCount,
     repo_url: repoUrl,
     release_url: releaseUrl,
     commits_url: commitsUrl,
     fetched_at: lastOriginFetchAt ? Math.floor(lastOriginFetchAt / 1000) : null,
     fetch_ok: lastOriginFetchOk,
+    recent,
+    pending,
   };
 }
 
@@ -852,11 +878,14 @@ export function buildLiveBookSnapshot(root) {
         dirty: gitInfo.dirty,
         origin: gitInfo.origin,
         sync: gitInfo.sync,
+        behind_count: gitInfo.behind_count,
         repo_url: gitInfo.repo_url,
         release_url: gitInfo.release_url,
         commits_url: gitInfo.commits_url,
         running: hb?.build ?? null,
         fetched_at: gitInfo.fetched_at,
+        recent: gitInfo.recent,
+        pending: gitInfo.pending,
         fix_sha: fixSha,
         fix_ts: fixTs,
         fix_at: new Date(fixTs * 1000).toISOString(),

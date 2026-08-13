@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { BookText, CircleDot, ExternalLink } from "lucide-react";
 import { GithubMark, Icon, PauseCircle, tabIcon, Unplug, Zap } from "@/lib/icons";
 
-export type TabId = "overview" | "book" | "analytics" | "activity" | "research" | "settings";
+export type TabId = "overview" | "book" | "analytics" | "activity" | "research" | "changes" | "settings";
 
 const DOCS_URL = "https://dlmmbot.com/setup/";
 
@@ -14,6 +14,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "analytics", label: "Analytics" },
   { id: "activity", label: "Activity" },
   { id: "research", label: "Research" },
+  { id: "changes", label: "Changes" },
   { id: "settings", label: "Settings" },
 ];
 
@@ -22,7 +23,10 @@ export function parseTab(hash: string): TabId {
   return TABS.some((t) => t.id === id) ? (id as TabId) : "overview";
 }
 
-function BuildPill({ build }: { build: LiveWatch["build"] }) {
+function BuildPill({ build, onOpenChanges }: {
+  build: LiveWatch["build"];
+  onOpenChanges?: () => void;
+}) {
   const sync = build.sync ?? "unknown";
   const syncTone =
     sync === "current" && !build.dirty ? "ok"
@@ -40,8 +44,9 @@ function BuildPill({ build }: { build: LiveWatch["build"] }) {
     build.running && build.running !== build.describe ? `running ${build.running}` : null,
     build.origin ? `github ${build.origin}` : "github ?",
     sync,
+    build.behind_count ? `${build.behind_count} pending` : null,
     build.dirty ? "tracked working tree dirty" : null,
-    "click → GitHub commits",
+    sync === "behind" ? "click → Changes" : "click → GitHub commits",
   ].filter(Boolean).join(" · ");
   const cls =
     syncTone === "ok" ? "border-ok/70 text-ok"
@@ -53,17 +58,42 @@ function BuildPill({ build }: { build: LiveWatch["build"] }) {
     ?? (build.repo_url
       ? `${build.repo_url.replace(/\/$/, "")}/commits/${encodeURIComponent(branch)}`
       : "https://github.com/CryptoGnome/dlmmbot/commits/master");
+  const pulse = sync === "behind" || (build.running != null && build.describe != null
+    && build.running !== build.describe);
+
+  const body = (
+    <>
+      <GithubMark size={11} />
+      v{build.version ?? "?"} {build.describe ?? build.head ?? "—"} · {syncLabel}
+      {sync === "behind" && build.origin ? ` → ${build.origin}` : ""}
+      {sync === "behind" && build.behind_count ? ` (+${build.behind_count})` : ""}
+    </>
+  );
+
+  const className = `inline-flex cursor-pointer items-center gap-1 border bg-transparent px-1.5 py-0.5 text-[10px] tracking-widest no-underline hover:border-hover hover:text-hover ${cls}${pulse ? " build-pill-pulse" : ""}`;
+
+  if (sync === "behind" && onOpenChanges) {
+    return (
+      <button
+        type="button"
+        title={tip}
+        className={className}
+        onClick={onOpenChanges}
+      >
+        {body}
+      </button>
+    );
+  }
+
   return (
     <a
       href={href}
       target="_blank"
       rel="noreferrer"
       title={tip}
-      className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10px] tracking-widest no-underline hover:border-hover hover:text-hover ${cls}`}
+      className={className}
     >
-      <GithubMark size={11} />
-      v{build.version ?? "?"} {build.describe ?? build.head ?? "—"} · {syncLabel}
-      {sync === "behind" && build.origin ? ` → ${build.origin}` : ""}
+      {body}
     </a>
   );
 }
@@ -105,16 +135,20 @@ export function Shell({
         <nav className="min-h-0 flex-1 overflow-y-auto py-2">
           {TABS.map((t) => {
             const TabIcon = tabIcon[t.id];
+            const pending = t.id === "changes" && watch?.build?.sync === "behind";
             return (
               <button
                 key={t.id}
                 type="button"
-                className="shell-nav-btn"
+                className={`shell-nav-btn${pending ? " build-pill-pulse" : ""}`}
                 data-active={tab === t.id}
                 onClick={() => onTab(t.id)}
               >
                 <Icon icon={TabIcon} size={14} className="opacity-80" />
                 {t.label}
+                {pending && watch?.build?.behind_count ? (
+                  <span className="ml-auto text-[9px] text-warn">+{watch.build.behind_count}</span>
+                ) : null}
               </button>
             );
           })}
@@ -157,7 +191,9 @@ export function Shell({
                 {watch.cluster.tripped ? `BRAKE ${watch.cluster.remainingMin}m` : "BRAKE OFF"}
               </span>
             )}
-            {watch?.build && <BuildPill build={watch.build} />}
+            {watch?.build && (
+              <BuildPill build={watch.build} onOpenChanges={() => onTab("changes")} />
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted">
             <span>{watch?.heartbeat?.mode ?? "—"}</span>

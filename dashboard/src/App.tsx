@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { cachedHistory, cachedWatch, connectLive, fetchSetupStatus } from "@/lib/api";
 import type { HistorySnap, LiveWatch, RangeKey } from "@/lib/types";
 import { clockTime, tokenFromUrl } from "@/lib/utils";
-import { useActivityToasts } from "@/lib/useActivityToasts";
+import { useActivityToasts, useBuildToasts } from "@/lib/useActivityToasts";
 import { RangeTabs } from "@/components/ui";
 import { Shell, parseTab, type TabId } from "@/components/Shell";
 import { SetupWizard } from "@/components/SetupWizard";
@@ -12,6 +12,7 @@ import { BookPage } from "@/pages/Book";
 import { AnalyticsPage } from "@/pages/Analytics";
 import { ActivityPage } from "@/pages/Activity";
 import { ResearchPage } from "@/pages/Research";
+import { ChangelogPage } from "@/pages/Changelog";
 import { SettingsPage } from "@/pages/Settings";
 
 export default function App() {
@@ -110,6 +111,7 @@ export default function App() {
   const stale = watch?.heartbeat_age_s != null && watch.heartbeat_age_s > 60;
   const showRange = tab === "overview" || tab === "book" || tab === "analytics";
   useActivityToasts(watch, live, stale);
+  useBuildToasts(watch);
 
   return (
     <>
@@ -141,6 +143,7 @@ export default function App() {
         {tab === "analytics" && <AnalyticsPage watch={watch} hist={hist} />}
         {tab === "activity" && <ActivityPage watch={watch} />}
         {tab === "research" && <ResearchPage />}
+        {tab === "changes" && <ChangelogPage watch={watch} />}
         {tab === "settings" && <SettingsPage />}
 
         <footer className="px-1 pb-2 text-[10px] text-dim">

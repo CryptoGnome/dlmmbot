@@ -140,3 +140,75 @@ export function useActivityToasts(
     liveWas.current = live;
   }, [live]);
 }
+
+/** Notify when GitHub is ahead, disk deploys, or the farmer process restarts on a new build. */
+export function useBuildToasts(watch: LiveWatch | null) {
+  const primed = useRef(false);
+  const syncWas = useRef<string | null>(null);
+  const originWas = useRef<string | null>(null);
+  const headWas = useRef<string | null>(null);
+  const runningWas = useRef<string | null>(null);
+
+  useEffect(() => {
+    const b = watch?.build;
+    if (!b) return;
+
+    const sync = b.sync ?? "unknown";
+    const origin = b.origin ?? null;
+    const head = b.head ?? b.describe ?? null;
+    const running = b.running ?? null;
+
+    if (!primed.current) {
+      primed.current = true;
+      syncWas.current = sync;
+      originWas.current = origin;
+      headWas.current = head;
+      runningWas.current = running;
+      return;
+    }
+
+    const becameBehind = sync === "behind" && syncWas.current !== "behind";
+    const moreBehind = sync === "behind" && origin && origin !== originWas.current;
+    if (becameBehind || moreBehind) {
+      const n = b.behind_count && b.behind_count > 0 ? b.behind_count : null;
+      const tip = b.pending?.[0]?.subject;
+      toast({
+        id: `update-avail-${origin ?? "x"}`,
+        title: n && n > 1 ? `${n} updates available` : "Update available",
+        detail: tip
+          ? `${origin ?? "origin"} · ${tip}`
+          : `GitHub ${origin ?? "ahead"} — see Changes`,
+        tone: "warn",
+        kind: "event",
+        ttlMs: 7_000,
+      });
+    }
+
+    if (head && headWas.current && head !== headWas.current) {
+      toast({
+        id: `deploy-${head}`,
+        title: "Deploy landed on host",
+        detail: b.message ? `${head} · ${b.message}` : head,
+        tone: "ok",
+        kind: "event",
+        ttlMs: 6_000,
+      });
+    }
+
+    if (running && runningWas.current && running !== runningWas.current) {
+      toast({
+        id: `bot-build-${running}`,
+        title: "Bot updated",
+        detail: `Now running ${running}`,
+        tone: "ok",
+        kind: "event",
+        ttlMs: 6_000,
+      });
+    }
+
+    syncWas.current = sync;
+    originWas.current = origin;
+    headWas.current = head;
+    runningWas.current = running;
+  }, [watch?.build]);
+}
