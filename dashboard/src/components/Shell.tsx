@@ -96,13 +96,13 @@ export function Shell({
   rangeTabs?: ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen bg-bg text-fg">
-      <aside className="hidden w-44 shrink-0 border-r border-grid md:flex md:flex-col">
-        <div className="border-b border-grid px-3 py-4">
+    <div className="flex h-screen overflow-hidden bg-bg text-fg">
+      <aside className="hidden h-full w-44 shrink-0 border-r border-grid md:flex md:flex-col">
+        <div className="shrink-0 border-b border-grid px-3 py-4">
           <div className="font-display text-sm font-semibold tracking-[0.14em]">DLMM</div>
           <div className="mt-0.5 text-[10px] tracking-widest text-dim">BOT OPS</div>
         </div>
-        <nav className="flex flex-1 flex-col py-2">
+        <nav className="min-h-0 flex-1 overflow-y-auto py-2">
           {TABS.map((t) => {
             const TabIcon = tabIcon[t.id];
             return (
@@ -118,12 +118,14 @@ export function Shell({
               </button>
             );
           })}
-          <DocsLink className="shell-nav-btn mt-auto no-underline" />
         </nav>
+        <div className="shrink-0 border-t border-grid py-2">
+          <DocsLink className="shell-nav-btn no-underline" />
+        </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-grid px-3 py-2.5 md:px-4">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-grid px-3 py-2.5 md:px-4">
           <div className="flex flex-wrap items-center gap-2">
             <span
               className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10px] tracking-widest ${
@@ -167,7 +169,7 @@ export function Shell({
           </div>
         </header>
 
-        <div className="flex gap-1 overflow-x-auto border-b border-grid px-2 py-1.5 md:hidden no-scrollbar">
+        <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-grid px-2 py-1.5 md:hidden no-scrollbar">
           {TABS.map((t) => {
             const TabIcon = tabIcon[t.id];
             return (
@@ -197,7 +199,7 @@ export function Shell({
           </a>
         </div>
 
-        <main className="flex-1 space-y-3 overflow-auto px-3 py-3 md:px-4 md:py-4">
+        <main className="min-h-0 flex-1 space-y-3 overflow-auto px-3 py-3 md:px-4 md:py-4">
           {children}
         </main>
       </div>
