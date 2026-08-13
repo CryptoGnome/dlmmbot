@@ -1,8 +1,8 @@
 # Meteora Farmer — Strategy & System Specification
 
-Status: DRAFT for review. Every number in `[brackets]` is a config default, tunable in `config.toml` without code changes.
+Status: **Live spec** (updated 2026-08-13). Bracketed `[defaults]` are the original design reference; **`config.toml` is what runs on gn0meserver** — many values were deliberately changed after live book review (see §11).
 
-Philosophy (from the Tux/Gmet playbook): **capital preservation first**. One-sided SOL bid-ask below price as the default entry shape, mechanical exits instead of conviction-holding, PnL denominated in SOL. The bot has no whale chat to consult, so wherever the humans "ask the group," the bot must be strictly more defensive.
+Philosophy (from the Tux/Gmet playbook): **capital preservation first**. One-sided SOL bid-ask below price as the default entry shape for meme/micro, mechanical exits instead of conviction-holding, PnL denominated in SOL. The bot has no whale chat to consult, so wherever the humans "ask the group," the bot must be strictly more defensive.
 
 ---
 
@@ -17,6 +17,18 @@ Runs every `[60s]`.
 4. Output: scored candidates → vetting (§3) → entry queue.
 
 Optional secondary source `[off by default]`: GMGN trending list as a *discovery* input (requires API key). Never a substitute for our own vetting.
+
+### 1.1 Three-tier sleeves (shipped 2026-08-13)
+
+One scanner pipeline, three deployment sleeves. Sleeve is recorded at entry and drives sizing + manage rules.
+
+| Sleeve | Entry | Range shape | Sizing / caps |
+|---|---|---|---|
+| **micro** | Meme scanner, mcap `$100k–$200k` | BidAsk (meme planner) | `0.5×` Kelly, max 1 slot, 5% wallet deploy cap |
+| **meme** | Meme scanner, mcap `≥ $200k` | BidAsk | Kelly + score multiplier; main strategy |
+| **majors** | Discovery sweep + symbol allowlist + TA timing gates | **Spot** (uniform bins) | Fixed `0.75 SOL`; separate manage rules; excluded from meme Kelly |
+
+Majors runs **after** meme entries each tick when open slots ≤ `meme_reserve_slots` (keeps headroom for hot memes). SOL-quoted alts only — stable pairs (SOL-USDC) are **out of scope**, not deferred.
 
 ## 2. Entry criteria
 
@@ -34,12 +46,12 @@ A candidate must pass **every hard gate**. Soft criteria feed the opportunity sc
 | Base fee | `[0.2%–5%]` | >5% = arb-only pools (video) |
 | Bin step | ≥ `[80]` for tokens < 7 days old | Wide coverage with fewer bins |
 | Fee collection | `[prefer_quote]` — quote-only (SOL) pools get a score bonus; both-token pools stay eligible | User preference: fees in SOL. Quote-only pools (`collect_fee_mode=1`, ~13% of pools) pay fees pre-converted to SOL — no swap at claim. Both-token pools still bank to SOL via claim-time swap. Hard modes `quote_only`/`both_only` available in config |
-| Quote token | SOL `[required]` | Gmet's accumulate-SOL thesis; USDC mode later |
+| Quote token | SOL `[required]` | Gmet's accumulate-SOL thesis; stable/USDC pairs out of scope |
 | Pool price vs Jupiter quote divergence | ≤ `[2%]` | The video's oracle-glitch / empty-pool trap |
 
 ### 2.2 Token gates (hard) — the vetting engine
 
-Computed fresh at entry time from RPC + RugCheck free API (see VETTING.md — reverse-engineered scoring notes):
+Computed fresh at entry time from RPC + RugCheck free API:
 
 - Mint authority revoked, freeze authority revoked.
 - Token program: SPL Token, or Token-2022 with **no** extensions beyond metadata (no transfer fee/hooks).
@@ -70,11 +82,11 @@ Default shape — **Tux entry**: one-sided SOL, bid-ask, below current price.
 4. Bin rent budget: unrecoverable new-bin initialization cost ≤ `[0.05 SOL]` per position, else shrink range.
 5. `initializePositionAndAddLiquidityByStrategy` with `StrategyType.BidAsk`, `totalXAmount = 0` (SOL side only).
 6. Tx policy: active-bin slippage `[5%]` — maps to `ceil(pct / (binStep/100))` bins (5 bins at step 100). Was `[1%]` (=1 bin at step 100), which produced 100% of live `ExceededBinSlippageTolerance` open failures. Prefer a failed tx over a bad fill still holds for *swap* exits; for LP open, rebuild-on-slippage + a few bins of tolerance is correct. Priority fee auto from recent fees; program sim failures do not resend the same tx; `[3]` network retries, then abandon and re-quote.
-6b. **Exit/rebalance execution — official Zap SDK** (`@meteora-ag/zap-sdk`, verified in Meteora docs):
-   - All exits use `zapOutThroughJupiter` (`percentageToZapOut: 100`) — withdraw + swap token side to SOL through Jupiter in one orchestrated flow. Normal exits `[50 bps]` swap slippage; P0 safety exits `[1000 bps]` (speed over price).
-   - P3 re-entries and the P4 escape hatch use `rebalanceDlmmPosition` + `estimateDlmmRebalanceSwap` — remove, swap, re-add at new range in a single sequence instead of hand-rolled steps.
+6b. **Exit/rebalance execution — Zap SDK vs manual path**
+   - **Live today:** manual `removeLiquidity(shouldClaimAndClose)` + Jupiter swap-to-SOL (`use_zap = false`; Zap SDK not wired).
+   - **Planned (deferred):** `@meteora-ag/zap-sdk` — `zapOutThroughJupiter` for exits, `rebalanceDlmmPosition` for P3 re-entries and escape hatch.
+   - Normal exits `[50 bps]` swap slippage; P0 safety exits `[1000 bps]` (speed over price).
    - Partial profit locks use plain `removeLiquidity(bps)` (no close) — DLMM supports fractional withdrawal.
-   - Requires a Jupiter API key in config (free tier exists); fallback path if Zap SDK misbehaves: manual `removeLiquidity(shouldClaimAndClose)` + direct Jupiter swap — both paths implemented, config-selectable `[zap]`.
 7. **Second tranche** `[off by default]`: for score ≥ `[85]`, an additional wider "worst-case" range (Gmet's dual-range), sized at `[50%]` of the primary, down to fib 0.786-below-the-low.
 
 ## 4. Position management — the state machine
@@ -109,7 +121,7 @@ Two distinct cases, because they mean opposite things:
 - The token goes back through the **full §2 pipeline as a fresh candidate**, including the §2.3 timing filter — so re-entry only happens after a retrace signal, never into a vertical pump.
 - Ladder decay: each successive re-entry on the same token within `[24h]` sizes at `[0.75×]` the previous, max `[2]` re-entries — late legs of a pump carry more downside than early ones.
 - Rate limits: ≤ `[2]` rebalances per position per `[6h]`; skip entirely if projected rent + tx cost > `[25%]` of fees earned so far.
-- **House-money rule** `[on]`: after a profitable close, only the original base size is eligible for redeployment into the *same* token; the profit above entry goes to the banked balance (§5). Winners pay the bankroll, not the next bet on the same coin.
+- **House-money rule** `[off on live]` — was banking notional profit with no release path; deployable only ever fell. Disabled 2026-08-09.
 
 ### P3-F — FOLLOW MODE (up-only re-entry after an up-and-out close) `[on]`
 
@@ -174,7 +186,7 @@ Maintained in the `blacklist` table with reason + expiry:
 
 - **Permanent**: creators with a rug in history; tokens that triggered P0; Token-2022 with transfer-fee/hook extensions.
 - **24h**: copycat losers of the symbol-dedupe (§1.2); tokens that hard-failed vetting; tokens exited at a loss (re-entry cooldown).
-- **Structural skips** (not blacklisted, just never candidates): base fee > 5% pools (arb-only), quote-only fee pools, non-SOL quote (this mode), stables/majors pairs (separate future "majors mode" with its own thresholds: 1%/day target, spot shape, wider TA-based ranges — the video's JTO/DRAM/BOT style), pools where our position would exceed `[20%]` of pool TVL (we'd *be* the exit liquidity).
+- **Structural skips** (not blacklisted, just never candidates): base fee > 5% pools (arb-only), quote-only fee pools, non-SOL quote (incl. SOL-USDC / stable pairs — out of scope), pools where our position would exceed `[20%]` of pool TVL (we'd *be* the exit liquidity).
 
 ## 7. Persistence & profit tracking (SQLite, `data/farmer.db`)
 
@@ -205,16 +217,43 @@ Tables:
 - Free RugCheck reports are cached — our own RPC checks are the fresh layer; RugCheck is a veto, not a green light.
 - RPC outage → manager can't see. The blind close-all was **removed 2026-08-10**: `close()`'s RPC set is a superset of `mark()`'s, so it could only finish when firing it was a mistake. Liveness is the out-of-process heartbeat, not in-process liquidation.
 
-## 10. Deferred / future features
+## 10. Roadmap checklist (2026-08-13)
 
-- **Majors mode / core fallback** (JTO/tokenized-stock/HYPE-SOL style, per both source authors' "safer plays" tier): `[~1%]`/day fee target, spot/curve shapes, stoch-RSI-style entries, week-scale holds, compound-into-position fee policy, curated whitelist of blue-chip pairs. Deployed as a **fallback allocation**: capital the meme scanner isn't using parks here instead of idling. Sizing design (agreed 2026-08-07):
-  - **Separate Kelly ledger per mode** — meme and majors return distributions are incompatible; pooling samples corrupts both estimators.
-  - Majors uses **continuous Kelly (f\* = μ/σ² on daily mark-to-market returns of the majors book)** rather than discrete win/loss — week-scale holds produce too few closed-trade samples, daily marks activate the estimator in ~2 weeks. Half-Kelly and hard caps as in meme mode.
-  - **Bucket cap** `[~40–50%]` of deployable + **headroom guarantee**: always keep ≥ `[2]` meme slots' worth of capital uncommitted so the parking lot never blocks a spectacular meme opportunity (recalling majors capital costs exit fees and minutes).
-- USDC-quote mode. Auto-compounding schedules. Multi-wallet sharding.
-- Weight auto-tuning from the `decisions` outcome dataset (simple grid search first, nothing fancy). Entry score does **not** currently separate escape (+0.62) from P1 (−0.55) — avg scores 77 vs 75. Don't tune weights on n=57.
-- RugCheck paid WebSocket firehose (`$12/mo`) if scanner latency matters. GMGN trending/security/smart-money/holder-watch is already live.
-- Pool *creation* (the video covers it) — deliberately out of scope: different game, worse EV for us.
+### Shipped
+
+- Live DLMM executor, wallet-delta PnL, P0–P5 state machine, escape hatch, follow mode
+- GMGN trending/security/smart-money, holder-watch P0 (dump/whale), funding-cluster + launch-slot sniper fallback (`clusters.ts`)
+- Cluster brake, open bin-slippage fix, P3 missed sustain (45m), `open_failed` error codes
+- Range-shape instrumentation (`position_marks`, per-bin open/claim/close snapshots)
+- Three-tier sleeves: micro loss-budget caps, meme (main), majors discovery + spot + TA entry + separate manage
+- Residual token sweep, Telegram alerts, out-of-process heartbeat, config hot-reload, auto-deploy watcher
+- Kelly on measured wallet PnL (n≥50 on live book); fee banking only (`fee_destination = bank`, `majors.fee_compound = false`)
+
+### Active monitoring (operational — not new builds)
+
+- Post gate-fix live book sample (still 0 closes as of 2026-08-13)
+- First majors SPOT entries (TA gates may skip for long stretches)
+- Kelly applied fraction — do not raise size/slots yet
+- Mark-gap integrity (a) on **new** positions — 3 historical positions still fail max_gap 70–78s
+- Profit-lock has never fired (0/57) — leave enabled, not a build target
+
+### Do not ship (decided)
+
+- **Meme BidAsk → Spot/Curve** — [RANGE-SHAPE-DECISION.md](RANGE-SHAPE-DECISION.md) programme closed; edge is escape hatch, tax is P1. Majors spot is a **separate strategy**, not a meme shape flip.
+- **SOL-USDC / stable pairs** — out of scope permanently
+- Weaken P1 stop, house-money rule, loosen follow `min_vol_30m_usd`, more concurrent slots, narrower meme ranges without escape-hatch rework
+- Pool creation tooling — different game, worse EV
+
+### Deferred (future build, if ever)
+
+- `@meteora-ag/zap-sdk` — config has `use_zap` but code uses manual remove + Jupiter swap today
+- Second tranche (`tranche_enabled = false`)
+- Meme `compound` / `hybrid` fee destination (only `bank` implemented)
+- Local dashboard (Express UI) — CLI `status` + live-book watch script for now
+- Weight auto-tuning from `decisions` table (n=57 too small; score doesn't separate escape vs P1)
+- RugCheck paid WebSocket firehose if scanner latency matters
+- Multi-wallet sharding
+- Majors continuous Kelly on daily marks; on-chain fee compound (explicitly off)
 
 ## 11. Operating conclusions (live book 2026-08-07 → 2026-08-13)
 
@@ -229,6 +268,20 @@ Tables:
 - **P3 missed sustain** — `above_range_missed_sustain_min = 45`. Wins stay at 10m so follow can arm.
 - **Cluster brake** — 2× P0/P1 in 6h pauses entries 6h.
 - **Open failures were `ExceededBinSlippageTolerance` (6004), not mystery sims.** `liquidity_slippage_pct` 1% → 1 bin at step 100; every meme tick failed (3255/3255 coded sim errors). Raised to 5% (5 bins; SDK default was already 3). `open_failed` decisions now store Anchor code + logs. Live open rebuilds on bin-slippage instead of resending the same tx. Follow cools 300s after a failed leg open.
+- **Three-tier sleeves** — micro (100–200k loss-budget), meme (main BidAsk), majors (SOL-quoted alts, spot shape, TA entry, separate manage).
+- **Majors fee banking** — `fee_compound = false`; all claimed fees to wallet.
 - Kelly watched for a week on measured PnL (n≥50). Don't raise size or slots yet. Profit-lock never fired (0/57) — leave it.
 
-**Do not:** Spot / Curve / narrower ranges / more slots / house-money / Zap SDK / dashboard / majors parking. Range-shape stopping sample is met; integrity (a) still fails on 3 poll gaps; the P&L split above is the decision.
+**Live config divergences from bracket defaults** (intentional — see `config.toml` comments):
+
+| Key | Spec default | Live |
+|---|---|---|
+| `max_positions` | 7 | **3** |
+| `kelly_fraction` | 0.5 (half-Kelly) | **0.25** |
+| `kelly_block_negative` | on | **off** (clamp to min size instead of hard stop) |
+| `house_money_rule` | on | **off** |
+| `circuit_daily_loss_pct` | 10 | **3** |
+| `min_position_sol` | 0.5 | **0.3** (+ `min_reentry_sol = 0.2`) |
+| `max_down_pct` | 65 | **50** |
+
+**Do not:** meme BidAsk→Spot/Curve, SOL-USDC, more slots, house-money, weaken P1, Zap SDK flip without review. Range-shape stopping sample is met; integrity (a) still fails on 3 historical poll gaps; the P&L split above is the decision.

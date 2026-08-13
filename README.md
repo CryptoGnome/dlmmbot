@@ -34,22 +34,34 @@ src/
 │   ├── score.ts       opportunity score parts                     (§2.4)
 │   ├── gmgn.ts        trending + security pre-vet                 (§1)
 │   ├── smartflow.ts   GMGN smart-money/KOL flow                   (§1)
-│   └── scan.ts        sweep → dedupe → best-pool → gates → score
+│   ├── scan.ts        sweep → dedupe → best-pool → gates → score
+│   ├── majorsScan.ts  majors discovery + whitelist merge          (§1.1)
+│   └── majorsGates.ts relaxed gates for majors sleeve             (§1.1)
 ├── vetting/
 │   ├── rugcheck.ts    RugCheck veto layer                         (§2.2)
 │   ├── onchain.ts     fresh RPC authorities                       (§2.2)
+│   ├── holders.ts     AMM-stripped concentration                  (§2.2)
+│   ├── clusters.ts    funding-cluster + launch-slot snipers       (§2.2)
 │   ├── jupdata.ts     Jupiter organic/bot/dev into soft score
 │   └── vet.ts         hard gates + soft score + blacklisting
-├── ranges/planner.ts  fib-anchored bid-ask + follow-range bins    (§3)
-├── risk/limits.ts     Kelly (measured PnL), slots, breaker, regime (§5)
+├── ranges/
+│   ├── planner.ts     fib-anchored bid-ask + follow-range bins    (§3)
+│   └── majorsPlanner.ts spot range + RSI/swing entry timing       (§1.1)
+├── risk/
+│   ├── limits.ts      Kelly (measured PnL), slots, breaker, regime (§5)
+│   ├── sleeve.ts      micro/meme/majors sleeve tagging + exposure
+│   ├── micro.ts       micro sleeve caps                           (§1.1)
+│   ├── majors.ts      majors slot budget + deploy cap             (§1.1)
+│   └── majorsManage.ts majors-specific manage overrides            (§1.1)
 ├── executor/
 │   ├── executor.ts    Executor interface (manager is mode-blind)
 │   ├── paper.ts       simulated fills/fees vs live pool data      (§8)
-│   ├── live.ts        @meteora-ag/dlmm + Jupiter zap-out          (§3.6)
+│   ├── live.ts        @meteora-ag/dlmm + Jupiter manual zap-out   (§3.6)
 │   ├── jupiter.ts     swap-to-SOL + residual sweep helper
 │   └── wallet.ts      keypair load
 ├── manager/
-│   ├── loop.ts        P0–P5 + entry pipeline                      (§4)
+│   ├── loop.ts        P0–P5 + entry pipeline + majors entry        (§4)
+│   ├── majorsEntry.ts majors spot entry after meme pipeline       (§1.1)
 │   ├── follow.ts      P3-F up-only re-entry chains
 │   ├── holderwatch.ts GMGN wallet-dump / new-whale P0
 │   └── reconcile.ts   chain wins on live startup
@@ -70,18 +82,23 @@ src/
 ## Built vs deferred (2026-08-13)
 
 Live on `gn0meserver` since 2026-08-07. Paper promotion is historical; do not
-run a second loop against the same wallet.
+run a second loop against the same wallet. Full checklist: [STRATEGY.md §10](STRATEGY.md#10-roadmap-checklist-2026-08-13).
 
-**Built:** live DLMM executor, wallet-delta PnL, P0–P5, escape hatch, follow
-mode, GMGN holder-watch P0, smart-money scoring, Jupiter datapi soft score,
-Telegram + out-of-process heartbeat, residual token sweep, range-shape
-instrumentation (`position_marks` + per-bin close snapshots).
+**Built:** live DLMM executor (manual Jupiter zap-out), wallet-delta PnL, P0–P5,
+escape hatch, follow mode, GMGN holder-watch P0, smart-money scoring, funding-
+cluster/sniper vetting, cluster brake, open slippage fix, range-shape
+instrumentation, three-tier sleeves (micro / meme / majors), residual sweep,
+Telegram + heartbeat, auto-deploy.
 
-**Deferred / do not ship yet:** `@meteora-ag/zap-sdk` (manual Jupiter zap-out
-is the path), funding-cluster snipers from early tx history, second tranche,
-compound/hybrid fee destination, majors-mode parking lot, dashboard, BidAsk→Spot
-(see [RANGE-SHAPE-DECISION.md](RANGE-SHAPE-DECISION.md) — sample is large enough
-to *evaluate*, not to flip).
+**Do not ship (decided):** meme BidAsk→Spot/Curve ([RANGE-SHAPE-DECISION.md](RANGE-SHAPE-DECISION.md)),
+SOL-USDC/stable pairs, weaken P1, house-money, more slots.
+
+**Deferred:** `@meteora-ag/zap-sdk` (`use_zap` unused), second tranche,
+meme compound/hybrid fee dest, local dashboard, weight auto-tuning, RugCheck
+paid WS, multi-wallet sharding, majors continuous Kelly.
+
+**Monitor:** post-fix book sample, first majors entries, Kelly fraction, mark
+gaps on new positions.
 
 ## Disclaimer
 

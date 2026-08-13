@@ -69,8 +69,7 @@ function normalize(p: RawPool): PoolInfo & { extras: RawPoolExtras } {
     feeTvl1hPct: p.fee_tvl_ratio?.["1h"] ?? 0,
     feeTvl4hPct: p.fee_tvl_ratio?.["4h"] ?? 0,
     feeTvl24hPct: p.fee_tvl_ratio?.["24h"] ?? 0,
-    // collect_fee_mode semantics verified 2026-08-07 against the flagship
-    // SOL-USDC pool (mode 0, pays both tokens): 0 = both tokens, 1 = quote only.
+    // collect_fee_mode: 0 = both tokens, 1 = quote only (verified on-chain 2026-08-07).
     feesBothTokens: p.pool_config.collect_fee_mode === 0,
     createdAt: p.created_at ? new Date(p.created_at).toISOString() : null,
     extras: {

@@ -26,10 +26,10 @@ import { sleeveAtEntry } from "../risk/sleeve.js";
 import type { Position } from "../types.js";
 import { vetToken } from "../vetting/vet.js";
 
-// STRATEGY.md §4 — the P0–P5 state machine, strict priority order.
-// Live: P0 (TVL/price/rugcheck + GMGN holder-watch for dump/whale), P1–P5,
-// escape hatch, follow mode, residual sweep, heartbeat. Still deferred: Zap SDK,
-// second tranche, compound/hybrid fee dest.
+// STRATEGY.md §4 — P0–P5 state machine. Live: P0 (TVL/price/rugcheck + GMGN
+// holder-watch), P1–P5, escape hatch, follow, micro/majors sleeves, residual
+// sweep, heartbeat. Not implemented: Zap SDK (manual Jupiter path), second
+// tranche, meme compound/hybrid fee dest.
 
 const HALT_FILE = resolve(process.cwd(), "HALT");
 const LOCK_FILE = resolve(process.cwd(), "data", "farmer.lock");

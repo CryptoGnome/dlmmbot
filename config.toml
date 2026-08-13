@@ -210,7 +210,7 @@ chain_max_age_h = 12
 cold_polls_end = 3         # consecutive polls under gates.vol_30m_min_usd ends the chain
 open_fail_cooldown_s = 300 # after a failed leg open, wait before retrying (was every 15s × 4 sims)
 
-[majors]                   # STRATEGY.md §10 — spot parking, separate from meme BidAsk
+[majors]                   # STRATEGY.md §1.1 — spot parking, separate from meme BidAsk
 enabled = true
 discovery = true
 discovery_pages = 8
@@ -271,7 +271,7 @@ displacement_max_per_6h = 2
 
 [exec]                     # STRATEGY.md §3.6/§8
 mode = "live"                    # paper | live (live also requires FARMER_MODE=live env)
-use_zap = true
+use_zap = false                  # not wired — live uses manual remove + Jupiter swap
 exit_slippage_bps = 50
 safety_exit_slippage_bps = 1000
 tx_retries = 3
