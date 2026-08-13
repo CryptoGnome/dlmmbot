@@ -283,6 +283,10 @@ export function buildLiveBookSnapshot(root) {
          AND ts BETWEEN ? AND ?
        ORDER BY ABS(ts - ?) LIMIT 1`
     );
+    const poolSnapStmt = db.prepare(
+      `SELECT tvl_usd, vol_30m, vol_1h, vol_24h, fee_tvl_30m, fee_tvl_24h, ts
+       FROM pool_snapshots WHERE pool = ? ORDER BY ts DESC LIMIT 1`
+    );
     const mcapMin = tomlNum(toml, "mcap_min_usd") ?? 50_000;
     const mcapMicroMax = tomlNum(toml, "mcap_micro_max_usd") ?? 200_000;
 
@@ -380,6 +384,29 @@ export function buildLiveBookSnapshot(root) {
       const lowPx = priceAtBin(markPrice, activeBin, minBin, binStep);
       const highPx = priceAtBin(markPrice, activeBin, maxBin, binStep);
 
+      let pool = null;
+      try {
+        const snap = poolSnapStmt.get(r.pool);
+        if (snap) {
+          const tvl = snap.tvl_usd != null ? Number(snap.tvl_usd) : null;
+          const feeTvl24 = snap.fee_tvl_24h != null ? Number(snap.fee_tvl_24h) : null;
+          const fees24 = tvl != null && feeTvl24 != null
+            ? Math.round(tvl * (feeTvl24 / 100) * 100) / 100
+            : null;
+          pool = {
+            tvl_usd: tvl != null ? Math.round(tvl * 100) / 100 : null,
+            vol_30m_usd: snap.vol_30m != null ? Math.round(Number(snap.vol_30m) * 100) / 100 : null,
+            vol_1h_usd: snap.vol_1h != null ? Math.round(Number(snap.vol_1h) * 100) / 100 : null,
+            vol_24h_usd: snap.vol_24h != null ? Math.round(Number(snap.vol_24h) * 100) / 100 : null,
+            fee_tvl_30m_pct: snap.fee_tvl_30m != null ? Math.round(Number(snap.fee_tvl_30m) * 1e4) / 1e4 : null,
+            fee_tvl_24h_pct: feeTvl24 != null ? Math.round(feeTvl24 * 1e4) / 1e4 : null,
+            /** Pool-wide fees over ~24h from fee/TVL × TVL (Meteora datapi). */
+            fees_24h_usd: fees24,
+            age_s: snap.ts != null ? now - Number(snap.ts) : null,
+          };
+        }
+      } catch { /* */ }
+
       return {
         id: r.id,
         symbol: r.symbol,
@@ -396,6 +423,7 @@ export function buildLiveBookSnapshot(root) {
         min_bin_id: minBin,
         max_bin_id: maxBin,
         range_status: status,
+        pool,
         range: {
           min_bin: minBin,
           max_bin: maxBin,

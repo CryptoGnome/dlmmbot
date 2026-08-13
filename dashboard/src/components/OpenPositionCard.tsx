@@ -1,15 +1,17 @@
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
+  Activity,
   ArrowLeftRight,
   Coins,
   HandCoins,
   Layers,
   Package,
+  Percent,
   Receipt,
 } from "lucide-react";
 import type { LiveWatch } from "@/lib/types";
-import { cn, fmtRet, fmtSol, shortTime } from "@/lib/utils";
+import { cn, fmtRet, fmtSol, fmtUsdCompact, shortTime } from "@/lib/utils";
 import { TokenSymbol } from "@/components/TokenSymbol";
 import { RangeBar, SleeveBadge, StatusBadge, type RangeStatus } from "@/components/RangeBar";
 
@@ -156,6 +158,56 @@ export function OpenPositionCard({ p }: { p: OpenPos }) {
           </Metric>
         )}
       </div>
+
+      {p.pool && (p.pool.vol_24h_usd != null || p.pool.fees_24h_usd != null || p.pool.fee_tvl_24h_pct != null) && (
+        <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted">
+          {p.pool.vol_24h_usd != null && (
+            <Metric
+              icon={Activity}
+              label="Pool vol 24h"
+              tip="Pool trading volume over ~24h (Meteora datapi via last scanner snapshot)"
+            >
+              <span className="text-fg">{fmtUsdCompact(p.pool.vol_24h_usd)}</span>
+            </Metric>
+          )}
+          {p.pool.fees_24h_usd != null && (
+            <Metric
+              icon={Coins}
+              label="Pool fees 24h"
+              tip="Estimated pool-wide fees over ~24h = TVL × fee/TVL 24h (not your share)"
+            >
+              <span className="text-fg">{fmtUsdCompact(p.pool.fees_24h_usd)}</span>
+            </Metric>
+          )}
+          {p.pool.fee_tvl_24h_pct != null && (
+            <Metric
+              icon={Percent}
+              label="Fee/TVL 24h"
+              tip="Meteora fee/TVL ratio over 24h — same signal the bot gates / scores on (not annualized APR)"
+            >
+              <span className="text-fg">{p.pool.fee_tvl_24h_pct.toFixed(2)}%</span>
+            </Metric>
+          )}
+          {p.pool.vol_30m_usd != null && (
+            <Metric
+              icon={Activity}
+              label="Vol 30m"
+              tip="Pool volume in the last ~30 minutes"
+            >
+              <span className="text-fg">{fmtUsdCompact(p.pool.vol_30m_usd)}</span>
+            </Metric>
+          )}
+          {p.pool.tvl_usd != null && (
+            <Metric
+              icon={Layers}
+              label="TVL"
+              tip="Pool total value locked"
+            >
+              <span className="text-fg">{fmtUsdCompact(p.pool.tvl_usd)}</span>
+            </Metric>
+          )}
+        </div>
+      )}
 
       {p.range?.min_bin != null && p.range.max_bin != null && (
         <div className="mt-2 border-t border-grid pt-1.5">

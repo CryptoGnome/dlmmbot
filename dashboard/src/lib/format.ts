@@ -10,6 +10,15 @@ export function fmtUsd(n: number | null | undefined, digits = 2): string {
   return `${sign}$${Math.abs(n).toFixed(digits)}`;
 }
 
+/** Compact pool volumes: $1.2M / $45k / $820. */
+export function fmtUsdCompact(n: number | null | undefined): string {
+  if (n == null || Number.isNaN(n)) return "—";
+  const a = Math.abs(n);
+  if (a >= 1_000_000) return `$${(n / 1_000_000).toFixed(a >= 10_000_000 ? 0 : 1)}M`;
+  if (a >= 1_000) return `$${(n / 1_000).toFixed(a >= 10_000 ? 0 : 1)}k`;
+  return `$${n.toFixed(0)}`;
+}
+
 /** Fraction 0.123 → "+12.3%". */
 export function fmtPct(n: number | null | undefined, digits = 1): string {
   if (n == null || Number.isNaN(n)) return "—";

@@ -48,8 +48,19 @@ export interface LiveWatch {
     sleeve?: string | null;
     follow?: boolean;
     entry_sol: number; entry_price?: number; open_cost_sol?: number | null;
-    opened: string; fees_claimed_sol?: number;
+    opened: string;     fees_claimed_sol?: number;
     min_bin_id?: number; max_bin_id?: number; range_status?: string;
+    /** Latest Meteora datapi snapshot for this pool (from scanner). */
+    pool?: {
+      tvl_usd: number | null;
+      vol_30m_usd: number | null;
+      vol_1h_usd: number | null;
+      vol_24h_usd: number | null;
+      fee_tvl_30m_pct: number | null;
+      fee_tvl_24h_pct: number | null;
+      fees_24h_usd: number | null;
+      age_s: number | null;
+    } | null;
     range?: {
       min_bin: number; max_bin: number; active_bin: number | null;
       min_price: number | null; max_price: number | null; price: number | null;
