@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { cachedHistory, cachedWatch, connectLive, fetchSetupStatus } from "@/lib/api";
 import type { HistorySnap, LiveWatch, RangeKey } from "@/lib/types";
 import { clockTime, tokenFromUrl } from "@/lib/utils";
-import { useActivityToasts, useBuildToasts } from "@/lib/useActivityToasts";
+import { useActivityToasts, useBuildToasts, useErrorToasts } from "@/lib/useActivityToasts";
 import { RangeTabs } from "@/components/ui";
 import { Shell, parseTab, type TabId } from "@/components/Shell";
 import { SetupWizard } from "@/components/SetupWizard";
@@ -11,6 +11,7 @@ import { OverviewPage } from "@/pages/Overview";
 import { BookPage } from "@/pages/Book";
 import { AnalyticsPage } from "@/pages/Analytics";
 import { ActivityPage } from "@/pages/Activity";
+import { ErrorsPage } from "@/pages/Errors";
 import { ResearchPage } from "@/pages/Research";
 import { ChangelogPage } from "@/pages/Changelog";
 import { SettingsPage } from "@/pages/Settings";
@@ -112,6 +113,7 @@ export default function App() {
   const showRange = tab === "overview" || tab === "book" || tab === "analytics";
   useActivityToasts(watch, live, stale);
   useBuildToasts(watch);
+  useErrorToasts(watch);
 
   return (
     <>
@@ -142,6 +144,7 @@ export default function App() {
         {tab === "book" && <BookPage watch={watch} hist={hist} />}
         {tab === "analytics" && <AnalyticsPage watch={watch} hist={hist} />}
         {tab === "activity" && <ActivityPage watch={watch} />}
+        {tab === "errors" && <ErrorsPage watch={watch} />}
         {tab === "research" && <ResearchPage />}
         {tab === "changes" && <ChangelogPage watch={watch} />}
         {tab === "settings" && <SettingsPage />}

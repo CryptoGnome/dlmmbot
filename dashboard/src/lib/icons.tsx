@@ -35,6 +35,7 @@ export const tabIcon: Record<TabId, LucideIcon> = {
   book: BookOpen,
   analytics: LineChart,
   activity: Activity,
+  errors: OctagonX,
   research: Microscope,
   changes: ScrollText,
   settings: Settings,

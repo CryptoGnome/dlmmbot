@@ -148,6 +148,33 @@ export interface LiveWatch {
     baseScore?: number | null;
   }>;
   recent_activity?: ActivityEvent[];
+  /** Structured runtime errors (error_log) — live via WS watch. */
+  recent_errors?: ErrorLogEntry[];
+  error_stats?: {
+    count_1h: number;
+    count_24h: number;
+    last_id: number | null;
+    last_ts: number | null;
+  };
+}
+
+export interface ErrorLogEntry {
+  id: number;
+  ts: number;
+  at: string;
+  level: "error" | "warn" | "fatal" | string;
+  source: string;
+  code: string | null;
+  message: string;
+  stack: string | null;
+  detail: unknown;
+  position_id: number | null;
+  symbol: string | null;
+  mint: string | null;
+  pool: string | null;
+  build: string | null;
+  host: string | null;
+  pid: number | null;
 }
 
 export interface ActivityEvent {

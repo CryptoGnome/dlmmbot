@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { config, isLive } from "../config.js";
 import { reconcileLive } from "./reconcile.js";
 import { alert, type AlertKind } from "../alerts.js";
-import { blacklist, getDb, now, recordDecision, REALIZED_PNL_SQL } from "../db/db.js";
+import { blacklist, getDb, now, recordDecision, REALIZED_PNL_SQL, logError, installProcessErrorHooks } from "../db/db.js";
 import type { Executor } from "../executor/executor.js";
 import { LiveExecutor } from "../executor/live.js";
 import { executeProfitBurn, profitBurnSpendSol } from "../executor/profitBurn.js";
@@ -596,9 +596,17 @@ export async function managePositions(exec: Executor): Promise<void> {
         await alert("profit_lock", `${pos.symbol} pos#${pos.id}: profit lock at +${((valueFrac - 1) * 100).toFixed(0)}% — withdrew ${withdrawnSol.toFixed(4)} SOL`);
       }
     } catch (e) {
-      console.error(`[manager] position ${pos.id} (${pos.symbol}) act:`, (e as Error).message);
-      const stack = (e as Error).stack?.split("\n").slice(1, 6).join(" <- ");
-      if (stack) console.error(`[manager] position ${pos.id} act stack:`, stack);
+      logError({
+        source: "manager",
+        code: "position_act",
+        message: `position ${pos.id} (${pos.symbol}) act: ${(e as Error).message}`,
+        err: e,
+        positionId: pos.id,
+        symbol: pos.symbol,
+        mint: pos.tokenMint,
+        pool: pos.poolAddress,
+        dedupeSec: 30,
+      });
     }
   }
 
@@ -631,7 +639,15 @@ async function rpcProbe(exec: Executor): Promise<void> {
     }
   } catch (e) {
     probeFailures++;
-    console.error(`[watchdog] RPC probe failed (${probeFailures}):`, (e as Error).message.split("\n")[0]);
+    logError({
+      source: "watchdog",
+      code: "rpc_probe",
+      level: probeFailures >= 3 ? "error" : "warn",
+      message: `RPC probe failed (${probeFailures}): ${(e as Error).message.split("\n")[0]}`,
+      err: e,
+      detail: { probeFailures },
+      dedupeSec: 120,
+    });
   }
 }
 
@@ -994,7 +1010,23 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     } catch (e) {
       const err = e as Error & { code?: string; logs?: string[] };
       const msg = (err.message ?? String(e)).split("\n")[0]!.slice(0, 400);
-      console.error(`[enter] ${cand.symbol} open failed: ${msg}`);
+      logError({
+        source: "enter",
+        code: "open_failed",
+        message: `${cand.symbol} open failed: ${msg}`,
+        err: e,
+        detail: {
+          size,
+          range,
+          code: err.code ?? null,
+          logs: Array.isArray(err.logs) ? err.logs.slice(0, 8) : [],
+          score,
+        },
+        symbol: cand.symbol,
+        mint: cand.tokenMint,
+        pool: cand.pool.address,
+        dedupeSec: 15,
+      });
       recordDecision(cand.tokenMint, cand.pool.address, "skipped", "open_failed", score, {
         size, range,
         error: msg,
@@ -1082,6 +1114,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
 
 /** Main loop: manage every poll_s, enter every interval_s. */
 export async function runLoop(): Promise<void> {
+  installProcessErrorHooks("farmer");
   acquireInstanceLock();
   let exec: Executor;
   if (isLive()) {
@@ -1101,7 +1134,14 @@ export async function runLoop(): Promise<void> {
         rec = await reconcileLive(live.connection, live.wallet.publicKey);
       } catch (e) {
         const msg = (e as Error).message.split("\n")[0];
-        console.error(`[farmer] reconcile attempt ${attempt}/5 failed: ${msg}`);
+        logError({
+          source: "farmer",
+          code: "reconcile",
+          message: `reconcile attempt ${attempt}/5 failed: ${msg}`,
+          err: e,
+          detail: { attempt },
+          dedupeSec: 0,
+        });
         if (attempt === 1) await alert("watchdog", `reconcile failed at boot: ${msg} — retrying`).catch(() => {});
         if (attempt === 5) {
           await alert("watchdog", `reconcile failed 5x at boot — refusing to start. Money may be on chain; check manually.`).catch(() => {});
@@ -1141,7 +1181,7 @@ export async function runLoop(): Promise<void> {
     // console line.
     await rpcProbe(exec);
     try { await watchdogCheck(); } catch (e) {
-      console.error("[watchdog] check failed:", (e as Error).message);
+      logError({ source: "watchdog", code: "check", message: (e as Error).message, err: e, dedupeSec: 60 });
     }
     try {
       await managePositions(exec);
@@ -1152,7 +1192,7 @@ export async function runLoop(): Promise<void> {
         try {
           await tickFollowChains(exec);
         } catch (e) {
-          console.error("[follow] tick failed:", (e as Error).message);
+          logError({ source: "follow", code: "tick", message: (e as Error).message, err: e, dedupeSec: 60 });
         }
       }
       if (entriesFrozen()) {
@@ -1191,7 +1231,13 @@ export async function runLoop(): Promise<void> {
         }
       }
     } catch (e) {
-      console.error("[farmer] tick error:", (e as Error).message);
+      logError({
+        source: "farmer",
+        code: "tick",
+        message: (e as Error).message,
+        err: e,
+        dedupeSec: 20,
+      });
     }
     await writeHeartbeat(exec, loadOpenPositions().length);
     await new Promise((r) => setTimeout(r, pollSleepMs(Date.now() - tickStart, pollMs)));

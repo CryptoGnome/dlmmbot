@@ -9,6 +9,7 @@ import { exec, execSync } from "node:child_process";
 import { promisify } from "node:util";
 import { runtimePaths } from "./runtime-paths.mjs";
 import { readDeployPrefs, shouldAutoDeploy } from "./deploy-prefs.mjs";
+import { listRecentErrors, errorStats } from "./error-log.mjs";
 
 const execAsync = promisify(exec);
 
@@ -1044,6 +1045,8 @@ export function buildLiveBookSnapshot(root) {
       },
       recent_passes: recentPasses,
       recent_activity: recentActivity,
+      recent_errors: listRecentErrors(db, 80),
+      error_stats: errorStats(db, now),
     };
   } finally {
     db.close();

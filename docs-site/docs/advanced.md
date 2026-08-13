@@ -93,6 +93,8 @@ npm run dash
 
 Open [http://localhost:8787](http://localhost:8787) with that token.
 
+The **Errors** tab streams structured runtime failures (tick/open/RPC/etc.) over the same live WebSocket — expand a row for stack + context, **Copy** / **Copy all**, or **GitHub issue** to open a prefilled bug report.
+
 ## Keys & going live
 
 Phantom burner → `WALLET_PRIVATE_KEY`, private RPC, Jupiter key.

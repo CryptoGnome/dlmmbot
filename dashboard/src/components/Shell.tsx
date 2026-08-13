@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { BookText, CircleDot, ExternalLink } from "lucide-react";
 import { GithubMark, Icon, PauseCircle, tabIcon, Unplug, Zap } from "@/lib/icons";
 
-export type TabId = "overview" | "book" | "analytics" | "activity" | "research" | "changes" | "settings";
+export type TabId = "overview" | "book" | "analytics" | "activity" | "errors" | "research" | "changes" | "settings";
 
 const DOCS_URL = "https://dlmmbot.com/setup/";
 
@@ -13,6 +13,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "book", label: "Book" },
   { id: "analytics", label: "Analytics" },
   { id: "activity", label: "Activity" },
+  { id: "errors", label: "Errors" },
   { id: "research", label: "Research" },
   { id: "changes", label: "Changes" },
   { id: "settings", label: "Settings" },
@@ -140,11 +141,12 @@ export function Shell({
           {TABS.map((t) => {
             const TabIcon = tabIcon[t.id];
             const pending = t.id === "changes" && watch?.build?.sync === "behind";
+            const errN = t.id === "errors" ? (watch?.error_stats?.count_1h ?? 0) : 0;
             return (
               <button
                 key={t.id}
                 type="button"
-                className={`shell-nav-btn${pending ? " build-pill-pulse" : ""}`}
+                className={`shell-nav-btn${pending || errN > 0 ? " build-pill-pulse" : ""}`}
                 data-active={tab === t.id}
                 onClick={() => onTab(t.id)}
               >
@@ -152,6 +154,9 @@ export function Shell({
                 {t.label}
                 {pending && watch?.build?.behind_count ? (
                   <span className="ml-auto text-[9px] text-warn">+{watch.build.behind_count}</span>
+                ) : null}
+                {errN > 0 ? (
+                  <span className="ml-auto text-[9px] text-danger">+{errN}</span>
                 ) : null}
               </button>
             );

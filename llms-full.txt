@@ -43,6 +43,7 @@ Settings also exposes encrypted wallet create / import / unlock on the Wallet & 
 - Toasts for new entries/exits/fails/cluster/events and link/heartbeat edges (max two visible; pressure shortens TTL)
 - Changes tab + toasts when GitHub is ahead, a deploy lands, or the farmer restarts on a new build
 - Host updates: auto-update on by default (PM2 `meteora-deploy`); Settings toggle to require Approve on Changes before pull
+- Errors tab: live `error_log` over WebSocket (stacks, mint/pool, copy dump, open GitHub issue)
 - Settings: Bot settings (sizing, risk, filters) and Wallet & secrets (vault, encrypted wallet, auto-update)
 - Research page: public X credits (not partners/signals)
 

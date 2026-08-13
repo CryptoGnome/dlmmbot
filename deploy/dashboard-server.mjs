@@ -21,6 +21,7 @@ import { applyRuntimeEnv } from "./lib/runtime-paths.mjs";
 import {
   approveDeploy, readDeployPrefs, writeDeployPrefs,
 } from "./lib/deploy-prefs.mjs";
+import { insertError } from "./lib/error-log.mjs";
 import { execSync } from "node:child_process";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -408,6 +409,19 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  // fallthrough: log unexpected API 404s lightly
+  if (url.pathname.startsWith("/api/")) {
+    insertError(root, {
+      source: "dash",
+      level: "warn",
+      code: "api_not_found",
+      message: `${req.method} ${url.pathname}`,
+      dedupeSec: 300,
+    });
+    sendJson(res, 404, { error: "not found" });
+    return;
+  }
+
   let rel = url.pathname === "/" ? "/index.html" : url.pathname;
   rel = rel.replace(/\.\./g, "");
   const file = join(dist, rel);
@@ -452,8 +466,26 @@ function send(ws, obj) {
 
 function pushWatch(ws) {
   getWatchSnapshot()
-    .then((data) => send(ws, { type: "watch", data }))
-    .catch((e) => send(ws, { type: "error", error: e.message ?? String(e) }));
+    .then((data) => {
+      send(ws, { type: "watch", data });
+      if (data?.recent_errors) {
+        send(ws, {
+          type: "errors",
+          data: data.recent_errors,
+          stats: data.error_stats ?? null,
+        });
+      }
+    })
+    .catch((e) => {
+      insertError(root, {
+        source: "dash",
+        code: "watch_build",
+        message: e.message ?? String(e),
+        stack: e.stack ?? null,
+        dedupeSec: 60,
+      });
+      send(ws, { type: "error", error: e.message ?? String(e) });
+    });
 }
 
 function pushHistory(ws, range) {

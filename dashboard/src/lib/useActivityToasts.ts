@@ -215,3 +215,34 @@ export function useBuildToasts(watch: LiveWatch | null) {
     runningWas.current = running;
   }, [watch?.build]);
 }
+
+/** Toast when a new error_log row appears on the live watch stream. */
+export function useErrorToasts(watch: LiveWatch | null) {
+  const lastId = useRef<number | null>(null);
+  const primed = useRef(false);
+
+  useEffect(() => {
+    const errs = watch?.recent_errors ?? [];
+    const top = errs[0]?.id ?? null;
+    if (!primed.current) {
+      primed.current = true;
+      lastId.current = top;
+      return;
+    }
+    if (top == null || top === lastId.current) return;
+    const prev = lastId.current ?? 0;
+    const fresh = errs.filter((e) => e.id > prev && e.level !== "warn").slice(0, 3);
+    fresh.reverse();
+    for (const e of fresh) {
+      toast({
+        id: `err-${e.id}`,
+        title: e.symbol ? `${e.symbol} · ${e.source}` : `${e.source}${e.code ? `/${e.code}` : ""}`,
+        detail: e.message.slice(0, 120),
+        tone: "danger",
+        kind: "fail",
+        ttlMs: 8_000,
+      });
+    }
+    lastId.current = top;
+  }, [watch?.error_stats?.last_id, watch?.recent_errors]);
+}

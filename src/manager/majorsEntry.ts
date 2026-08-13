@@ -1,5 +1,5 @@
 import { config } from "../config.js";
-import { recordDecision } from "../db/db.js";
+import { recordDecision, logError } from "../db/db.js";
 import type { Executor } from "../executor/executor.js";
 import { alert } from "../alerts.js";
 import { solUsdPrice } from "../market.js";
@@ -93,6 +93,17 @@ export async function enterMajorsPositions(exec: Executor, bankroll: Bankroll): 
       });
     } catch (e) {
       const msg = (e as Error).message.split("\n")[0]!.slice(0, 400);
+      logError({
+        source: "majors",
+        code: "open_failed",
+        message: `${cand.symbol} majors open failed: ${msg}`,
+        err: e,
+        detail: { size, range, sleeve: "majors", score: cand.score },
+        symbol: cand.symbol,
+        mint: cand.tokenMint,
+        pool: cand.pool.address,
+        dedupeSec: 15,
+      });
       recordDecision(cand.tokenMint, cand.pool.address, "skipped", "majors_open_failed", cand.score, { size, range, error: msg, sleeve: "majors" });
       continue;
     }

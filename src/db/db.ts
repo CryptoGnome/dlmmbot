@@ -1,6 +1,8 @@
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
+import { hostname } from "node:os";
 import { resolve } from "node:path";
+import { execSync } from "node:child_process";
 
 // Schema per STRATEGY.md §7. On-chain state is the source of truth for live
 // positions; this DB is the ledger, decision log, and tuning dataset.
@@ -174,6 +176,26 @@ CREATE TABLE IF NOT EXISTS follow_chains (
   updated_ts INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_follow_chains_state ON follow_chains(state, mode);
+
+-- Structured runtime errors for the dashboard Errors tab (WS via watch snapshot).
+CREATE TABLE IF NOT EXISTS error_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts INTEGER NOT NULL,
+  level TEXT NOT NULL,              -- error | warn | fatal
+  source TEXT NOT NULL,             -- farmer | manager | enter | follow | watchdog | dash | …
+  code TEXT,                        -- tick | open_failed | position_act | …
+  message TEXT NOT NULL,
+  stack TEXT,
+  detail_json TEXT,
+  position_id INTEGER,
+  symbol TEXT,
+  mint TEXT,
+  pool TEXT,
+  build TEXT,
+  host TEXT,
+  pid INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_error_log_ts ON error_log(ts DESC);
 `;
 
 let db: Database.Database | null = null;
@@ -207,6 +229,26 @@ function migrate(database: Database.Database): void {
     database.exec("ALTER TABLE positions ADD COLUMN follow_chain_id INTEGER");
   } catch { /* column already exists */ }
   database.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+  database.exec(`
+CREATE TABLE IF NOT EXISTS error_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts INTEGER NOT NULL,
+  level TEXT NOT NULL,
+  source TEXT NOT NULL,
+  code TEXT,
+  message TEXT NOT NULL,
+  stack TEXT,
+  detail_json TEXT,
+  position_id INTEGER,
+  symbol TEXT,
+  mint TEXT,
+  pool TEXT,
+  build TEXT,
+  host TEXT,
+  pid INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_error_log_ts ON error_log(ts DESC);
+`);
 
   const cols = new Set(
     (database.prepare("PRAGMA table_info(positions)").all() as Array<{ name: string }>).map((c) => c.name)
@@ -317,4 +359,124 @@ export function recordDecision(
       "INSERT INTO decisions (ts, mint, pool, action, failed_gate, score, features_json) VALUES (?, ?, ?, ?, ?, ?, ?)"
     )
     .run(now(), mint, pool, action, failedGate, score, JSON.stringify(payload));
+}
+
+export type ErrorLevel = "error" | "warn" | "fatal";
+
+export type LogErrorInput = {
+  source: string;
+  level?: ErrorLevel;
+  code?: string | null;
+  message: string;
+  err?: unknown;
+  detail?: unknown;
+  positionId?: number | null;
+  symbol?: string | null;
+  mint?: string | null;
+  pool?: string | null;
+  /** Skip insert if same source+code+message landed within this many seconds (default 60). */
+  dedupeSec?: number;
+};
+
+let cachedBuild: string | null | undefined;
+let cachedHost: string | null | undefined;
+
+function runtimeBuild(): string | null {
+  if (cachedBuild !== undefined) return cachedBuild;
+  try {
+    cachedBuild = execSync("git describe --always --dirty", { encoding: "utf8" }).trim() || null;
+  } catch {
+    cachedBuild = null;
+  }
+  return cachedBuild;
+}
+
+function runtimeHost(): string | null {
+  if (cachedHost !== undefined) return cachedHost;
+  try {
+    cachedHost = hostname() || null;
+  } catch {
+    cachedHost = null;
+  }
+  return cachedHost;
+}
+
+function errParts(err: unknown): { message: string; stack: string | null } {
+  if (err instanceof Error) {
+    return {
+      message: (err.message || String(err)).split("\n")[0]!.slice(0, 800),
+      stack: err.stack ? err.stack.split("\n").slice(0, 40).join("\n") : null,
+    };
+  }
+  return { message: String(err).split("\n")[0]!.slice(0, 800), stack: null };
+}
+
+/**
+ * Persist a structured error for the dashboard Errors tab (and always mirror to stderr).
+ * Returns the new row id, or 0 if deduped / write failed.
+ */
+export function logError(input: LogErrorInput): number {
+  const level = input.level ?? "error";
+  const fromErr = input.err != null ? errParts(input.err) : null;
+  const message = (input.message || fromErr?.message || "unknown error").slice(0, 800);
+  const stack = fromErr?.stack ?? null;
+  const code = input.code ?? null;
+  const dedupeSec = input.dedupeSec ?? 60;
+
+  const line = `[${input.source}${code ? `/${code}` : ""}] ${message}`;
+  if (level === "warn") console.warn(line);
+  else console.error(line);
+  if (stack && level !== "warn") console.error(stack.split("\n").slice(1, 8).join("\n"));
+
+  try {
+    const database = getDb();
+    if (dedupeSec > 0) {
+      const recent = database
+        .prepare(
+          `SELECT id FROM error_log
+           WHERE source = ? AND IFNULL(code,'') = IFNULL(?, '') AND message = ? AND ts >= ?
+           ORDER BY id DESC LIMIT 1`,
+        )
+        .get(input.source, code, message, now() - dedupeSec) as { id: number } | undefined;
+      if (recent) return 0;
+    }
+    const info = database
+      .prepare(
+        `INSERT INTO error_log
+          (ts, level, source, code, message, stack, detail_json, position_id, symbol, mint, pool, build, host, pid)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        now(),
+        level,
+        input.source,
+        code,
+        message,
+        stack,
+        input.detail != null ? JSON.stringify(input.detail) : null,
+        input.positionId ?? null,
+        input.symbol ?? null,
+        input.mint ?? null,
+        input.pool ?? null,
+        runtimeBuild(),
+        runtimeHost(),
+        process.pid,
+      );
+    return Number(info.lastInsertRowid) || 0;
+  } catch (e) {
+    console.error("[error_log] write failed:", (e as Error).message);
+    return 0;
+  }
+}
+
+/** Install once — captures crash paths that never hit a local try/catch. */
+export function installProcessErrorHooks(source = "farmer"): void {
+  const tag = source;
+  process.on("uncaughtException", (err) => {
+    logError({ source: tag, level: "fatal", code: "uncaughtException", message: err.message, err, dedupeSec: 0 });
+  });
+  process.on("unhandledRejection", (reason) => {
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    logError({ source: tag, level: "fatal", code: "unhandledRejection", message: err.message, err, dedupeSec: 5 });
+  });
 }

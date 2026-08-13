@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { getDb, REALIZED_PNL_SQL } from "./db.js";
+import { getDb, REALIZED_PNL_SQL, logError } from "./db.js";
 import { useMemoryDb, resetTestDb, insertClosedPosition } from "../test/db.js";
 
 function pnlFor(id: number): number {
@@ -55,5 +55,32 @@ describe("REALIZED_PNL_SQL", () => {
       closeReturnSol: null,
     });
     expect(pnlFor(id)).toBeCloseTo(0.25 - 0.3, 8);
+  });
+});
+
+describe("logError", () => {
+  beforeEach(() => useMemoryDb());
+  afterEach(() => resetTestDb());
+
+  it("writes a row and dedupes within the window", () => {
+    const a = logError({ source: "test", code: "unit", message: "boom", dedupeSec: 60 });
+    const b = logError({ source: "test", code: "unit", message: "boom", dedupeSec: 60 });
+    expect(a).toBeGreaterThan(0);
+    expect(b).toBe(0);
+    const n = (getDb().prepare("SELECT COUNT(*) AS n FROM error_log").get() as { n: number }).n;
+    expect(n).toBe(1);
+  });
+
+  it("stores stack from Error objects", () => {
+    const id = logError({
+      source: "test",
+      code: "stack",
+      message: "with stack",
+      err: new Error("with stack"),
+      dedupeSec: 0,
+    });
+    const row = getDb().prepare("SELECT stack FROM error_log WHERE id = ?").get(id) as { stack: string | null };
+    expect(row.stack).toBeTruthy();
+    expect(row.stack!).toContain("Error: with stack");
   });
 });

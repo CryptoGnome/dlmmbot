@@ -1,6 +1,6 @@
 import { config } from "../config.js";
 import { alert } from "../alerts.js";
-import { getDb, isBlacklisted, now, recordDecision } from "../db/db.js";
+import { getDb, isBlacklisted, now, recordDecision, logError } from "../db/db.js";
 import type { Executor } from "../executor/executor.js";
 import { txErrorDetail } from "../executor/live.js";
 import { sol24hChangePct } from "../market.js";
@@ -238,7 +238,17 @@ async function openFollowLeg(
     const detail = txErrorDetail(e);
     const cool = config().follow.open_fail_cooldown_s || 300;
     openFailUntil.set(chain.id, now() + cool);
-    console.error(`[follow] chain#${chain.id} ${chain.symbol} leg open failed: ${detail.summary} — cool ${cool}s`);
+    logError({
+      source: "follow",
+      code: "open_failed",
+      message: `chain#${chain.id} ${chain.symbol} leg open failed: ${detail.summary}`,
+      err: e,
+      detail: { chainId: chain.id, code: detail.code, logs: detail.logs, cool },
+      symbol: chain.symbol,
+      mint: chain.token_mint,
+      pool: chain.pool,
+      dedupeSec: cool,
+    });
     recordDecision(chain.token_mint, chain.pool, "skipped", "open_failed", null, {
       follow: true, chainId: chain.id, error: detail.summary, code: detail.code, logs: detail.logs,
     });
