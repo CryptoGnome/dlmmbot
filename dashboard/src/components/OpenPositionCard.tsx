@@ -14,6 +14,7 @@ import type { LiveWatch } from "@/lib/types";
 import { cn, fmtRet, fmtSol, fmtUsdCompact, shortTime } from "@/lib/utils";
 import { TokenSymbol } from "@/components/TokenSymbol";
 import { RangeBar, SleeveBadge, StatusBadge, type RangeStatus } from "@/components/RangeBar";
+import { LiveNum } from "@/components/LiveNum";
 
 type OpenPos = LiveWatch["open"][number];
 
@@ -45,7 +46,7 @@ function Metric({
   );
 }
 
-export function OpenPositionCard({ p }: { p: OpenPos }) {
+export function OpenPositionCard({ p, live = false }: { p: OpenPos; live?: boolean }) {
   const m = p.mark;
   const pnl = m?.total_pnl_sol ?? m?.pnl_sol;
   const depositPnl = m?.inv_pnl_sol;
@@ -54,6 +55,9 @@ export function OpenPositionCard({ p }: { p: OpenPos }) {
   const status = (p.range?.status ?? m?.status ?? "unknown") as RangeStatus;
   const underwater = pnl != null && pnl < 0;
   const winning = !underwater && pnl != null && pnl > 0;
+
+  const flash = (signal: number | null | undefined, node: ReactNode) =>
+    live ? <LiveNum signal={signal}>{node}</LiveNum> : node;
 
   return (
     <div className="border border-grid bg-bg/40 px-3 py-2">
@@ -89,8 +93,11 @@ export function OpenPositionCard({ p }: { p: OpenPos }) {
             )}
             {m?.value_sol != null && (
               <span title="Estimated SOL you’d get back right now (LP + unclaimed fees)">
-                Worth now <span className="tabular-nums text-fg">{m.value_sol.toFixed(3)}</span>
-                {m.unreliable ? "*" : ""}
+                Worth now{" "}
+                {flash(
+                  m.value_sol,
+                  <span className="tabular-nums text-fg">{m.value_sol.toFixed(3)}{m.unreliable ? "*" : ""}</span>,
+                )}
               </span>
             )}
             {m?.value_sol == null && m?.unreliable && (
@@ -102,23 +109,27 @@ export function OpenPositionCard({ p }: { p: OpenPos }) {
         </div>
         <div className="text-right" title="Deposit change + unclaimed fees + fees already claimed">
           <div className="text-[10px] uppercase tracking-wider text-dim">Total profit</div>
-          <div className={cn(
-            "tabular-nums font-semibold",
-            m?.unreliable ? "text-warn"
-              : pnl == null ? "text-dim"
-                : pnl >= 0 ? "text-ok" : "text-danger",
-          )}>
-            {m?.unreliable && pnl == null ? "unavailable"
-              : pnl == null ? "—"
-                : fmtSol(pnl, 3)}
-          </div>
-          {m?.pct != null && (
+          {flash(
+            pnl,
+            <div className={cn(
+              "tabular-nums font-semibold",
+              m?.unreliable ? "text-warn"
+                : pnl == null ? "text-dim"
+                  : pnl >= 0 ? "text-ok" : "text-danger",
+            )}>
+              {m?.unreliable && pnl == null ? "unavailable"
+                : pnl == null ? "—"
+                  : fmtSol(pnl, 3)}
+            </div>,
+          )}
+          {m?.pct != null && flash(
+            m.pct,
             <div className={cn(
               "text-[10px] tabular-nums",
               m.unreliable ? "text-warn" : m.pct >= 0 ? "text-ok" : "text-danger",
             )}>
               {fmtRet(m.pct)}{m.unreliable ? " · stale" : ""}
-            </div>
+            </div>,
           )}
           {m?.unreliable && m.pct == null && (
             <div className="text-[10px] text-warn">Waiting for update</div>
@@ -132,14 +143,14 @@ export function OpenPositionCard({ p }: { p: OpenPos }) {
           label="Deposit P&L"
           tip="Change in your LP deposit vs what you put in (fees not counted here)"
         >
-          <span className={toneN(depositPnl)}>{depositPnl == null ? "—" : fmtSol(depositPnl, 4)}</span>
+          {flash(depositPnl, <span className={toneN(depositPnl)}>{depositPnl == null ? "—" : fmtSol(depositPnl, 4)}</span>)}
         </Metric>
         <Metric
           icon={Coins}
           label="Unclaimed fees"
           tip="Trading fees earned but still sitting in the position"
         >
-          <span className={toneN(feeU)}>{fmtSol(feeU, 4)}</span>
+          {flash(feeU, <span className={toneN(feeU)}>{fmtSol(feeU, 4)}</span>)}
         </Metric>
         <Metric
           icon={HandCoins}

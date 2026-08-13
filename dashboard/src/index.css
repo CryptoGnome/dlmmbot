@@ -237,3 +237,39 @@ h1, h2, .font-display {
   animation: build-attn 1.6s ease-in-out infinite;
 }
 
+@keyframes live-flash-up {
+  0% {
+    background-color: rgba(0, 255, 133, 0.28);
+    box-shadow: 0 0 0 3px rgba(0, 255, 133, 0.12);
+    transform: translateY(-1px) scale(1.03);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 0 transparent;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes live-flash-down {
+  0% {
+    background-color: rgba(255, 77, 106, 0.28);
+    box-shadow: 0 0 0 3px rgba(255, 77, 106, 0.12);
+    transform: translateY(1px) scale(1.03);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 0 transparent;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.live-flash-up {
+  animation: live-flash-up 0.7s ease-out;
+  border-radius: 2px;
+}
+
+.live-flash-down {
+  animation: live-flash-down 0.7s ease-out;
+  border-radius: 2px;
+}
+

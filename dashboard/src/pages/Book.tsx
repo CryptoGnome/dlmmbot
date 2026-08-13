@@ -24,7 +24,7 @@ export function BookPage({
           ) : (
             <div className="space-y-2">
               {watch.open.map((p) => (
-                <OpenPositionCard key={p.id} p={p} />
+                <OpenPositionCard key={p.id} p={p} live />
               ))}
             </div>
           )}
