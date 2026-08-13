@@ -19,6 +19,7 @@ import { armFollowChain, hasActiveFollowChain, onFollowLegClosed, tickFollowChai
 import { clearHolderWatch, holderCheck } from "./holderwatch.js";
 import { sol24hChangePct, solUsdPrice } from "../market.js";
 import { circuitBreakerTripped, clusterBrakeTripped, computeBankroll, kellyStats, openPositionCount, positionSize, regimeFactor, tokenExposureSol } from "../risk/limits.js";
+import { applyMicroSize, isMicroMcap, microPoolSharePct, microSleeveExposure } from "../risk/micro.js";
 import type { Position } from "../types.js";
 import { vetToken } from "../vetting/vet.js";
 
@@ -726,9 +727,18 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     // Microcap band: $100-200k tokens are riskier — the higher bar must be
     // met on FUNDAMENTALS (base score), not reachable via bonuses.
     const g = config().gates;
-    const isMicro = cand.pool.marketCapUsd < g.mcap_micro_max_usd;
+    const isMicro = isMicroMcap(cand.pool.marketCapUsd);
     if (isMicro && baseScore < g.mcap_micro_score_min) {
       recordDecision(cand.tokenMint, cand.pool.address, "skipped", "micro_score", baseScore, { mcapUsd: cand.pool.marketCapUsd, required: g.mcap_micro_score_min, score });
+      continue;
+    }
+    if (isMicro && cand.pool.tvlUsd < g.micro_tvl_min_usd) {
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "micro_tvl", score, { tvlUsd: cand.pool.tvlUsd, required: g.micro_tvl_min_usd, sleeve: "micro" });
+      continue;
+    }
+    const microExp = isMicro ? microSleeveExposure() : null;
+    if (isMicro && microExp!.slots >= g.micro_max_slots) {
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "micro_slots_full", score, { ...microExp, max: g.micro_max_slots });
       continue;
     }
 
@@ -763,6 +773,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     }
     size *= Math.pow(m.reentry_ladder_mult, priorEntries24h);
     size *= regime; // regime filter halves sizing in a SOL downdraft
+    if (isMicro) size = applyMicroSize(size);
     // Viability floor, applied once, here — AFTER the ladder and regime have
     // had their say. A re-entry gets the lower floor because it reuses a token
     // account the first entry already paid rent for (see min_reentry_sol).
@@ -776,6 +787,15 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     if (size < sizeFloor) {
       recordDecision(cand.tokenMint, cand.pool.address, "skipped", "ladder_below_min", score, { priorEntries24h, size, sizeFloor });
       continue;
+    }
+    if (isMicro) {
+      const capSol = bankroll.walletSol * (g.micro_deploy_cap_pct / 100);
+      if (microExp!.deployedSol + size > capSol) {
+        recordDecision(cand.tokenMint, cand.pool.address, "skipped", "micro_deploy_cap", score, {
+          deployed: microExp!.deployedSol, size, capSol, pct: g.micro_deploy_cap_pct,
+        });
+        continue;
+      }
     }
     // One primary position per token (§5) — tranches are the only sanctioned
     // second position and they're opened by the manager, not the entry pipeline.
@@ -796,13 +816,14 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     // SOL price feed is down (TVL gates still bound the absolute risk).
     const solUsd = await solUsdPrice();
     if (solUsd !== null && solUsd > 0) {
-      const shareCapSol = (cand.pool.tvlUsd * (g.max_pool_share_pct / 100)) / solUsd;
+      const sharePct = isMicro ? microPoolSharePct() : g.max_pool_share_pct;
+      const shareCapSol = (cand.pool.tvlUsd * (sharePct / 100)) / solUsd;
       if (size > shareCapSol) {
         if (shareCapSol < sizeFloor) {
           recordDecision(cand.tokenMint, cand.pool.address, "skipped", "pool_share", score, { shareCapSol, size, tvlUsd: cand.pool.tvlUsd });
           continue;
         }
-        console.log(`[risk] ${cand.symbol}: size ${size.toFixed(2)} -> ${shareCapSol.toFixed(2)} SOL (pool-share cap ${g.max_pool_share_pct}% of $${cand.pool.tvlUsd.toFixed(0)} TVL)`);
+        console.log(`[risk] ${cand.symbol}: size ${size.toFixed(2)} -> ${shareCapSol.toFixed(2)} SOL (pool-share cap ${sharePct}% of $${cand.pool.tvlUsd.toFixed(0)} TVL)`);
         size = shareCapSol;
       }
     }
@@ -856,6 +877,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     const feePath = cand.pool.feeTvl24hPct >= g.fee_tvl_24h_min_pct ? "24h" : "recent_hot";
     recordDecision(cand.tokenMint, cand.pool.address, "entered", null, score, {
       size, range, vet: vet.facts, pool: cand.pool, kelly, isAlpha, flow,
+      sleeve: isMicro ? "micro" : "core",
       experiment: { feePath, isMicro, baseScore, trendingBonus, flowBonus, flowPenalty },
     });
     await alert("entry",

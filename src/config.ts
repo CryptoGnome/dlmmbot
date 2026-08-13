@@ -8,6 +8,9 @@ export interface Config {
   gates: {
     tvl_min_usd: number; tvl_max_usd: number; mcap_min_usd: number;
     mcap_micro_max_usd: number; mcap_micro_score_min: number;
+    micro_tvl_min_usd: number; micro_max_pool_share_pct: number;
+    micro_size_mult: number; micro_max_position_sol: number;
+    micro_max_slots: number; micro_deploy_cap_pct: number;
     fee_tvl_24h_min_pct: number; fee_tvl_30m_daily_min_pct: number;
     vol_30m_min_usd: number; vol_trend_min: number;
     base_fee_min_pct: number; base_fee_max_pct: number;

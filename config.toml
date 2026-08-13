@@ -10,8 +10,14 @@ copycat_ignore_h = 24      # losers of symbol dedupe ignored this long
 tvl_min_usd = 5000
 tvl_max_usd = 2000000
 mcap_min_usd = 100000        # hard floor
-mcap_micro_max_usd = 200000  # 100-200k = micro band: riskier, must score higher
+mcap_micro_max_usd = 200000  # 100-200k = micro sleeve (loss-budgeted, not Kelly-equal)
 mcap_micro_score_min = 75    # vs the normal 60 sizing floor
+micro_tvl_min_usd = 15000    # stricter TVL floor for micro sleeve only
+micro_max_pool_share_pct = 10
+micro_size_mult = 0.5        # half core Kelly size
+micro_max_position_sol = 0.45
+micro_max_slots = 1          # at most one micro position among max_positions
+micro_deploy_cap_pct = 5     # max % of wallet in open micro sleeve
 fee_tvl_24h_min_pct = 20         # %/day
 fee_tvl_30m_daily_min_pct = 10   # 30m ratio annualized to daily, %/day
 vol_30m_min_usd = 25000
