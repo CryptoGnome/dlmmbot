@@ -11,7 +11,7 @@ import {
 import type { LiveWatch } from "@/lib/types";
 import { cn, fmtRet, fmtSol, shortTime } from "@/lib/utils";
 import { TokenSymbol } from "@/components/TokenSymbol";
-import { RangeBar, StatusBadge, type RangeStatus } from "@/components/RangeBar";
+import { RangeBar, SleeveBadge, StatusBadge, type RangeStatus } from "@/components/RangeBar";
 
 type OpenPos = LiveWatch["open"][number];
 
@@ -60,6 +60,7 @@ export function OpenPositionCard({ p }: { p: OpenPos }) {
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[11px] text-accent" title="Position id">#{p.id}</span>
             <TokenSymbol symbol={p.symbol} mint={p.mint} />
+            <SleeveBadge sleeve={p.sleeve} follow={p.follow} />
             <StatusBadge status={status} />
             {underwater && (
               <span className="text-[10px] uppercase tracking-wider text-danger" title="Total profit is negative right now">

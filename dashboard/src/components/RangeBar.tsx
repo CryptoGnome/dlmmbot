@@ -113,6 +113,45 @@ export function StatusBadge({ status }: { status: RangeStatus }) {
   );
 }
 
+/** Position sleeve: meme / micro / majors (+ follow overlay). */
+export function SleeveBadge({
+  sleeve,
+  follow,
+}: {
+  sleeve?: string | null;
+  follow?: boolean;
+}) {
+  const s = (sleeve ?? "meme").toLowerCase();
+  const kind = s === "majors" || s === "micro" || s === "meme" ? s : "meme";
+  const tip =
+    kind === "majors" ? "Majors sleeve — SOL-quoted large-cap parking"
+      : kind === "micro" ? "Micro sleeve — smaller mcap band, tighter size caps"
+        : "Meme sleeve — default hot-pool entries";
+  const cls =
+    kind === "majors" ? "border-ok/70 text-ok"
+      : kind === "micro" ? "border-warn/70 text-warn"
+        : "border-accent/70 text-accent";
+
+  return (
+    <>
+      <span
+        className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10px] uppercase tracking-wider ${cls}`}
+        title={tip}
+      >
+        {kind}
+      </span>
+      {follow && (
+        <span
+          className="inline-flex items-center gap-1 border border-hover/70 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-hover"
+          title="Follow-chain leg — re-entry after an up-and-out"
+        >
+          follow
+        </span>
+      )}
+    </>
+  );
+}
+
 export function GmgnLink({ mint }: { mint?: string | null }) {
   const url = gmgnUrl(mint);
   if (!url) return null;

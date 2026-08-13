@@ -246,6 +246,31 @@ export function buildLiveBookSnapshot(root) {
       `SELECT features_json FROM decisions
        WHERE action='entered' AND mint = ? ORDER BY ts DESC LIMIT 1`
     );
+    const sleeveStmt = db.prepare(
+      `SELECT json_extract(features_json, '$.sleeve') AS sleeve,
+              json_extract(features_json, '$.pool.marketCapUsd') AS mcap,
+              json_extract(features_json, '$.follow') AS follow
+       FROM decisions
+       WHERE mint = ? AND pool = ? AND action = 'entered'
+         AND ts BETWEEN ? AND ?
+       ORDER BY ABS(ts - ?) LIMIT 1`
+    );
+    const mcapMin = tomlNum(toml, "mcap_min_usd") ?? 50_000;
+    const mcapMicroMax = tomlNum(toml, "mcap_micro_max_usd") ?? 200_000;
+
+    function resolveSleeve(row) {
+      const entryTs = Number(row.entry_ts) || 0;
+      try {
+        const hit = sleeveStmt.get(row.mint, row.pool, entryTs - 300, entryTs + 300, entryTs);
+        const s = hit?.sleeve;
+        if (s === "micro" || s === "majors" || s === "meme") return s;
+        if (s === "core") return "meme";
+        if (hit?.mcap != null && Number(hit.mcap) >= mcapMin && Number(hit.mcap) < mcapMicroMax) {
+          return "micro";
+        }
+      } catch { /* */ }
+      return "meme";
+    }
 
     function priceAtBin(refPrice, refBin, targetBin, binStep) {
       if (!(refPrice > 0) || refBin == null || targetBin == null || !(binStep > 0)) return null;
@@ -254,6 +279,7 @@ export function buildLiveBookSnapshot(root) {
 
     const open = db.prepare(
       `SELECT p.id, p.symbol, p.token_mint AS mint, p.mode, p.state, p.pool,
+              p.entry_ts, p.follow_chain_id,
               round(p.entry_sol,4) entry_sol, round(p.entry_price,12) entry_price,
               round(p.open_cost_sol,6) open_cost_sol,
               p.min_bin_id, p.max_bin_id,
@@ -314,7 +340,9 @@ export function buildLiveBookSnapshot(root) {
       }
 
       let binStep = 100;
+      let sleeve = "meme";
       try {
+        sleeve = resolveSleeve(r);
         const feat = featStmt.get(r.mint);
         const j = feat?.features_json ? JSON.parse(feat.features_json) : {};
         if (j.pool?.binStep) binStep = j.pool.binStep;
@@ -330,6 +358,8 @@ export function buildLiveBookSnapshot(root) {
         mint: r.mint,
         mode: r.mode,
         state: r.state,
+        sleeve,
+        follow: r.follow_chain_id != null,
         entry_sol: entry,
         entry_price: r.entry_price,
         open_cost_sol: r.open_cost_sol != null ? Number(r.open_cost_sol) : null,

@@ -44,6 +44,9 @@ export interface LiveWatch {
   };
   open: Array<{
     id: number; symbol: string; mint?: string; mode: string; state: string;
+    /** meme | micro | majors */
+    sleeve?: string | null;
+    follow?: boolean;
     entry_sol: number; entry_price?: number; open_cost_sol?: number | null;
     opened: string; fees_claimed_sol?: number;
     min_bin_id?: number; max_bin_id?: number; range_status?: string;
