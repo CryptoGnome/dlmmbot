@@ -94,8 +94,7 @@ Telegram + heartbeat, auto-deploy.
 **Do not ship (decided):** meme BidAsk→Spot/Curve ([RANGE-SHAPE-DECISION.md](RANGE-SHAPE-DECISION.md)),
 SOL-USDC/stable pairs, weaken P1, house-money, more slots.
 
-**Deferred:** second tranche,
-meme compound/hybrid fee dest, local dashboard, weight auto-tuning, RugCheck
+**Deferred:** meme compound/hybrid fee dest, weight auto-tuning, RugCheck
 paid WS, multi-wallet sharding, majors continuous Kelly.
 
 **Monitor:** post-fix book sample, first majors entries, Kelly fraction, mark

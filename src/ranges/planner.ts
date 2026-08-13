@@ -136,6 +136,53 @@ export function planRange(
 }
 
 /**
+ * Second tranche (Gmet dual-range): BidAsk pocket *below* the primary, down to
+ * the P0-safe floor (tranche_max_down_pct, clamped by safety margin). Returns
+ * null when the primary already fills that floor — no room for a second leg.
+ */
+export function planTrancheRange(
+  currentPrice: number,
+  binStep: number,
+  candles: Candle[],
+  decimalsX: number,
+  primary: RangePlan,
+): RangePlan | null {
+  const e = config().entry;
+  const safetyCapPct = Math.abs(config().manage.safety_price_crash_pct) - SAFETY_MARGIN_PCT;
+  const targetDown = Math.max(
+    e.min_down_pct,
+    Math.min(e.tranche_max_down_pct ?? 70, safetyCapPct),
+  );
+
+  // Sit immediately under the primary so capital is not double-stacked.
+  const maxBinId = primary.minBinId - 1;
+
+  let bottomPrice = currentPrice * (1 - targetDown / 100);
+  let fibAnchor: RangePlan["fibAnchor"] = null;
+  const sw = swing(candles);
+  if (sw && sw.low < currentPrice) {
+    // 0.786 extension below the swing low — STRATEGY.md §3 second tranche.
+    const ext = sw.low - (sw.high - sw.low) * e.fib_bottom;
+    if (ext > 0) {
+      const floor = currentPrice * (1 - safetyCapPct / 100);
+      bottomPrice = Math.min(bottomPrice, Math.max(ext, floor));
+      fibAnchor = { swingHigh: sw.high, swingLow: sw.low, level: e.fib_bottom };
+    }
+  }
+
+  let minBinId = priceToBinId(bottomPrice, binStep, decimalsX);
+  if (minBinId > maxBinId) return null;
+
+  const maxBins = BINS_PER_POSITION * e.max_position_accounts;
+  if (maxBinId - minBinId + 1 > maxBins) minBinId = maxBinId - maxBins + 1;
+  if (minBinId > maxBinId) return null;
+  // Skip dust pockets — need a real BidAsk ladder, not a few bins.
+  if (maxBinId - minBinId + 1 < 10) return null;
+
+  return buildPlan(minBinId, maxBinId, currentPrice, binStep, decimalsX, fibAnchor);
+}
+
+/**
  * Follow-mode range (manager/follow.ts): fixed depth below current price, no
  * fib/swing input — a follow leg re-bids under a price that just made a new
  * high, where the recent swing low sits below the chain's loss budget anyway.

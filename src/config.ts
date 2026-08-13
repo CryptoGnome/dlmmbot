@@ -44,6 +44,8 @@ export interface Config {
     bin_rent_hard_sol: number; bin_rent_hard_score_min: number;
     liquidity_slippage_pct: number;
     tranche_enabled: boolean; tranche_score_min: number; tranche_size_pct: number;
+    /** Target depth for second tranche (clamped by P0 safety margin like primary). */
+    tranche_max_down_pct: number;
   };
   manage: {
     poll_s: number;

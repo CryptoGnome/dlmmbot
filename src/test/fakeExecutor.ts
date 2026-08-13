@@ -37,11 +37,11 @@ export class FakeExecutor implements Executor {
     const id = this.nextOpenId++;
     const res = getDb().prepare(
       `INSERT INTO positions (
-         mode, pool, token_mint, symbol, entry_ts, entry_price, entry_sol,
+         mode, pool, token_mint, symbol, tranche_of, entry_ts, entry_price, entry_sol,
          min_bin_id, max_bin_id, state, fees_claimed_sol, rent_paid_sol, open_cost_sol
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', 0, ?, ?)`
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', 0, ?, ?)`
     ).run(
-      this.mode, params.poolAddress, params.tokenMint, params.symbol,
+      this.mode, params.poolAddress, params.tokenMint, params.symbol, params.trancheOf ?? null,
       now(), params.entryPrice, params.sizeSol,
       params.range.minBinId, params.range.maxBinId,
       params.range.estBinRentSol, params.sizeSol,
@@ -54,7 +54,7 @@ export class FakeExecutor implements Executor {
     });
     return {
       id: realId, mode: this.mode, poolAddress: params.poolAddress,
-      tokenMint: params.tokenMint, symbol: params.symbol, trancheOf: null,
+      tokenMint: params.tokenMint, symbol: params.symbol, trancheOf: params.trancheOf ?? null,
       entryTs: now(), entryPrice: params.entryPrice, entrySol: params.sizeSol,
       minBinId: params.range.minBinId, maxBinId: params.range.maxBinId,
       state: "open", feesClaimedSol: 0, rentPaidSol: params.range.estBinRentSol,

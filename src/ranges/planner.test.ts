@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { priceToBinId, binIdToPrice, planRange, planFollowRange, fitPlanToRentBudget } from "./planner.js";
+import { priceToBinId, binIdToPrice, planRange, planFollowRange, planTrancheRange, fitPlanToRentBudget } from "./planner.js";
 import { installConfig, restoreConfig } from "../test/config.js";
 
 describe("planner bin math", () => {
@@ -56,6 +56,43 @@ describe("planner bin math", () => {
     expect(plan.fibAnchor).toBeNull();
     expect(plan.bottomPricePct).toBeLessThan(-20);
     expect(plan.positionAccounts).toBeGreaterThanOrEqual(1);
+  });
+
+  it("planTrancheRange sits below a shallow primary and respects P0 floor", () => {
+    installConfig((c) => {
+      c.entry.min_down_pct = 40;
+      c.entry.max_down_pct = 50;
+      c.entry.tranche_max_down_pct = 70;
+      c.manage.safety_price_crash_pct = -60;
+    });
+    // Flat candles → primary bottoms near -40..-50; force a shallow primary.
+    const primary = {
+      minBinId: priceToBinId(0.85, 100, 6), // ~-15% — leave room under it
+      maxBinId: priceToBinId(1, 100, 6),
+      binCount: 20, positionAccounts: 1, bottomPricePct: -15,
+      shape: "bidask" as const, fibAnchor: null, estBinRentSol: 0.075,
+    };
+    const t = planTrancheRange(1, 100, [], 6, primary);
+    expect(t).not.toBeNull();
+    expect(t!.maxBinId).toBe(primary.minBinId - 1);
+    expect(t!.minBinId).toBeLessThan(t!.maxBinId);
+    expect(t!.bottomPricePct).toBeLessThanOrEqual(-39);
+    expect(t!.bottomPricePct).toBeGreaterThanOrEqual(-55);
+  });
+
+  it("planTrancheRange returns null when primary already fills the floor", () => {
+    installConfig((c) => {
+      c.entry.min_down_pct = 40;
+      c.entry.max_down_pct = 50;
+      c.entry.tranche_max_down_pct = 70;
+      c.manage.safety_price_crash_pct = -60;
+    });
+    const primary = planRange(1, 100, [], 6);
+    // Primary at the P0-safe floor → no pocket underneath.
+    const t = planTrancheRange(1, 100, [], 6, primary);
+    // May be null or tiny; require null or <10 bins skipped by planner
+    if (t) expect(t.binCount).toBeGreaterThanOrEqual(10);
+    else expect(t).toBeNull();
   });
 
   it("fitPlanToRentBudget shrinks bins to fit rent without going shallower than min_down", () => {

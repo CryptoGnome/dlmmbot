@@ -94,9 +94,13 @@ bin_rent_hard_score_min = 80
 # tiny vs a 40% deep bid-ask. Prefer rebuild-on-slippage in live.ts over
 # widening this further.
 liquidity_slippage_pct = 5.0
-tranche_enabled = false
+# Second tranche (Gmet dual-range): smaller BidAsk pocket below the primary.
+tranche_enabled = true
 tranche_score_min = 85
 tranche_size_pct = 50
+# Target depth for the deep leg (clamped by P0 safety margin in planner —
+# with crash=-60 / margin=10 that floor is ~50%).
+tranche_max_down_pct = 70
 
 [manage]                   # STRATEGY.md §4
 poll_s = 15

@@ -88,7 +88,7 @@ Default shape — **Tux entry**: one-sided SOL, bid-ask, below current price.
    - Normal exits `[50 bps]` swap slippage; P0 safety exits `[1000 bps]` (speed over price).
    - Partial profit locks: `removeLiquidity(bps)` then zap withdrawn token side → SOL via Zap SDK (same swap path as exits).
    - **Escape hatch:** `rebalanceDlmmPosition` reshapes in place (preserve width, anchor top at active bin). Falls back to close + re-enter if Zap fails or `use_zap = false`.
-7. **Second tranche** `[off by default]`: for score ≥ `[85]`, an additional wider "worst-case" range (Gmet's dual-range), sized at `[50%]` of the primary, down to fib 0.786-below-the-low.
+7. **Second tranche** `[on]`: for score ≥ `[85]`, an additional BidAsk pocket *below* the primary (Gmet dual-range), sized at `[50%]` of the primary, down toward `tranche_max_down_pct` (clamped by the P0 safety floor). Skipped when the primary already fills that floor, on micro sleeve, or when slots/size floor block it.
 
 ## 4. Position management — the state machine
 
@@ -250,7 +250,6 @@ Tables:
 
 ### Deferred (future build, if ever)
 
-- Second tranche (`tranche_enabled = false`)
 - Meme `compound` / `hybrid` fee destination (only `bank` implemented)
 - Local dashboard (Express UI) — **shipped** as Vite SPA + `deploy/dashboard-server.mjs` (see DEPLOY.md)
 - Weight auto-tuning from `decisions` table (n=57 too small; score doesn't separate escape vs P1)

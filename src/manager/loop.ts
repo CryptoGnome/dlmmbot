@@ -9,7 +9,7 @@ import type { Executor } from "../executor/executor.js";
 import { PaperExecutor } from "../executor/paper.js";
 import { rollupDaily } from "../pnl/rollup.js";
 import { fetchSummary } from "../vetting/rugcheck.js";
-import { planRange } from "../ranges/planner.js";
+import { planRange, planTrancheRange } from "../ranges/planner.js";
 import { applyBinRentGate } from "../ranges/binRent.js";
 import { fetchCandles, fetchPool } from "../scanner/meteora.js";
 import { trendingByMint } from "../scanner/gmgn.js";
@@ -29,7 +29,7 @@ import { vetToken } from "../vetting/vet.js";
 
 // STRATEGY.md §4 — P0–P5 state machine. Live: P0 (TVL/price/rugcheck + GMGN
 // holder-watch), P1–P5, escape hatch, follow, micro/majors sleeves, residual
-// sweep, heartbeat. Not implemented: second tranche, meme compound/hybrid fee dest.
+// sweep, heartbeat. Second tranche: dual-range BidAsk below primary (score gate).
 
 const HALT_FILE = resolve(process.cwd(), "HALT");
 const LOCK_FILE = resolve(process.cwd(), "data", "farmer.lock");
@@ -963,6 +963,63 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       `(kelly:${kelly.regime}@${(kelly.appliedFraction * 100).toFixed(1)}%) ` +
       `range=[${range.minBinId},${range.maxBinId}] (${range.bottomPricePct.toFixed(0)}% depth) pos#${pos.id}`
     );
+
+    // Second tranche — wider BidAsk pocket below primary when score clears the
+    // gate and the primary left room above the P0-safe floor.
+    const te = config().entry;
+    if (te.tranche_enabled && score >= te.tranche_score_min && !isMicro) {
+      const tSize = size * (te.tranche_size_pct / 100);
+      const tFloor = config().sizing.min_position_sol;
+      const slotsLeft = bankroll.effectiveSlots - openPositionCount();
+      const roomCap = (bankroll.deployableSol + bankroll.deployedSol) * (config().sizing.per_token_max_pct / 100);
+      const roomTok = roomCap - tokenExposureSol(cand.tokenMint);
+      if (tSize >= tFloor && slotsLeft >= 1 && tSize <= roomTok) {
+        const tPlan = planTrancheRange(
+          cand.pool.price, cand.pool.binStep, candles, cand.pool.decimalsX, range,
+        );
+        if (tPlan) {
+          const tRent = await applyBinRentGate({
+            range: tPlan,
+            score,
+            poolAddress: cand.pool.address,
+            price: cand.pool.price,
+            binStep: cand.pool.binStep,
+            decimalsX: cand.pool.decimalsX,
+            minDownPct: Math.abs(tPlan.bottomPricePct),
+          });
+          if (tRent.ok) {
+            try {
+              const tPos = await exec.open({
+                poolAddress: cand.pool.address,
+                tokenMint: cand.tokenMint,
+                symbol: cand.symbol,
+                sizeSol: tSize,
+                range: tRent.range,
+                entryPrice: cand.pool.price,
+                trancheOf: pos.id,
+              });
+              recordDecision(cand.tokenMint, cand.pool.address, "entered", null, score, {
+                tranche: true, primaryId: pos.id, size: tSize, range: tRent.range,
+              });
+              console.log(
+                `[enter] ${cand.symbol} TRANCHE size=${tSize.toFixed(2)} SOL ` +
+                `range=[${tRent.range.minBinId},${tRent.range.maxBinId}] ` +
+                `(${tRent.range.bottomPricePct.toFixed(0)}% depth) pos#${tPos.id} of #${pos.id}`
+              );
+              await alert("entry",
+                `${cand.symbol} tranche pos#${tPos.id} of #${pos.id}: ${tSize.toFixed(2)} SOL ` +
+                `(depth ${tRent.range.bottomPricePct.toFixed(0)}%)`);
+            } catch (e) {
+              const msg = ((e as Error).message ?? String(e)).split("\n")[0]!.slice(0, 200);
+              console.error(`[enter] ${cand.symbol} tranche open failed: ${msg}`);
+              recordDecision(cand.tokenMint, cand.pool.address, "skipped", "tranche_open_failed", score, {
+                primaryId: pos.id, size: tSize, error: msg,
+              });
+            }
+          }
+        }
+      }
+    }
   }
   await enterMajorsPositions(exec, bankroll);
 }
