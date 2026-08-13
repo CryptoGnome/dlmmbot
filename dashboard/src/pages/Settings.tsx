@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  fetchConfig, fetchEnv, fetchSetupStatus, generateWallet, importWallet,
+  fetchConfig, fetchEnv, fetchSetupStatus,
   patchConfig, patchSecrets, unlockSecrets, unlockWallet,
   type EnvRow, type FlatConfig, type SetupStatus,
 } from "@/lib/api";
 import { Badge, Panel } from "@/components/ui";
 import { Icon } from "@/lib/icons";
 import { toast } from "@/lib/toast";
+import { WalletCreateModal } from "@/components/WalletCreateModal";
 import {
   Settings as SettingsIcon, Save, RefreshCw, Lock, Unlock, KeyRound, Wallet,
 } from "lucide-react";
@@ -456,12 +457,11 @@ export function SettingsPage() {
   const [walletTab, setWalletTab] = useState<"create" | "import" | "unlock">("create");
   const [walletConfirm, setWalletConfirm] = useState("");
   const [walletPass, setWalletPass] = useState("");
-  const [walletPass2, setWalletPass2] = useState("");
-  const [walletSecret, setWalletSecret] = useState("");
   const [walletBusy, setWalletBusy] = useState(false);
   const [secretOnce, setSecretOnce] = useState<string | null>(null);
   const [pageTab, setPageTab] = useState<"bot" | "wallet">("bot");
   const [showAdvancedSecrets, setShowAdvancedSecrets] = useState(false);
+  const [walletModal, setWalletModal] = useState<"create" | "import" | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -864,10 +864,23 @@ export function SettingsPage() {
           ))}
         </div>
         <p className="mb-2 text-[11px] text-muted">
-          {walletTab === "create" && "Makes a fresh key, locks it with a password you choose, then shows the private key once for backup."}
-          {walletTab === "import" && "Paste a Phantom private key, lock it with a password, and store it encrypted on this host."}
+          {walletTab === "create" && "Guided create: warnings, password, retype, then a one-time private-key backup you must confirm."}
+          {walletTab === "import" && "Guided import: same password checks, then encrypt a Phantom burner key on this host."}
           {walletTab === "unlock" && "Type your password so the bot can use the wallet. Restart the bot after unlocking."}
         </p>
+
+        {(walletTab === "create" || walletTab === "import") && (
+          <button
+            type="button"
+            className="btn-primary inline-flex items-center gap-1.5"
+            onClick={() => setWalletModal(walletTab)}
+          >
+            <Icon icon={walletTab === "create" ? KeyRound : Wallet} size={12} />
+            {walletTab === "create" ? "Start secure create…" : "Start secure import…"}
+          </button>
+        )}
+
+        {walletTab === "unlock" && (
         <div className="space-y-2">
           <label className="block space-y-1">
             <span className="text-[11px] text-muted">Dash password (same as login token)</span>
@@ -880,44 +893,17 @@ export function SettingsPage() {
               placeholder="DASH_TOKEN"
             />
           </label>
-          {walletTab === "import" && (
-            <label className="block space-y-1">
-              <span className="text-[11px] text-muted">Phantom private key</span>
-              <input
-                className="input-field"
-                type="password"
-                autoComplete="off"
-                value={walletSecret}
-                onChange={(e) => setWalletSecret(e.target.value)}
-                placeholder="Paste once — never your main wallet"
-              />
-            </label>
-          )}
           <label className="block space-y-1">
-            <span className="text-[11px] text-muted">
-              {walletTab === "unlock" ? "Wallet password" : "New wallet password"}
-            </span>
+            <span className="text-[11px] text-muted">Wallet password</span>
             <input
               className="input-field"
               type="password"
               autoComplete="off"
               value={walletPass}
               onChange={(e) => setWalletPass(e.target.value)}
-              placeholder={walletTab === "unlock" ? "Passphrase you set earlier" : "Pick something you’ll remember"}
+              placeholder="Passphrase you set earlier"
             />
           </label>
-          {walletTab !== "unlock" && (
-            <label className="block space-y-1">
-              <span className="text-[11px] text-muted">Repeat wallet password</span>
-              <input
-                className="input-field"
-                type="password"
-                autoComplete="off"
-                value={walletPass2}
-                onChange={(e) => setWalletPass2(e.target.value)}
-              />
-            </label>
-          )}
           {secretOnce && (
             <div className="border border-warn/50 bg-bg p-2 text-[11px] leading-snug text-warn">
               <div className="mb-1 font-medium">Save this private key somewhere safe — shown once:</div>
@@ -927,46 +913,18 @@ export function SettingsPage() {
           <button
             type="button"
             className="btn-primary inline-flex items-center gap-1.5"
-            disabled={walletBusy || !walletConfirm.trim() || !walletPass || (walletTab === "import" && !walletSecret.trim())}
+            disabled={walletBusy || !walletConfirm.trim() || !walletPass}
             onClick={() => {
               void (async () => {
                 setWalletBusy(true);
                 setErr(null);
                 setMsg(null);
                 try {
-                  if (walletTab === "unlock") {
-                    const r = await unlockWallet({ confirm: walletConfirm, passphrase: walletPass });
-                    setSetup(r.status);
-                    setMsg(r.note ?? "Unlocked. Restart the bot if it was already running.");
-                    toast({ title: "Wallet unlocked", detail: r.publicKey.slice(0, 8) + "…", tone: "ok", kind: "event" });
-                    setWalletPass("");
-                  } else {
-                    if (walletPass !== walletPass2) throw new Error("passwords do not match");
-                    if (walletTab === "create") {
-                      const r = await generateWallet({
-                        confirm: walletConfirm,
-                        passphrase: walletPass,
-                        overwrite: !!setup?.wallet.encrypted,
-                      });
-                      setSecretOnce(r.secretOnce);
-                      setSetup(r.status);
-                      setMsg(r.note ?? "Wallet created. Save the backup key, then Unlock when you want to trade.");
-                      toast({ title: "Wallet created", detail: r.publicKey.slice(0, 8) + "…", tone: "ok", kind: "event" });
-                    } else {
-                      const r = await importWallet({
-                        confirm: walletConfirm,
-                        passphrase: walletPass,
-                        secret: walletSecret,
-                        overwrite: !!setup?.wallet.encrypted,
-                      });
-                      setSetup(r.status);
-                      setWalletSecret("");
-                      setMsg(r.note ?? "Imported. Unlock when you want to trade.");
-                      toast({ title: "Wallet imported", detail: r.publicKey.slice(0, 8) + "…", tone: "ok", kind: "event" });
-                    }
-                    setWalletPass("");
-                    setWalletPass2("");
-                  }
+                  const r = await unlockWallet({ confirm: walletConfirm, passphrase: walletPass });
+                  setSetup(r.status);
+                  setMsg(r.note ?? "Unlocked. Restart the bot if it was already running.");
+                  toast({ title: "Wallet unlocked", detail: r.publicKey.slice(0, 8) + "…", tone: "ok", kind: "event" });
+                  setWalletPass("");
                 } catch (e) {
                   setErr((e as Error).message);
                   toast({ title: "Wallet action failed", detail: (e as Error).message, tone: "danger", kind: "fail" });
@@ -976,17 +934,38 @@ export function SettingsPage() {
               })();
             }}
           >
-            <Icon icon={walletTab === "unlock" ? Unlock : walletTab === "create" ? KeyRound : Wallet} size={12} />
-            {walletBusy
-              ? "Working…"
-              : walletTab === "unlock"
-                ? "Unlock wallet"
-                : walletTab === "create"
-                  ? "Create burner"
-                  : "Import & lock"}
+            <Icon icon={Unlock} size={12} />
+            {walletBusy ? "Working…" : "Unlock wallet"}
           </button>
         </div>
+        )}
       </Panel>
+
+      {walletModal && (
+        <WalletCreateModal
+          mode={walletModal}
+          overwrite={!!setup?.wallet.encrypted}
+          initialDashToken={walletConfirm}
+          onCancel={() => setWalletModal(null)}
+          onDone={({ status, publicKey, secretOnce: once }) => {
+            setSetup(status);
+            setSecretOnce(once);
+            setWalletModal(null);
+            setWalletPass("");
+            setMsg(
+              once
+                ? "Wallet created and backup confirmed."
+                : "Wallet imported.",
+            );
+            toast({
+              title: walletModal === "create" ? "Wallet created" : "Wallet imported",
+              detail: publicKey.slice(0, 8) + "…",
+              tone: "ok",
+              kind: "event",
+            });
+          }}
+        />
+      )}
 
       <Panel
         title="2. API keys & mode"
