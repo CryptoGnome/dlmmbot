@@ -18,6 +18,7 @@ import {
   Settings,
   ShieldAlert,
   SkipForward,
+  Microscope,
   TrendingUp,
   Unplug,
   Wallet,
@@ -33,6 +34,7 @@ export const tabIcon: Record<TabId, LucideIcon> = {
   book: BookOpen,
   analytics: LineChart,
   activity: Activity,
+  research: Microscope,
   settings: Settings,
 };
 

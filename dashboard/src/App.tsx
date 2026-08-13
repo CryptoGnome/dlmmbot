@@ -8,6 +8,7 @@ import { OverviewPage } from "@/pages/Overview";
 import { BookPage } from "@/pages/Book";
 import { AnalyticsPage } from "@/pages/Analytics";
 import { ActivityPage } from "@/pages/Activity";
+import { ResearchPage } from "@/pages/Research";
 import { SettingsPage } from "@/pages/Settings";
 
 export default function App() {
@@ -106,6 +107,7 @@ export default function App() {
       {tab === "book" && <BookPage watch={watch} hist={hist} />}
       {tab === "analytics" && <AnalyticsPage watch={watch} hist={hist} />}
       {tab === "activity" && <ActivityPage watch={watch} />}
+      {tab === "research" && <ResearchPage />}
       {tab === "settings" && <SettingsPage />}
 
       <footer className="px-1 pb-2 text-[10px] text-dim">

@@ -87,7 +87,13 @@ export async function patchConfig(updates: Record<string, unknown>): Promise<{
   return { applied: data.applied ?? [], config: data.config ?? {} };
 }
 
-export type EnvRow = { key: string; set: boolean; secret: boolean; value: string | null };
+export type EnvRow = {
+  key: string;
+  set: boolean;
+  secret: boolean;
+  value: string | null;
+  editable?: boolean;
+};
 
 export async function fetchEnv(): Promise<EnvRow[]> {
   const t = tokenFromUrl();
@@ -96,6 +102,37 @@ export async function fetchEnv(): Promise<EnvRow[]> {
   if (!res.ok) throw new Error(`env ${res.status}`);
   const data = await res.json() as { env: EnvRow[] };
   return data.env;
+}
+
+export async function unlockSecrets(confirm: string): Promise<{ ok: boolean; keys: string[] }> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/secrets/unlock${q}`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ confirm }),
+  });
+  const data = await res.json() as { ok?: boolean; keys?: string[]; error?: string };
+  if (!res.ok) throw new Error(data.error ?? `unlock ${res.status}`);
+  return { ok: !!data.ok, keys: data.keys ?? [] };
+}
+
+export async function patchSecrets(
+  confirm: string,
+  updates: Record<string, string>,
+): Promise<{ applied: string[]; env: EnvRow[]; note?: string }> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/secrets${q}`, {
+    method: "PATCH",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ confirm, updates }),
+  });
+  const data = await res.json() as {
+    applied?: string[]; env?: EnvRow[]; note?: string; error?: string;
+  };
+  if (!res.ok) throw new Error(data.error ?? `secrets ${res.status}`);
+  return { applied: data.applied ?? [], env: data.env ?? [], note: data.note };
 }
 
 export type LiveStatus = "connecting" | "open" | "closed";

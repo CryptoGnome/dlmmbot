@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { buildLiveBookSnapshot } from "./lib/live-book-snapshot.mjs";
 import { buildHistorySnapshot } from "./lib/history-snapshot.mjs";
-import { applyConfigUpdates, flattenConfig, parseConfig, readEnvMasked } from "./lib/config-edit.mjs";
+import { applyConfigUpdates, applyEnvUpdates, flattenConfig, parseConfig, readEnvMasked } from "./lib/config-edit.mjs";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const root = resolve(process.env.FARMER_ROOT ?? resolve(__dir, ".."));
@@ -92,6 +92,25 @@ function allowRange(range) {
   return range === "7d" || range === "30d" || range === "all" ? range : "30d";
 }
 
+/** Watch snapshot is ~4s; cache so WS ticks + /api/* don't serialize behind rebuilds. */
+let watchCache = { at: 0, data: null, building: null };
+const WATCH_CACHE_MS = Math.max(1_000, Math.floor(WATCH_MS * 0.9));
+
+async function getWatchSnapshot() {
+  const now = Date.now();
+  if (watchCache.data && now - watchCache.at < WATCH_CACHE_MS) return watchCache.data;
+  if (watchCache.building) return watchCache.building;
+  watchCache.building = Promise.resolve().then(() => {
+    const data = buildLiveBookSnapshot(root);
+    watchCache = { at: Date.now(), data, building: null };
+    return data;
+  }).catch((e) => {
+    watchCache.building = null;
+    throw e;
+  });
+  return watchCache.building;
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
@@ -99,7 +118,7 @@ const server = createServer(async (req, res) => {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Headers": "Authorization, Content-Type",
-      "Access-Control-Allow-Methods": "GET, PATCH, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, PATCH, POST, OPTIONS",
     });
     res.end();
     return;
@@ -113,7 +132,7 @@ const server = createServer(async (req, res) => {
 
   if (url.pathname === "/api/watch") {
     try {
-      sendJson(res, 200, buildLiveBookSnapshot(root));
+      sendJson(res, 200, await getWatchSnapshot());
     } catch (e) {
       sendJson(res, 500, { error: e.message ?? String(e) });
     }
@@ -153,9 +172,52 @@ const server = createServer(async (req, res) => {
 
   if (url.pathname === "/api/env" && req.method === "GET") {
     try {
-      sendJson(res, 200, { env: readEnvMasked() });
+      sendJson(res, 200, { env: readEnvMasked(root) });
     } catch (e) {
       sendJson(res, 500, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/secrets" && req.method === "PATCH") {
+    try {
+      const body = await readBody(req);
+      const confirm = typeof body?.confirm === "string" ? body.confirm : "";
+      if (!token || confirm !== token) {
+        sendJson(res, 403, { error: "re-enter dash token to edit secrets" });
+        return;
+      }
+      const updates = body?.updates ?? {};
+      const result = applyEnvUpdates(root, updates);
+      sendJson(res, 200, {
+        ...result,
+        note: "Wrote .env. Restart meteora-farmer (and dash if RPC/token changed) for full effect.",
+      });
+    } catch (e) {
+      sendJson(res, 400, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/secrets/unlock" && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      const confirm = typeof body?.confirm === "string" ? body.confirm : "";
+      if (!token || confirm !== token) {
+        sendJson(res, 403, { error: "wrong dash token" });
+        return;
+      }
+      sendJson(res, 200, {
+        ok: true,
+        keys: [
+          "RPC_URL", "RPC_URL_FALLBACK", "WALLET_PUBKEY", "PUBLIC_WALLET",
+          "WALLET_PRIVATE_KEY", "WALLET_KEYPAIR_PATH",
+          "JUPITER_API_KEY", "GMGN_API_KEY",
+          "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
+        ],
+      });
+    } catch (e) {
+      sendJson(res, 400, { error: e.message ?? String(e) });
     }
     return;
   }
@@ -207,11 +269,9 @@ function send(ws, obj) {
 }
 
 function pushWatch(ws) {
-  try {
-    send(ws, { type: "watch", data: buildLiveBookSnapshot(root) });
-  } catch (e) {
-    send(ws, { type: "error", error: e.message ?? String(e) });
-  }
+  getWatchSnapshot()
+    .then((data) => send(ws, { type: "watch", data }))
+    .catch((e) => send(ws, { type: "error", error: e.message ?? String(e) }));
 }
 
 function pushHistory(ws, range) {
@@ -247,15 +307,19 @@ wss.on("connection", (ws) => {
 
 setInterval(() => {
   if (clients.size === 0) return;
-  let payload;
-  try {
-    payload = JSON.stringify({ type: "watch", data: buildLiveBookSnapshot(root) });
-  } catch (e) {
-    payload = JSON.stringify({ type: "error", error: e.message ?? String(e) });
-  }
-  for (const ws of clients.keys()) {
-    if (ws.readyState === 1) ws.send(payload);
-  }
+  getWatchSnapshot()
+    .then((data) => {
+      const payload = JSON.stringify({ type: "watch", data });
+      for (const ws of clients.keys()) {
+        if (ws.readyState === 1) ws.send(payload);
+      }
+    })
+    .catch((e) => {
+      const payload = JSON.stringify({ type: "error", error: e.message ?? String(e) });
+      for (const ws of clients.keys()) {
+        if (ws.readyState === 1) ws.send(payload);
+      }
+    });
 }, WATCH_MS);
 
 setInterval(() => {

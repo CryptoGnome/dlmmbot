@@ -118,6 +118,44 @@ h1, h2, .font-display {
   font-size: 12px;
 }
 
+.slider-field {
+  display: block;
+  width: 100%;
+  max-width: 11rem;
+  height: 1rem;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.slider-field:focus {
+  outline: none;
+}
+.slider-field::-webkit-slider-runnable-track {
+  height: 2px;
+  background: var(--color-grid);
+}
+.slider-field::-webkit-slider-thumb {
+  appearance: none;
+  width: 11px;
+  height: 11px;
+  margin-top: -4.5px;
+  background: var(--color-ok);
+  border: 1px solid var(--color-bg);
+}
+.slider-field::-moz-range-track {
+  height: 2px;
+  background: var(--color-grid);
+  border: none;
+}
+.slider-field::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+  background: var(--color-ok);
+  border: 1px solid var(--color-bg);
+  border-radius: 0;
+}
+
 .input-field:focus {
   outline: none;
   border-color: var(--color-accent);

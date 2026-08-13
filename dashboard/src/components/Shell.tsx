@@ -4,13 +4,14 @@ import type { ReactNode } from "react";
 import { CircleDot } from "lucide-react";
 import { Icon, PauseCircle, tabIcon, Unplug, Zap } from "@/lib/icons";
 
-export type TabId = "overview" | "book" | "analytics" | "activity" | "settings";
+export type TabId = "overview" | "book" | "analytics" | "activity" | "research" | "settings";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "book", label: "Book" },
   { id: "analytics", label: "Analytics" },
   { id: "activity", label: "Activity" },
+  { id: "research", label: "Research" },
   { id: "settings", label: "Settings" },
 ];
 
