@@ -60,6 +60,46 @@ export async function swapToSol(
   return { outLamports: Number(quote.outAmount), signature };
 }
 
+/** Swap `lamports` of SOL to `outputMint`. Returns raw token out (from quote) + signature. */
+export async function swapFromSol(
+  connection: Connection,
+  wallet: Keypair,
+  outputMint: string,
+  lamports: bigint,
+  slippageBps: number,
+): Promise<{ outAmountRaw: bigint; signature: string } | null> {
+  if (lamports <= 0n || outputMint === SOL_MINT) return null;
+  const base = config().apis.jupiter_quote;
+
+  const quoteRes = await fetch(
+    `${base}/quote?inputMint=${SOL_MINT}&outputMint=${outputMint}&amount=${lamports}&slippageBps=${slippageBps}`,
+    { headers: headers(), signal: AbortSignal.timeout(15_000) },
+  );
+  if (!quoteRes.ok) throw new Error(`jupiter quote HTTP ${quoteRes.status}`);
+  const quote = (await quoteRes.json()) as QuoteResponse;
+
+  const swapRes = await fetch(`${base}/swap`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({
+      quoteResponse: quote,
+      userPublicKey: wallet.publicKey.toBase58(),
+      wrapAndUnwrapSol: true,
+      dynamicComputeUnitLimit: true,
+      prioritizationFeeLamports: "auto",
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!swapRes.ok) throw new Error(`jupiter swap HTTP ${swapRes.status}`);
+  const { swapTransaction } = (await swapRes.json()) as { swapTransaction: string };
+
+  const tx = VersionedTransaction.deserialize(Buffer.from(swapTransaction, "base64"));
+  tx.sign([wallet]);
+  const signature = await connection.sendRawTransaction(tx.serialize(), { maxRetries: 3 });
+  await connection.confirmTransaction(signature, "confirmed");
+  return { outAmountRaw: BigInt(quote.outAmount), signature };
+}
+
 /** Quote-only: lamports of SOL `amountRaw` of `inputMint` would fetch, or null if unquotable. */
 export async function quoteToSolLamports(inputMint: string, amountRaw: bigint): Promise<number | null> {
   if (amountRaw <= 0n || inputMint === SOL_MINT) return null;

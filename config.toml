@@ -294,6 +294,17 @@ safety_exit_slippage_bps = 1000
 tx_retries = 3
 paper_promotion_days = 7
 
+# After each closed position: if MEASURED net PnL > 0 (wallet in/out + fees +
+# rent recoveries − open cost), spend profit_frac of that profit on `mint` via
+# Jupiter and burn the tokens. Mark-only / legacy rows without measured columns
+# are skipped — we will not tax a fake profit number.
+[profit_burn]
+enabled = true
+mint = "BaDjVCpABEVCdt4LT7ivuzA4izBwJCqnDjrLa8XBtT38"
+profit_frac = 0.01               # 1% of measured net profit
+min_sol = 0.001                  # skip dust fees
+slippage_bps = 300
+
 [watchdog]
 # rpc_blind_close_all was REMOVED on 2026-08-10, not set to false. The close-all
 # branch is deleted from loop.ts, so re-enabling automated liquidation is a code

@@ -6,6 +6,8 @@ import { reconcileLive } from "./reconcile.js";
 import { alert, type AlertKind } from "../alerts.js";
 import { blacklist, getDb, now, recordDecision, REALIZED_PNL_SQL } from "../db/db.js";
 import type { Executor } from "../executor/executor.js";
+import { LiveExecutor } from "../executor/live.js";
+import { executeProfitBurn, profitBurnSpendSol } from "../executor/profitBurn.js";
 import { PaperExecutor } from "../executor/paper.js";
 import { rollupDaily } from "../pnl/rollup.js";
 import { fetchSummary } from "../vetting/rugcheck.js";
@@ -185,9 +187,62 @@ async function closeAndReport(
       console.error(`[follow] leg-close hook failed for pos#${pos.id}:`, (e as Error).message);
     }
   }
+  // Profit burn uses MEASURED wallet PnL only (open_cost → close_return + fees
+  // + recovered rent). Never tax mark-only PnL — that overstates winners.
+  await maybeProfitBurn(exec, pos, measuredPnl).catch((e) =>
+    console.error(`[profit_burn] pos#${pos.id} failed:`, (e as Error).message));
   await accountPnlAlert(exec).catch((e) =>
     console.error("[alert] account summary failed:", (e as Error).message));
   return res;
+}
+
+/**
+ * 1% of measured net profit → Jupiter buy burn-mint → burn. Paper logs only.
+ * Skips when measured columns are missing or PnL ≤ 0.
+ */
+async function maybeProfitBurn(
+  exec: Executor,
+  pos: Position,
+  measuredPnl: number | null,
+): Promise<void> {
+  const cfg = config().profit_burn;
+  if (!cfg?.enabled) return;
+  if (measuredPnl == null) {
+    console.log(`[profit_burn] skip pos#${pos.id}: no measured wallet PnL (legacy/mark-only close)`);
+    return;
+  }
+  const spend = profitBurnSpendSol(measuredPnl, cfg.profit_frac, cfg.min_sol);
+  if (spend == null) return;
+
+  if (exec.mode !== "live" || !(exec instanceof LiveExecutor)) {
+    getDb().prepare(
+      "INSERT INTO ledger (ts, kind, sol, note) VALUES (?, 'profit_burn_paper', ?, ?)",
+    ).run(now(), spend, `pos#${pos.id} ${pos.symbol} pnl=+${measuredPnl.toFixed(6)} (paper — not sent)`);
+    console.log(
+      `[profit_burn] paper: would spend ${spend.toFixed(4)} SOL (${(cfg.profit_frac * 100).toFixed(0)}% of +${measuredPnl.toFixed(4)}) → burn ${cfg.mint.slice(0, 8)}…`,
+    );
+    return;
+  }
+
+  const result = await executeProfitBurn({
+    connection: exec.connection,
+    wallet: exec.wallet,
+    spendSol: spend,
+    measuredPnlSol: measuredPnl,
+    positionId: pos.id,
+    symbol: pos.symbol,
+  });
+  if (!result) return;
+  console.log(
+    `[profit_burn] spent ${result.spentSol.toFixed(4)} SOL → burned ${result.burnedRaw} ` +
+      `swap=${result.swapSig} burn=${result.burnSig}`,
+  );
+  await alert(
+    "profit_burn",
+    `${pos.symbol} pos#${pos.id}: profit burn ${(cfg.profit_frac * 100).toFixed(0)}% of +${measuredPnl.toFixed(4)} SOL\n` +
+      `spent ${result.spentSol.toFixed(4)} SOL → burned → ${cfg.mint}\n` +
+      `swap ${result.swapSig}\nburn ${result.burnSig}`,
+  );
 }
 
 /**

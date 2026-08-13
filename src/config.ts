@@ -131,6 +131,16 @@ export interface Config {
   };
   watchdog: { rpc_blind_after_min: number };
   apis: { meteora_datapi: string; rugcheck: string; jupiter_quote: string; jupiter_price: string; jup_datapi: string };
+  /** 1% of measured net profit → buy mint → burn (live closes only). */
+  profit_burn: {
+    enabled: boolean;
+    mint: string;
+    /** Fraction of measured net PnL to spend (0.01 = 1%). */
+    profit_frac: number;
+    /** Skip when fee SOL is below this (dust). */
+    min_sol: number;
+    slippage_bps: number;
+  };
 }
 
 export interface Env {
