@@ -1,5 +1,5 @@
 import type { ActivityEvent, LiveWatch } from "@/lib/types";
-import { exitLabel, fmtRet, fmtSol, gateLabel } from "@/lib/utils";
+import { exitLabel, fmtRet, gateLabel } from "@/lib/utils";
 
 export type FeedKind = ActivityEvent["kind"];
 
@@ -8,6 +8,8 @@ export type FeedItem = {
   kind: FeedKind;
   label: string;
   detail?: string;
+  /** Signed wallet SOL flow (+in / −out) or exit PnL — colored in the feed. */
+  sol?: number | null;
   tone: "ok" | "danger" | "warn" | "accent" | "muted";
   mint?: string | null;
   symbol?: string | null;
@@ -20,6 +22,17 @@ function toneFor(kind: FeedKind, pnl?: number | null): FeedItem["tone"] {
   if (kind === "exit") return pnl != null && pnl < 0 ? "danger" : "ok";
   if (kind === "skip" || kind === "cluster") return "warn";
   return "accent";
+}
+
+/** Wallet flow / PnL to highlight. Entry size is outflow (−). */
+function solFor(e: ActivityEvent): number | null {
+  if (e.kind === "entry" && e.size != null) return -Math.abs(e.size);
+  if (e.kind === "exit" && e.pnl != null) return e.pnl;
+  if (e.kind === "event") {
+    const v = e.pnl ?? e.size;
+    return v != null ? v : null;
+  }
+  return null;
 }
 
 function labelFor(e: ActivityEvent): string {
@@ -45,8 +58,10 @@ function detailFor(e: ActivityEvent): string | undefined {
   const bits: Array<string | null | undefined> = [];
   if (e.kind === "skip" || e.kind === "fail") bits.push(e.gate ? gateLabel(e.gate) : null);
   if (e.score != null) bits.push(`score ${e.score.toFixed(1)}`);
-  if (e.size != null && e.kind !== "event") bits.push(`${e.size.toFixed(2)} SOL`);
-  if (e.pnl != null && (e.kind === "exit" || e.kind === "event")) bits.push(fmtSol(e.pnl, 3));
+  // Size on skip/fail is context only (no wallet move yet).
+  if (e.size != null && (e.kind === "skip" || e.kind === "fail")) {
+    bits.push(`${e.size.toFixed(2)} SOL`);
+  }
   if (e.sleeve && e.sleeve !== "meme") bits.push(e.sleeve);
   if (e.detail) bits.push(e.detail);
   if (e.kind === "exit" && e.pnl != null && e.size && e.size > 0) {
@@ -66,6 +81,7 @@ export function buildActivityFeed(watch: LiveWatch | null, limit = 80): FeedItem
       kind: e.kind,
       label: labelFor(e),
       detail: detailFor(e),
+      sol: solFor(e),
       tone: toneFor(e.kind, e.pnl),
       mint: e.mint,
       symbol: e.symbol,
@@ -82,15 +98,15 @@ export function buildActivityFeed(watch: LiveWatch | null, limit = 80): FeedItem
       label: `entered ${r.symbol}`,
       detail: [
         r.score != null ? `score ${r.score.toFixed(1)}` : null,
-        r.size != null ? `${r.size.toFixed(2)} SOL` : null,
         r.sleeve && r.sleeve !== "meme" ? r.sleeve : null,
       ].filter(Boolean).join(" · ") || undefined,
+      sol: r.size != null ? -Math.abs(r.size) : null,
       tone: "ok",
       mint: r.mint,
       symbol: r.symbol,
     });
   }
-  for (const r of watch.open_failed_since_fix?.recent ?? []) {
+  for (const r of watch.open_failed_since_boot?.recent ?? []) {
     items.push({
       at: r.at,
       kind: "fail",
@@ -110,12 +126,13 @@ export function buildActivityFeed(watch: LiveWatch | null, limit = 80): FeedItem
       symbol: r.symbol,
     });
   }
-  for (const r of watch.p3_missed_since_fix ?? []) {
+  for (const r of watch.p3_missed_since_boot ?? []) {
     items.push({
       at: r.at,
       kind: "exit",
       label: `missed ${r.symbol}`,
-      detail: [fmtSol(r.pnl, 3), `${r.hold_min}m`].join(" · "),
+      detail: `${r.hold_min}m`,
+      sol: r.pnl,
       tone: "warn",
       mint: r.mint,
       symbol: r.symbol,

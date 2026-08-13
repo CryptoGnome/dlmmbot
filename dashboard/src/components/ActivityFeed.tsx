@@ -1,5 +1,5 @@
 import { TokenSymbol } from "@/components/TokenSymbol";
-import { cn, shortTime } from "@/lib/utils";
+import { cn, fmtSol, shortTime } from "@/lib/utils";
 import type { FeedItem } from "@/lib/activityFeed";
 import { Icon, eventGateIcon, feedKindIcon } from "@/lib/icons";
 
@@ -9,6 +9,10 @@ function toneClass(tone: FeedItem["tone"]) {
       : tone === "warn" ? "text-warn"
         : tone === "accent" ? "text-accent"
           : "text-muted";
+}
+
+function solClass(n: number) {
+  return n > 0 ? "text-ok" : n < 0 ? "text-danger" : "text-muted";
 }
 
 export function ActivityFeedList({
@@ -39,6 +43,7 @@ export function ActivityFeedList({
           : feedKindIcon[it.kind];
         const tone = toneClass(it.tone);
         const sz = dense ? 11 : 12;
+        const sol = it.sol;
         return (
           <li
             key={`${it.at}-${it.kind}-${it.symbol}-${i}`}
@@ -67,6 +72,18 @@ export function ActivityFeedList({
                 <div className="truncate text-[11px] text-muted">{it.detail}</div>
               )}
             </div>
+            {sol != null && (
+              <span
+                className={cn(
+                  "mt-0.5 shrink-0 tabular-nums font-medium",
+                  dense ? "text-[11px]" : "text-[12px]",
+                  solClass(sol),
+                )}
+                title="SOL flow (+in / −out) or exit PnL"
+              >
+                {fmtSol(sol, 3)}
+              </span>
+            )}
             <span className={cn("mt-0.5 shrink-0", tone)} title={it.kind}>
               <Icon icon={feedKindIcon[it.kind]} size={sz} />
             </span>
