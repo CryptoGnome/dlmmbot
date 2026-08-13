@@ -41,8 +41,9 @@ export const tabIcon: Record<TabId, LucideIcon> = {
 };
 
 export const feedKindIcon: Record<FeedKind, LucideIcon> = {
-  entry: ArrowDownToLine,
-  exit: ArrowUpFromLine,
+  // Cashflow: up/red = SOL out (enter), down/green = SOL in (exit/close).
+  entry: ArrowUpFromLine,
+  exit: ArrowDownToLine,
   skip: SkipForward,
   fail: OctagonX,
   event: Zap,

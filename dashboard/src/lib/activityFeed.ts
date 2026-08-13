@@ -17,7 +17,8 @@ export type FeedItem = {
 };
 
 function toneFor(kind: FeedKind, pnl?: number | null): FeedItem["tone"] {
-  if (kind === "entry") return "ok";
+  // Entry = SOL leaving the wallet → red. Exit color follows PnL.
+  if (kind === "entry") return "danger";
   if (kind === "fail") return "danger";
   if (kind === "exit") return pnl != null && pnl < 0 ? "danger" : "ok";
   if (kind === "skip" || kind === "cluster") return "warn";
@@ -101,7 +102,7 @@ export function buildActivityFeed(watch: LiveWatch | null, limit = 80): FeedItem
         r.sleeve && r.sleeve !== "meme" ? r.sleeve : null,
       ].filter(Boolean).join(" · ") || undefined,
       sol: r.size != null ? -Math.abs(r.size) : null,
-      tone: "ok",
+      tone: "danger",
       mint: r.mint,
       symbol: r.symbol,
     });
