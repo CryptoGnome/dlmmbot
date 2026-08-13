@@ -300,9 +300,21 @@ export function recordDecision(
   score: number | null,
   features: unknown
 ): void {
+  let payload: unknown = features;
+  if (features && typeof features === "object" && !Array.isArray(features)) {
+    const f = features as Record<string, unknown>;
+    const cand = f.cand && typeof f.cand === "object" ? f.cand as Record<string, unknown> : null;
+    const poolObj = f.pool && typeof f.pool === "object" ? f.pool as Record<string, unknown> : null;
+    const symbol =
+      (typeof f.symbol === "string" && f.symbol) ||
+      (typeof cand?.symbol === "string" && cand.symbol) ||
+      (typeof poolObj?.symbol === "string" && poolObj.symbol) ||
+      null;
+    payload = symbol && f.symbol !== symbol ? { ...f, symbol } : f;
+  }
   getDb()
     .prepare(
       "INSERT INTO decisions (ts, mint, pool, action, failed_gate, score, features_json) VALUES (?, ?, ?, ?, ?, ?, ?)"
     )
-    .run(now(), mint, pool, action, failedGate, score, JSON.stringify(features));
+    .run(now(), mint, pool, action, failedGate, score, JSON.stringify(payload));
 }

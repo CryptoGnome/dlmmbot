@@ -29,7 +29,7 @@ export async function enterMajorsPositions(exec: Executor, bankroll: Bankroll): 
     if (majorsSlotBudget(openPositionCount()) <= 0) break;
 
     if (tokenExposureSol(cand.tokenMint) > 0) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "majors_token_open", cand.score, { sleeve: "majors" });
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "majors_token_open", cand.score, { sleeve: "majors", symbol: cand.symbol });
       continue;
     }
 

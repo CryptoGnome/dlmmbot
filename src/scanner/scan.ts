@@ -107,7 +107,7 @@ export async function scan(opts: { withTiming?: boolean } = {}): Promise<ScanRes
     else {
       rejected.push(cand);
       recordDecision(p.mintX, p.address, "skipped", gateFailures[0]?.gate ?? null, score, {
-        pool: p, gateFailures, scoreParts: weighted,
+        symbol, pool: p, gateFailures, scoreParts: weighted,
       });
     }
   }

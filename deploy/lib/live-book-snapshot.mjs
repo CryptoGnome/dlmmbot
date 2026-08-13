@@ -534,14 +534,18 @@ export function buildLiveBookSnapshot(root) {
               json_extract(d.features_json,'$.isAlpha') is_alpha,
               json_extract(d.features_json,'$.pool.name') pool_name,
               json_extract(d.features_json,'$.tranche') tranche,
-              COALESCE(NULLIF(t.symbol,''),
+              COALESCE(
+                NULLIF(t.symbol,''),
+                NULLIF(json_extract(d.features_json,'$.symbol'),''),
+                NULLIF(json_extract(d.features_json,'$.cand.symbol'),''),
                 (SELECT p.symbol FROM positions p WHERE p.token_mint=d.mint ORDER BY p.id DESC LIMIT 1),
-                NULL) symbol
+                NULL
+              ) symbol
        FROM decisions d LEFT JOIN tokens t ON t.mint=d.mint
        WHERE d.action='entered' AND d.ts > ?
        ORDER BY d.ts DESC LIMIT 40`
     ).all(activitySince)) {
-      const sym = r.symbol || (r.pool_name ? String(r.pool_name).split("-")[0] : null) || "?";
+      const sym = r.symbol || (r.pool_name ? String(r.pool_name).split("-")[0] : null) || (r.mint ? String(r.mint).slice(0, 6) : "?");
       activity.push({
         ts: r.ts, at: r.at, kind: "entry",
         symbol: sym, mint: r.mint || null, pool: r.pool || null,
@@ -577,9 +581,13 @@ export function buildLiveBookSnapshot(root) {
               json_extract(d.features_json,'$.pool.name') pool_name,
               json_extract(d.features_json,'$.size') size,
               json_extract(d.features_json,'$.error') error,
-              COALESCE(NULLIF(t.symbol,''),
+              COALESCE(
+                NULLIF(t.symbol,''),
+                NULLIF(json_extract(d.features_json,'$.symbol'),''),
+                NULLIF(json_extract(d.features_json,'$.cand.symbol'),''),
                 (SELECT p.symbol FROM positions p WHERE p.token_mint=d.mint ORDER BY p.id DESC LIMIT 1),
-                NULL) symbol
+                NULL
+              ) symbol
        FROM decisions d LEFT JOIN tokens t ON t.mint=d.mint
        WHERE d.action='skipped' AND d.ts > ?
          AND (
@@ -588,7 +596,7 @@ export function buildLiveBookSnapshot(root) {
          )
        ORDER BY d.ts DESC LIMIT 120`
     ).all(activitySince, ...INTERESTING_SKIP)) {
-      const sym = r.symbol || (r.pool_name ? String(r.pool_name).split("-")[0] : null) || "?";
+      const sym = r.symbol || (r.pool_name ? String(r.pool_name).split("-")[0] : null) || (r.mint ? String(r.mint).slice(0, 6) : "?");
       const isFail = /open_failed/.test(r.gate || "");
       activity.push({
         ts: r.ts, at: r.at, kind: isFail ? "fail" : "skip",

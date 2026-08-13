@@ -796,7 +796,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     // score + max vetting uplift) are worth vetting.
     const maxVetUplift = 0.5 * config().score.w_vetting_soft;
     if (opened >= normalCap && cand.score + maxVetUplift < rot.alpha_score_min) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "slots_full", cand.score, {});
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "slots_full", cand.score, { symbol: cand.symbol });
       continue;
     }
     if (opened >= bankroll.effectiveSlots && !rot.displacement_enabled) break;
@@ -805,7 +805,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     // chain decides re-entry timing — the normal pipeline entering in parallel
     // would double exposure and race the chain's up-only discipline.
     if (hasActiveFollowChain(cand.tokenMint, exec.mode)) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "follow_active", cand.score, {});
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "follow_active", cand.score, { symbol: cand.symbol });
       continue;
     }
 
@@ -918,7 +918,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     // One primary position per token (§5) — tranches are the only sanctioned
     // second position and they're opened by the manager, not the entry pipeline.
     if (tokenExposureSol(cand.tokenMint) > 0) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "already_positioned", score, {});
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "already_positioned", score, { symbol: cand.symbol });
       continue;
     }
     // Per-token cap (§5).
