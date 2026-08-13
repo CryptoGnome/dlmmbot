@@ -57,7 +57,7 @@ export function kellyStats(): KellyStats {
   // follow_chains table) — a different entry distribution polluting this
   // estimator was the same mistake STRATEGY §10 forbids for majors mode.
   const rows = getDb().prepare(
-    `SELECT (exit_sol + fees_claimed_sol - entry_sol) / entry_sol AS ret
+    `SELECT (${REALIZED_PNL_SQL}) / entry_sol AS ret
      FROM positions
      WHERE exit_ts IS NOT NULL AND entry_sol > 0 AND follow_chain_id IS NULL
      ORDER BY exit_ts DESC LIMIT ?`
@@ -149,6 +149,29 @@ export function circuitBreakerTripped(walletSol: number): boolean {
      FROM positions WHERE exit_ts IS NOT NULL AND exit_ts > ?`
   ).get(dayAgo) as { pnl: number }).pnl;
   return realized < 0 && Math.abs(realized) > walletSol * (s.circuit_daily_loss_pct / 100);
+}
+
+/**
+ * Cluster brake: N hard exits (P0/P1) inside a window pauses new entries.
+ * Wallet-% breaker missed Aug 12 (−0.159 on a ~24 SOL book); this fires on
+ * the loss *pattern* before the dollar threshold.
+ */
+export function clusterBrakeTripped(): { count: number; remainingMin: number } | null {
+  const s = config().sizing;
+  if (!s.cluster_brake_exits || s.cluster_brake_exits <= 0) return null;
+  const windowS = (s.cluster_brake_window_h || 6) * 3600;
+  const pauseS = (s.cluster_brake_pause_h || 6) * 3600;
+  const rows = getDb().prepare(
+    `SELECT exit_ts FROM positions
+     WHERE exit_reason IN ('P0_safety','P1_stop') AND exit_ts IS NOT NULL AND exit_ts > ?
+     ORDER BY exit_ts DESC`
+  ).all(now() - windowS) as Array<{ exit_ts: number }>;
+  if (rows.length < s.cluster_brake_exits) return null;
+  // Pause measured from the Nth-most-recent hard exit (the one that tripped).
+  const tripTs = rows[s.cluster_brake_exits - 1]!.exit_ts;
+  const elapsed = now() - tripTs;
+  if (elapsed >= pauseS) return null;
+  return { count: rows.length, remainingMin: Math.ceil((pauseS - elapsed) / 60) };
 }
 
 /** Regime filter (§5): scale factor for new-entry sizing from SOL 24h move. */

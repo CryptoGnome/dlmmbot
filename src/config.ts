@@ -49,6 +49,7 @@ export interface Config {
     rotation_fee_daily_min_pct: number; rotation_polls: number;
     rotation_vol_30m_min_usd: number; max_age_h: number;
     above_range_pct: number; above_range_sustain_min: number;
+    above_range_missed_sustain_min: number;
     rebalance_max_per_6h: number; rebalance_cost_max_pct_of_fees: number;
     reentry_ladder_mult: number; reentry_max_per_24h: number; house_money_rule: boolean;
     claim_min_sol: number; claim_min_txcost_mult: number; claim_interval_h: number;
@@ -69,6 +70,7 @@ export interface Config {
     score_mult_low: number; score_mult_mid: number; score_mult_high: number;
     circuit_daily_loss_pct: number; circuit_pause_h: number;
     circuit_weekly_triggers_halt: number;
+    cluster_brake_exits: number; cluster_brake_window_h: number; cluster_brake_pause_h: number;
     regime_filter: boolean; regime_sol_24h_halve_pct: number; regime_sol_24h_pause_pct: number;
   };
   follow: {
@@ -77,6 +79,7 @@ export interface Config {
     range_depth_pct: number; leg_size_sol: number;
     max_legs: number; chain_loss_budget_sol: number;
     chain_max_age_h: number; cold_polls_end: number;
+    open_fail_cooldown_s: number;
   };
   rotation: {
     alpha_slots: number; alpha_score_min: number;

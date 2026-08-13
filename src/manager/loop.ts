@@ -18,14 +18,14 @@ import { flowFor, startSmartFlow } from "../scanner/smartflow.js";
 import { armFollowChain, hasActiveFollowChain, onFollowLegClosed, tickFollowChains } from "./follow.js";
 import { clearHolderWatch, holderCheck } from "./holderwatch.js";
 import { sol24hChangePct, solUsdPrice } from "../market.js";
-import { circuitBreakerTripped, computeBankroll, kellyStats, openPositionCount, positionSize, regimeFactor, tokenExposureSol } from "../risk/limits.js";
+import { circuitBreakerTripped, clusterBrakeTripped, computeBankroll, kellyStats, openPositionCount, positionSize, regimeFactor, tokenExposureSol } from "../risk/limits.js";
 import type { Position } from "../types.js";
 import { vetToken } from "../vetting/vet.js";
 
-// STRATEGY.md §4 — the P0-P5 state machine, strict priority order.
-// Scaffold status: entry pipeline + P1/P2/P3(basic)/P4-claim/P5 are functional
-// in paper mode. P0 safety triggers, escape hatch, tranches, re-entry ladder,
-// and the regime filter are TODO(phase 2) — marked inline.
+// STRATEGY.md §4 — the P0–P5 state machine, strict priority order.
+// Live: P0 (TVL/price/rugcheck + GMGN holder-watch), P1–P5, escape hatch,
+// follow mode, residual sweep, heartbeat. Still deferred: Zap SDK path,
+// funding-cluster snipers, second tranche, compound/hybrid fee dest.
 
 const HALT_FILE = resolve(process.cwd(), "HALT");
 const LOCK_FILE = resolve(process.cwd(), "data", "farmer.lock");
@@ -388,17 +388,19 @@ export async function managePositions(exec: Executor): Promise<void> {
       }
 
       // --- P3 ABOVE RANGE -> TAKE PROFIT (with sustain timer, §4 P3) ---
-      // TODO(phase 2): win-vs-missed classification, house-money banking.
+      // Wins (price traveled through range) close after above_range_sustain_min
+      // so follow can arm. Missed (never converted) uses a longer timer — the
+      // 10m path was churning slots for ~0.002 SOL rent (18/27 near-zero).
       if (mark.aboveRange) {
+        const dbFlag = (getDb().prepare("SELECT ever_in_range AS e FROM positions WHERE id = ?")
+          .get(pos.id) as { e: number } | undefined)?.e === 1;
+        const traveled = everInRange.has(pos.id) || dbFlag;
+        const sustainMin = traveled ? m.above_range_sustain_min : m.above_range_missed_sustain_min;
         const since = aboveRangeSince.get(pos.id);
         if (since === undefined) {
           aboveRangeSince.set(pos.id, now());
-        } else if (now() - since >= m.above_range_sustain_min * 60) {
-          // Win = price traveled through our range (fees + round-trip profit);
-          // missed = price pumped without ever touching us (capital idled).
-          const dbFlag = (getDb().prepare("SELECT ever_in_range AS e FROM positions WHERE id = ?")
-            .get(pos.id) as { e: number } | undefined)?.e === 1;
-          const classification = everInRange.has(pos.id) || dbFlag ? "win" : "missed";
+        } else if (now() - since >= sustainMin * 60) {
+          const classification = traveled ? "win" : "missed";
           clearRangeTimers(pos.id);
           const { exitSol } = await closeAndReport(
             exec, pos, "P3_above", config().exec.exit_slippage_bps, "close",
@@ -407,11 +409,7 @@ export async function managePositions(exec: Executor): Promise<void> {
           if (classification === "missed")
             getDb().prepare("UPDATE positions SET state='closed_missed' WHERE id=?").run(pos.id);
           else bankProfit(pos, exitSol, "P3 take-profit");
-          recordDecision(pos.tokenMint, pos.poolAddress, "exited", `P3_above_${classification}`, null, { mark, sustainedS: now() - since, exitSol });
-          // Follow mode (§4 P3-F): an up-and-out close on a MAIN position arms
-          // an up-only re-entry chain — win and missed both mean the pool
-          // out-ran us. A follow leg closing up-and-out continues its own
-          // chain via the closeAndReport hook instead of arming a second one.
+          recordDecision(pos.tokenMint, pos.poolAddress, "exited", `P3_above_${classification}`, null, { mark, sustainedS: now() - since, exitSol, sustainMin });
           if (pos.followChainId == null) armFollowChain(pos, mark.price);
         }
         continue; // above range: nothing earns; wait out the sustain window
@@ -489,7 +487,7 @@ export async function managePositions(exec: Executor): Promise<void> {
         const { withdrawnSol } = await exec.withdraw(pos, m.profit_lock_withdraw_pct * 100); // pct -> bps
         await alert("profit_lock", `${pos.symbol} pos#${pos.id}: profit lock at +${((valueFrac - 1) * 100).toFixed(0)}% — withdrew ${withdrawnSol.toFixed(4)} SOL`);
       }
-      // TODO(phase 2): escape hatch, hybrid/compound fee destination.
+      // TODO(phase 2): hybrid/compound fee destination.
     } catch (e) {
       marksFailed++;
       console.error(`[manager] position ${pos.id} (${pos.symbol}):`, (e as Error).message);
@@ -658,6 +656,18 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     if (!breakerAlerted) {
       breakerAlerted = true;
       await alert("circuit_breaker", "daily loss limit hit — new entries paused (open positions still managed)");
+    }
+    return;
+  }
+  const cluster = clusterBrakeTripped();
+  if (cluster) {
+    console.log(`[risk] cluster brake — ${cluster.count} hard exits in ${config().sizing.cluster_brake_window_h}h, paused ${cluster.remainingMin}m`);
+    if (!breakerAlerted) {
+      breakerAlerted = true;
+      await alert("circuit_breaker",
+        `cluster brake: ${cluster.count}× P0/P1 in ${config().sizing.cluster_brake_window_h}h — ` +
+        `new entries paused ${cluster.remainingMin}m (open positions still managed)`
+      );
     }
     return;
   }
@@ -836,9 +846,15 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
         entryPrice: cand.pool.price,
       });
     } catch (e) {
-      const msg = (e as Error).message.split("\n")[0]!.slice(0, 300);
+      const err = e as Error & { code?: string; logs?: string[] };
+      const msg = (err.message ?? String(e)).split("\n")[0]!.slice(0, 400);
       console.error(`[enter] ${cand.symbol} open failed: ${msg}`);
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "open_failed", score, { size, range, error: msg });
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "open_failed", score, {
+        size, range,
+        error: msg,
+        code: err.code ?? null,
+        logs: Array.isArray(err.logs) ? err.logs.slice(0, 8) : [],
+      });
       continue;
     }
     // Live-experiment cohort tags (2026-08-07): fee-gate path, mcap band, and

@@ -24,26 +24,36 @@ npm run halt              # toggle HALT (running farmer closes all + stops)
 
 ```
 src/
-├── cli.ts             entrypoints (scan | vet | run | status | halt)
+├── cli.ts             scan | vet | run | status | halt | force-close | release
 ├── config.ts          typed config.toml loader, hot reload, live-mode double gate
 ├── types.ts           shared domain types
-├── db/db.ts           SQLite schema + blacklist/decision helpers  (§7)
+├── db/db.ts           SQLite schema, REALIZED_PNL_SQL, blacklist (§7)
 ├── scanner/
 │   ├── meteora.ts     datapi client (pools sweep, OHLCV)          (§1)
 │   ├── gates.ts       pool hard gates                             (§2.1)
 │   ├── score.ts       opportunity score parts                     (§2.4)
-│   └── scan.ts        sweep → dedupe → best-pool → gates → score  (§1)
+│   ├── gmgn.ts        trending + security pre-vet                 (§1)
+│   ├── smartflow.ts   GMGN smart-money/KOL flow                   (§1)
+│   └── scan.ts        sweep → dedupe → best-pool → gates → score
 ├── vetting/
-│   ├── rugcheck.ts    free RugCheck API client (veto layer)       (§2.2)
-│   ├── onchain.ts     fresh RPC checks (authorities, holders)     (§2.2)
-│   └── vet.ts         hard gates + soft score + blacklisting      (§2.2)
-├── ranges/planner.ts  fib-anchored bid-ask range → bin IDs        (§3)
-├── risk/limits.ts     sizing, slots, circuit breaker, regime      (§5)
+│   ├── rugcheck.ts    RugCheck veto layer                         (§2.2)
+│   ├── onchain.ts     fresh RPC authorities                       (§2.2)
+│   ├── jupdata.ts     Jupiter organic/bot/dev into soft score
+│   └── vet.ts         hard gates + soft score + blacklisting
+├── ranges/planner.ts  fib-anchored bid-ask + follow-range bins    (§3)
+├── risk/limits.ts     Kelly (measured PnL), slots, breaker, regime (§5)
 ├── executor/
 │   ├── executor.ts    Executor interface (manager is mode-blind)
 │   ├── paper.ts       simulated fills/fees vs live pool data      (§8)
-│   └── live.ts        phase 2: @meteora-ag/dlmm + zap-sdk         (§3.6)
-└── manager/loop.ts    P0–P5 state machine + entry pipeline        (§4)
+│   ├── live.ts        @meteora-ag/dlmm + Jupiter zap-out          (§3.6)
+│   ├── jupiter.ts     swap-to-SOL + residual sweep helper
+│   └── wallet.ts      keypair load
+├── manager/
+│   ├── loop.ts        P0–P5 + entry pipeline                      (§4)
+│   ├── follow.ts      P3-F up-only re-entry chains
+│   ├── holderwatch.ts GMGN wallet-dump / new-whale P0
+│   └── reconcile.ts   chain wins on live startup
+└── pnl/rollup.ts      daily PnL + paper→live promotion
 ```
 
 ## Modes & safety
@@ -57,12 +67,21 @@ src/
   them. Use a dedicated burner wallet funded with an amount you can lose
   entirely.
 
-## Phase 2 (not in scaffold)
+## Built vs deferred (2026-08-13)
 
-Live executor (DLMM + Zap SDK), P0 safety triggers (TVL-drop / wallet-dump /
-new-whale), P3 sustain-timer + re-entry ladder + house-money banking, escape
-hatch, funding-cluster sniper detection, dashboard, Telegram alerts. All marked
-`TODO(phase 2)` in code.
+Live on `gn0meserver` since 2026-08-07. Paper promotion is historical; do not
+run a second loop against the same wallet.
+
+**Built:** live DLMM executor, wallet-delta PnL, P0–P5, escape hatch, follow
+mode, GMGN holder-watch P0, smart-money scoring, Jupiter datapi soft score,
+Telegram + out-of-process heartbeat, residual token sweep, range-shape
+instrumentation (`position_marks` + per-bin close snapshots).
+
+**Deferred / do not ship yet:** `@meteora-ag/zap-sdk` (manual Jupiter zap-out
+is the path), funding-cluster snipers from early tx history, second tranche,
+compound/hybrid fee destination, majors-mode parking lot, dashboard, BidAsk→Spot
+(see [RANGE-SHAPE-DECISION.md](RANGE-SHAPE-DECISION.md) — sample is large enough
+to *evaluate*, not to flip).
 
 ## Disclaimer
 

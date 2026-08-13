@@ -2,6 +2,7 @@ import { config } from "../config.js";
 import { alert } from "../alerts.js";
 import { getDb, isBlacklisted, now, recordDecision } from "../db/db.js";
 import type { Executor } from "../executor/executor.js";
+import { txErrorDetail } from "../executor/live.js";
 import { sol24hChangePct } from "../market.js";
 import { planFollowRange } from "../ranges/planner.js";
 import { fetchPool } from "../scanner/meteora.js";
@@ -25,6 +26,9 @@ import { vetToken } from "../vetting/vet.js";
 //   end the chain on any non-P3 close, max_legs, or the loss budget.
 //
 // A P3 close leaves the position 100% SOL, so every re-entry here is swapless.
+
+/** Per-chain cooldown after a failed leg open — avoids 4 sims every 15s. */
+const openFailUntil = new Map<number, number>();
 
 interface ChainRow {
   id: number;
@@ -168,6 +172,9 @@ export async function tickFollowChains(exec: Executor): Promise<void> {
       const dipped = pool.price <= chain.arm_peak * (1 - f.retrace_arm_pct / 100);
       if (!dipped) continue;
 
+      const coolUntil = openFailUntil.get(chain.id) ?? 0;
+      if (now() < coolUntil) continue;
+
       // Arming gates — current-window heat only, by design: the stale 24h
       // fee/TVL average is exactly what kept the bot out of its best pools
       // after a profitable close (TVL growth dilutes it while the pool prints).
@@ -228,7 +235,13 @@ async function openFollowLeg(
       entryPrice: price,
     });
   } catch (e) {
-    console.error(`[follow] chain#${chain.id} ${chain.symbol} leg open failed:`, (e as Error).message.split("\n")[0]);
+    const detail = txErrorDetail(e);
+    const cool = config().follow.open_fail_cooldown_s || 300;
+    openFailUntil.set(chain.id, now() + cool);
+    console.error(`[follow] chain#${chain.id} ${chain.symbol} leg open failed: ${detail.summary} — cool ${cool}s`);
+    recordDecision(chain.token_mint, chain.pool, "skipped", "open_failed", null, {
+      follow: true, chainId: chain.id, error: detail.summary, code: detail.code, logs: detail.logs,
+    });
     return; // transient — the dip condition will still hold next tick if real
   }
   const legN = chain.legs + 1;

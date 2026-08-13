@@ -179,3 +179,17 @@ positions 2-22 from chain `ClaimFee2` is **not** part of this instrumentation �
 it is forward-looking only. Until that backfill lands, any book-wide fee total
 under-reports, and pre-2026-08-09 zero-fee readings are a recording artifact
 rather than evidence.
+
+## Status 2026-08-13 (observation only — thresholds above are unchanged)
+
+Stopping rule sample is met: 32 closed positions carry per-bin/`position_marks`
+data, 25 of them traversed ≥25% of range depth (need 20 and 5). Integrity (a)
+mostly holds (`mean_gap` 16–19s) but **fails** on three positions with
+`max_gap` 70–78s (#37 BOT, #38 Remus, #39 MARIO64). Integrity (d) holds:
+post-instrumentation net excluding claudius #9 is **+0.077 SOL**, above the
+−0.05 stop.
+
+Do **not** ship Spot. The live P&L story since this note was written is that
+escape-hatch closes are the edge (+0.62 SOL / 9) and P1 stops are the tax
+(−0.55 SOL / 8). That is a stop-definition and inventory problem, not a
+missing-Spot problem — same conclusion as the original rule's second clause.

@@ -1,6 +1,6 @@
 import {
   ComputeBudgetProgram, Connection, Keypair, PublicKey, Transaction,
-  sendAndConfirmTransaction,
+  sendAndConfirmTransaction, SendTransactionError,
 } from "@solana/web3.js";
 import type { ParsedTransactionWithMeta } from "@solana/web3.js";
 import { createCloseAccountInstruction } from "@solana/spl-token";
@@ -71,6 +71,39 @@ const StrategyType = dlmmMod.StrategyType;
 const BINS_PER_ACCOUNT = 69;
 // Longer than any healthy call and far shorter than a manager tick backlog.
 const RPC_TIMEOUT_MS = 20_000;
+// Rebuilds on ExceededBinSlippageTolerance — resending the same tx never helps
+// (the active-bin check is baked into the instruction at build time).
+const OPEN_SLIPPAGE_REBUILDS = 2;
+
+/** Pull the Anchor/program reason out of a Solana SendTransactionError. */
+export function txErrorDetail(e: unknown): { summary: string; code: string | null; logs: string[] } {
+  const err = e as Error & {
+    logs?: string[];
+    transactionLogs?: string[];
+    transactionMessage?: string;
+  };
+  const logs = (Array.isArray(err.logs) ? err.logs : null)
+    ?? (Array.isArray(err.transactionLogs) ? err.transactionLogs : null)
+    ?? [];
+  const blob = `${err.message ?? ""}\n${err.transactionMessage ?? ""}\n${logs.join("\n")}`;
+  const named = /Error Code: ([A-Za-z]+)/.exec(blob)?.[1]
+    ?? (/ExceededBinSlippageTolerance/.test(blob) ? "ExceededBinSlippageTolerance" : null)
+    ?? (/InsufficientFunds/.test(blob) ? "InsufficientFunds" : null);
+  const hex = /custom program error: (0x[0-9a-fA-F]+)/i.exec(blob)?.[1]?.toLowerCase() ?? null;
+  // 0x1774 = 6004 = ExceededBinSlippageTolerance (lb_clmm)
+  const fromHex = hex === "0x1774" || /Custom":6004/.test(blob) ? "ExceededBinSlippageTolerance" : null;
+  const code = named ?? fromHex ?? hex;
+  const interesting = logs
+    .filter((l) => /Error|failed|AnchorError|Exceeded|Insufficient|slippage/i.test(l))
+    .slice(0, 8);
+  const tip = interesting.find((l) => /Error Code:|Error:|Exceeded|Insufficient/i.test(l))
+    ?? err.transactionMessage
+    ?? err.message?.split("\n").find((l) => l && !/^Simulation failed\.?\s*$/i.test(l.trim()))
+    ?? err.message?.split("\n")[0]
+    ?? "tx failed";
+  const summary = (code ? `${code} — ${tip}` : tip).replace(/\s+/g, " ").slice(0, 400);
+  return { summary, code, logs: interesting };
+}
 
 export class LiveExecutor implements Executor {
   readonly mode = "live" as const;
@@ -173,7 +206,15 @@ export class LiveExecutor implements Executor {
         });
       } catch (e) {
         lastErr = e as Error;
-        console.error(`[live] tx attempt ${i + 1}/${retries + 1} failed: ${lastErr.message}`);
+        const detail = txErrorDetail(e);
+        console.error(`[live] tx attempt ${i + 1}/${retries + 1} failed: ${detail.summary}`);
+        // Program simulation failures are baked into the instruction — resending
+        // the same bytes cannot succeed. Let the caller rebuild (open) or abort.
+        if (e instanceof SendTransactionError || detail.code) {
+          const prog = detail.code != null
+            || /Simulation failed|custom program error|AnchorError/i.test(detail.summary);
+          if (prog) throw Object.assign(new Error(detail.summary), { logs: detail.logs, code: detail.code });
+        }
       }
     }
     throw lastErr ?? new Error("tx failed");
@@ -274,12 +315,12 @@ export class LiveExecutor implements Executor {
     // up, preserving planned width/depth. Price fell: top clamps to active,
     // fib-anchored bottom stays (never place liquidity above the market).
     const width = params.range.maxBinId - params.range.minBinId;
-    const maxBin = activeBin.binId;
-    const minBin = activeBin.binId > params.range.maxBinId
+    let maxBin = activeBin.binId;
+    let minBin = activeBin.binId > params.range.maxBinId
       ? maxBin - width
       : Math.min(params.range.minBinId, maxBin - 1);
     const totalBins = maxBin - minBin + 1;
-    const liveEntryPrice = Number(pool.fromPricePerLamport(Number(activeBin.price)));
+    let liveEntryPrice = Number(pool.fromPricePerLamport(Number(activeBin.price)));
     const lamports = Math.floor(params.sizeSol * 1e9);
 
     // Split into <=69-bin chunks, SOL per chunk proportional to linear bid-ask
@@ -295,21 +336,67 @@ export class LiveExecutor implements Executor {
 
     const accountRows: Array<{ pubkey: string; min: number; max: number }> = [];
     const sigs: string[] = [];
-    for (const chunk of chunks) {
-      const positionKp = Keypair.generate();
-      const tx = await pool.initializePositionAndAddLiquidityByStrategy({
-        positionPubKey: positionKp.publicKey,
-        user: this.wallet.publicKey,
-        totalXAmount: new BN(0),
-        totalYAmount: new BN(Math.floor(lamports * chunk.share)),
-        strategy: { minBinId: chunk.min, maxBinId: chunk.max, strategyType: StrategyType.BidAsk },
-        slippage: config().entry.liquidity_slippage_pct,
-      });
-      const sig = await this.send(tx, [positionKp]);
-      sigs.push(sig);
-      accountRows.push({ pubkey: positionKp.publicKey.toBase58(), min: chunk.min, max: chunk.max });
-      console.log(`[live] opened position account ${positionKp.publicKey.toBase58()} bins [${chunk.min},${chunk.max}] tx ${sig}`);
+    // Width preserved across rebuilds; top always re-anchors to live active bin.
+    let curMin = minBin;
+    let curMax = maxBin;
+    let curPrice = liveEntryPrice;
+    for (let ci = 0; ci < chunks.length; ci++) {
+      let chunk = chunks[ci]!;
+      let opened = false;
+      let lastDetail: ReturnType<typeof txErrorDetail> | null = null;
+      for (let attempt = 0; attempt <= OPEN_SLIPPAGE_REBUILDS; attempt++) {
+        if (attempt > 0) {
+          await pool.refetchStates();
+          // Only re-anchor when nothing is on chain yet. A later chunk failing
+          // after an earlier one landed must keep the same bin window.
+          if (accountRows.length === 0) {
+            const fresh = await pool.getActiveBin();
+            const widthBins = curMax - curMin;
+            curMax = fresh.binId;
+            curMin = curMax - widthBins;
+            const total = curMax - curMin + 1;
+            const start = ci * BINS_PER_ACCOUNT;
+            const end = Math.min(start + BINS_PER_ACCOUNT - 1, total - 1);
+            chunk = { min: curMax - end, max: curMax - start, share: chunk.share };
+            curPrice = Number(pool.fromPricePerLamport(Number(fresh.price)));
+            console.warn(
+              `[live] rebuild open after ${lastDetail?.code ?? "slippage"} — ` +
+              `active=${fresh.binId} bins=[${chunk.min},${chunk.max}]`
+            );
+          } else {
+            console.warn(
+              `[live] rebuild chunk ${ci} after ${lastDetail?.code ?? "slippage"} — ` +
+              `keeping bins=[${chunk.min},${chunk.max}]`
+            );
+          }
+        }
+        const positionKp = Keypair.generate();
+        try {
+          const tx = await pool.initializePositionAndAddLiquidityByStrategy({
+            positionPubKey: positionKp.publicKey,
+            user: this.wallet.publicKey,
+            totalXAmount: new BN(0),
+            totalYAmount: new BN(Math.floor(lamports * chunk.share)),
+            strategy: { minBinId: chunk.min, maxBinId: chunk.max, strategyType: StrategyType.BidAsk },
+            slippage: config().entry.liquidity_slippage_pct,
+          });
+          const sig = await this.send(tx, [positionKp]);
+          sigs.push(sig);
+          accountRows.push({ pubkey: positionKp.publicKey.toBase58(), min: chunk.min, max: chunk.max });
+          console.log(`[live] opened position account ${positionKp.publicKey.toBase58()} bins [${chunk.min},${chunk.max}] tx ${sig}`);
+          opened = true;
+          break;
+        } catch (e) {
+          lastDetail = txErrorDetail(e);
+          if (lastDetail.code === "ExceededBinSlippageTolerance" && attempt < OPEN_SLIPPAGE_REBUILDS) continue;
+          throw Object.assign(new Error(lastDetail.summary), { logs: lastDetail.logs, code: lastDetail.code });
+        }
+      }
+      if (!opened) throw new Error(lastDetail?.summary ?? "open failed");
     }
+    minBin = curMin;
+    maxBin = curMax;
+    liveEntryPrice = curPrice;
 
     // Actual wallet debit for this open (size + all rents + tx fees) — the
     // truth for per-position PnL, unlike the estBinRentSol estimate. Summed

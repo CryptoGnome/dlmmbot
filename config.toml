@@ -76,7 +76,13 @@ max_down_pct = 50                # 2026-08-10: was 65, against a -60% P0 exit. T
 min_down_pct = 40
 max_position_accounts = 2
 bin_rent_budget_sol = 0.05
-liquidity_slippage_pct = 1.0
+# Bin slippage at open: SDK maps pct -> bins via ceil(pct / (binStep/100)).
+# At bin_step=100 (meme default), 1% = 1 bin — every active-bin tick fails
+# ExceededBinSlippageTolerance (6004). That was 100% of 3255 sim failures in
+# the error log. SDK's own default is 3 bins; 5% = 5 bins at step 100, still
+# tiny vs a 40% deep bid-ask. Prefer rebuild-on-slippage in live.ts over
+# widening this further.
+liquidity_slippage_pct = 5.0
 tranche_enabled = false
 tranche_score_min = 85
 tranche_size_pct = 50
@@ -105,7 +111,10 @@ rotation_vol_30m_min_usd = 5000
 max_age_h = 48
 # P3 above range / take profit
 above_range_pct = 5
-above_range_sustain_min = 10
+above_range_sustain_min = 10          # true wins (price traveled through range) — short so follow can arm
+above_range_missed_sustain_min = 45    # 2026-08-13: 18/27 P3s were near-zero churn at exactly 10m;
+                                      # missed/never-converted closes paid ~0.002 SOL rent round-trip
+                                      # to free a slot we weren't filling. Hold longer; volume/age still exits.
 rebalance_max_per_6h = 2
 rebalance_cost_max_pct_of_fees = 25
 reentry_ladder_mult = 0.75
@@ -149,11 +158,8 @@ kelly_enabled = true
 kelly_fraction = 0.25          # 2026-08-09: quarter-Kelly. Half-Kelly is calibrated for a KNOWN
                                # edge; this book has not demonstrated one.
 kelly_lookback = 50            # closed positions in the rolling estimate
-kelly_min_samples = 50         # 2026-08-09: was 10. At n=19 the estimator reads the notional ledger
-                               # (exit-entry+fees_claimed), which omits rent/gas/slippage. Same
-                               # formula on the measured wallet-delta series, claudius sweep excluded,
-                               # gives f* = -0.227 — negative edge — while notional gave +0.174 and
-                               # sized pos#21 at 0.577 SOL. Hold at cold-start until a full window.
+kelly_min_samples = 50         # estimator uses REALIZED_PNL_SQL (wallet delta), not notional marks.
+                               # 2026-08-13: n crossed 50; cold-start no longer applies.
 kelly_cold_start_frac = 0.03   # 3% of wallet per position until enough samples
 kelly_max_position_frac = 0.10 # hard cap: no position exceeds 10% of wallet
 kelly_block_negative = false   # 2026-08-08: the brake is a one-way door — blocked entries
@@ -167,12 +173,17 @@ per_token_max_pct = 40
 score_mult_low = 0.5             # score 60-70
 score_mult_mid = 1.0             # 70-85
 score_mult_high = 1.5            # 85+
-circuit_daily_loss_pct = 3       # 2026-08-09: was 10 (=0.66 SOL). Worst rolling 24h ever measured
-                                 # is 0.069 SOL, so 10% trips at ~9.6x the observed tail. Sweeping
-                                 # 10/5/3/2% over the measured series gives zero triggers either way.
-                                 # NOTE: limits.ts:141 still reads the notional sum — fix in Phase 1.
+circuit_daily_loss_pct = 3       # 2026-08-09: was 10. Breaker reads REALIZED_PNL_SQL.
+                                 # 2026-08-12 printed -0.159 SOL realized — first day that would
+                                 # have mattered at a 3% of ~24 SOL wallet (~0.73 SOL) it still
+                                 # did not trip. 3% is still above the observed single-day tail.
 circuit_pause_h = 12
 circuit_weekly_triggers_halt = 2
+# Cluster brake (2026-08-13): wallet-% breaker missed Aug 12 (−0.159). Two hard
+# exits (P0/P1) in 6h pauses new entries without waiting for a 0.73 SOL drawdown.
+cluster_brake_exits = 2
+cluster_brake_window_h = 6
+cluster_brake_pause_h = 6
 regime_filter = true
 regime_sol_24h_halve_pct = -8
 regime_sol_24h_pause_pct = -15
@@ -191,6 +202,7 @@ max_legs = 3               # per chain
 chain_loss_budget_sol = 0.075  # chain ends when cumulative leg PnL breaches this
 chain_max_age_h = 12
 cold_polls_end = 3         # consecutive polls under gates.vol_30m_min_usd ends the chain
+open_fail_cooldown_s = 300 # after a failed leg open, wait before retrying (was every 15s × 4 sims)
 
 [rotation]                 # capital agility: room for spectacular newcomers (§5)
 alpha_slots = 1                  # slots reserved for score >= alpha_score_min only
