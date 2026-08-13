@@ -7,7 +7,15 @@ import { createRequire } from "node:module";
 // which TS interop mangles — type the static surface we use structurally.
 interface ChainPositionInfo {
   tokenX: { publicKey: PublicKey };
-  lbPairPositionsData?: Array<{ publicKey: PublicKey; positionData: { lowerBinId: number; upperBinId: number } }>;
+  lbPairPositionsData?: Array<{
+    publicKey: PublicKey;
+    positionData: {
+      lowerBinId: number;
+      upperBinId: number;
+      totalXAmount: { toString(): string } | number | string;
+      totalYAmount: { toString(): string } | number | string;
+    };
+  }>;
 }
 interface DlmmStatic {
   getAllLbPairPositionsByUser(connection: Connection, user: PublicKey): Promise<Map<string, ChainPositionInfo>>;
