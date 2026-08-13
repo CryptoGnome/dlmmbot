@@ -4,7 +4,23 @@ export interface LiveWatch {
   ts: number;
   at: string;
   host: string;
-  build: { head: string | null; message: string | null; fix_sha: string | null; fix_ts: number; fix_at: string };
+  build: {
+    version?: string;
+    branch?: string;
+    head: string | null;
+    message: string | null;
+    describe?: string | null;
+    dirty?: boolean;
+    origin?: string | null;
+    /** current | behind | ahead | diverged | unknown */
+    sync?: string;
+    /** Farmer process `git describe` from heartbeat (may differ from disk HEAD). */
+    running?: string | null;
+    fetched_at?: number | null;
+    fix_sha: string | null;
+    fix_ts: number;
+    fix_at: string;
+  };
   config: Record<string, number | boolean | null>;
   heartbeat: {
     ts?: number; pid?: number; build?: string; mode?: string;

@@ -22,6 +22,69 @@ function git(root, cmd) {
   }
 }
 
+function gitOk(root, cmd) {
+  try {
+    execSync(cmd, { cwd: root, encoding: "utf8", stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Throttle GitHub fetches so the 3s watch loop does not hammer origin. */
+let lastOriginFetchAt = 0;
+let lastOriginFetchOk = false;
+const ORIGIN_FETCH_MS = Number(process.env.DASH_GIT_POLL_MS || 30_000);
+
+/**
+ * Local checkout vs origin/$BRANCH (after a throttled fetch).
+ * sync: current | behind | ahead | diverged | unknown
+ */
+function buildGitInfo(root) {
+  const branch = process.env.DEPLOY_BRANCH || "master";
+  const nowMs = Date.now();
+  if (nowMs - lastOriginFetchAt >= ORIGIN_FETCH_MS) {
+    lastOriginFetchAt = nowMs;
+    lastOriginFetchOk = gitOk(root, `git fetch origin ${branch} --quiet`);
+  }
+
+  const headFull = git(root, "git rev-parse HEAD");
+  const head = git(root, "git rev-parse --short HEAD");
+  const message = git(root, "git log -1 --pretty=%s");
+  const describe = git(root, "git describe --always --dirty") || head;
+  const dirty = !!(git(root, "git status --porcelain"));
+  const originFull = git(root, `git rev-parse refs/remotes/origin/${branch}`);
+  const origin = originFull
+    ? (git(root, `git rev-parse --short refs/remotes/origin/${branch}`) || originFull.slice(0, 7))
+    : null;
+
+  let sync = "unknown";
+  if (headFull && originFull) {
+    if (headFull === originFull) sync = "current";
+    else if (gitOk(root, `git merge-base --is-ancestor ${headFull} ${originFull}`)) sync = "behind";
+    else if (gitOk(root, `git merge-base --is-ancestor ${originFull} ${headFull}`)) sync = "ahead";
+    else sync = "diverged";
+  }
+
+  let version = "0.0.0";
+  try {
+    version = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")).version || version;
+  } catch { /* */ }
+
+  return {
+    version,
+    branch,
+    head,
+    message,
+    describe,
+    dirty,
+    origin,
+    sync,
+    fetched_at: lastOriginFetchAt ? Math.floor(lastOriginFetchAt / 1000) : null,
+    fetch_ok: lastOriginFetchOk,
+  };
+}
+
 function tomlNum(toml, key) {
   const m = new RegExp(`^\\s*${key}\\s*=\\s*([0-9.]+)`, "m").exec(toml);
   return m ? Number(m[1]) : null;
@@ -81,8 +144,7 @@ export function buildLiveBookSnapshot(root) {
       : now - 86_400;
 
     const toml = readFileSync(resolve(root, "config.toml"), "utf8");
-    const head = git(root, "git rev-parse --short HEAD");
-    const headMsg = git(root, "git log -1 --pretty=%s");
+    const gitInfo = buildGitInfo(root);
 
     const heartbeat = db.prepare("SELECT value FROM meta WHERE key='heartbeat'").get()?.value;
     let hb = null;
@@ -554,7 +616,21 @@ export function buildLiveBookSnapshot(root) {
       ts: now,
       at: new Date(now * 1000).toISOString(),
       host: git(root, "hostname") ?? "local",
-      build: { head, message: headMsg, fix_sha: fixSha, fix_ts: fixTs, fix_at: new Date(fixTs * 1000).toISOString() },
+      build: {
+        version: gitInfo.version,
+        branch: gitInfo.branch,
+        head: gitInfo.head,
+        message: gitInfo.message,
+        describe: gitInfo.describe,
+        dirty: gitInfo.dirty,
+        origin: gitInfo.origin,
+        sync: gitInfo.sync,
+        running: hb?.build ?? null,
+        fetched_at: gitInfo.fetched_at,
+        fix_sha: fixSha,
+        fix_ts: fixTs,
+        fix_at: new Date(fixTs * 1000).toISOString(),
+      },
       config: {
         liquidity_slippage_pct: tomlNum(toml, "liquidity_slippage_pct"),
         above_range_sustain_min: tomlNum(toml, "above_range_sustain_min"),

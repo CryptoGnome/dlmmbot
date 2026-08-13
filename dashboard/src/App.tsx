@@ -119,7 +119,47 @@ export default function App() {
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted">
-            <span>build {watch?.build.head ?? "—"}</span>
+            {watch?.build && (() => {
+              const b = watch.build;
+              const sync = b.sync ?? "unknown";
+              const syncTone =
+                sync === "current" && !b.dirty ? "ok"
+                  : sync === "behind" || b.dirty || sync === "diverged" ? "warn"
+                    : sync === "ahead" ? "accent"
+                      : "fg";
+              const syncLabel =
+                sync === "current" && b.dirty ? "DIRTY"
+                  : sync === "current" ? "CURRENT"
+                    : sync === "behind" ? "BEHIND"
+                      : sync === "ahead" ? "AHEAD"
+                        : sync === "diverged" ? "DIVERGED"
+                          : "GIT?";
+              const tip = [
+                b.message ? `"${b.message}"` : null,
+                `disk ${b.describe ?? b.head ?? "—"}`,
+                b.running && b.running !== b.describe ? `running ${b.running}` : null,
+                b.origin ? `github ${b.origin}` : "github ?",
+                sync,
+                b.dirty ? "working tree dirty" : null,
+              ].filter(Boolean).join(" · ");
+              return (
+                <span
+                  title={tip}
+                  className={
+                    syncTone === "ok"
+                      ? "border border-ok/70 px-1.5 py-0.5 tracking-widest text-ok"
+                      : syncTone === "warn"
+                        ? "border border-warn/70 px-1.5 py-0.5 tracking-widest text-warn"
+                        : syncTone === "accent"
+                          ? "border border-accent/70 px-1.5 py-0.5 tracking-widest text-accent"
+                          : "border border-grid px-1.5 py-0.5 tracking-widest text-muted"
+                  }
+                >
+                  v{b.version ?? "?"} {b.describe ?? b.head ?? "—"} · {syncLabel}
+                  {sync === "behind" && b.origin ? ` → ${b.origin}` : ""}
+                </span>
+              );
+            })()}
             <span className="text-dim">|</span>
             <span>{watch?.heartbeat?.mode ?? "—"}</span>
             <span className="text-dim">|</span>
