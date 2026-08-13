@@ -162,19 +162,36 @@ export function setupStatus(envMasked) {
   const walletMeta = readWalletMeta();
   const setup = readSetupState();
   const hasPlainWallet = !!(byKey.WALLET_PRIVATE_KEY?.set || byKey.WALLET_KEYPAIR_PATH?.set);
-  const hasWallet = hasEncryptedWallet() || hasPlainWallet;
+  const encrypted = hasEncryptedWallet();
+  const hasWallet = encrypted || hasPlainWallet;
   const hasRpc = !!byKey.RPC_URL?.set;
   const mode = byKey.FARMER_MODE?.value || process.env.FARMER_MODE || "paper";
   const coreReady = hasWallet && hasRpc;
   // Skip wizard for already-configured boxes (volume with RPC + wallet).
   const needsWizard = !setup.completed && !setup.skipped && !coreReady;
+
+  let publicKey = walletMeta?.publicKey || null;
+  if (!publicKey) {
+    publicKey = process.env.WALLET_PUBKEY || process.env.PUBLIC_WALLET || null;
+  }
+  if (!publicKey && process.env.WALLET_PRIVATE_KEY) {
+    try {
+      publicKey = Keypair.fromSecretKey(bs58.decode(process.env.WALLET_PRIVATE_KEY)).publicKey.toBase58();
+    } catch { /* bad key — leave null */ }
+  }
+
+  // env = plain key already in .env (classic / working bot). encrypted = wallet.enc.json on disk.
+  const source = hasPlainWallet ? (encrypted ? "unlocked" : "env") : encrypted ? "encrypted" : "none";
+
   return {
     needsWizard,
     setup,
     wallet: {
-      encrypted: hasEncryptedWallet(),
+      encrypted,
       unlocked: hasPlainWallet,
-      publicKey: walletMeta?.publicKey || null,
+      ready: hasWallet,
+      source,
+      publicKey,
       createdAt: walletMeta?.createdAt ?? null,
     },
     hasRpc,

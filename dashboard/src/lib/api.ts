@@ -150,6 +150,10 @@ export type SetupStatus = {
   wallet: {
     encrypted: boolean;
     unlocked: boolean;
+    /** True if encrypted file OR plain .env key is present. */
+    ready?: boolean;
+    /** env | unlocked | encrypted | none */
+    source?: string;
     publicKey: string | null;
     createdAt: string | null;
   };

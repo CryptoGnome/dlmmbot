@@ -682,7 +682,12 @@ export function SettingsPage() {
     );
   };
 
-  const walletBadgeTone = setup?.wallet.unlocked ? "ok" : setup?.wallet.encrypted ? "warn" : "fg";
+  const walletBadgeTone = setup?.wallet.unlocked || setup?.wallet.ready
+    ? "ok"
+    : setup?.wallet.encrypted ? "warn" : "fg";
+  const walletBadgeLabel = setup?.wallet.unlocked || setup?.wallet.source === "env"
+    ? "ready"
+    : setup?.wallet.encrypted ? "locked" : "needed";
 
   return (
     <div className="space-y-3">
@@ -739,7 +744,7 @@ export function SettingsPage() {
           <Icon icon={Wallet} size={12} />
           Wallet & secrets
           <Badge tone={walletBadgeTone}>
-            {setup?.wallet.unlocked ? "unlocked" : setup?.wallet.encrypted ? "locked" : "none"}
+            {walletBadgeLabel}
           </Badge>
         </button>
       </div>
@@ -760,11 +765,21 @@ export function SettingsPage() {
       {!loading && pageTab === "wallet" && (
       <>
       {(() => {
-        const hasWallet = !!setup?.wallet.encrypted;
+        const ready = !!(setup?.wallet.ready ?? (setup?.wallet.encrypted || setup?.wallet.unlocked));
         const unlocked = !!setup?.wallet.unlocked;
-        const rpcOk = secretEnv.find((r) => r.key === "RPC_URL")?.set;
+        const encrypted = !!setup?.wallet.encrypted;
+        const source = setup?.wallet.source;
+        const rpcOk = secretEnv.find((r) => r.key === "RPC_URL")?.set
+          || setup?.hasRpc;
         const modeLive = (safeEnv.find((r) => r.key === "FARMER_MODE")?.value ?? "").toLowerCase() === "live"
-          || secretEnv.find((r) => r.key === "FARMER_MODE")?.set;
+          || (setup?.farmerMode ?? "").toLowerCase() === "live";
+        const walletLine = !ready
+          ? "not set yet"
+          : source === "env" || (unlocked && !encrypted)
+            ? "ready in .env (bot can trade)"
+            : unlocked
+              ? "unlocked (bot can trade)"
+              : "locked on disk — unlock below if you want the bot to use it";
         return (
           <Panel title="Quick status">
             <p className="mb-3 text-[12px] text-fg">
@@ -780,13 +795,10 @@ export function SettingsPage() {
                 </span>
               </li>
               <li className="flex items-start gap-2">
-                <span className={hasWallet ? "text-ok" : "text-warn"}>{hasWallet ? "✓" : "○"}</span>
+                <span className={ready ? "text-ok" : "text-warn"}>{ready ? "✓" : "○"}</span>
                 <span>
                   <span className="text-fg">Burner wallet</span>
-                  <span className="text-dim">
-                    {" — "}
-                    {!hasWallet ? "not created yet" : unlocked ? "unlocked (bot can trade)" : "locked (unlock to trade)"}
-                  </span>
+                  <span className="text-dim"> — {walletLine}</span>
                 </span>
               </li>
               <li className="flex items-start gap-2">
@@ -804,19 +816,34 @@ export function SettingsPage() {
         title="1. Burner wallet"
         right={
           <Badge tone={walletBadgeTone}>
-            {setup?.wallet.unlocked ? "ready" : setup?.wallet.encrypted ? "locked" : "needed"}
+            {walletBadgeLabel}
           </Badge>
         }
       >
         <p className="mb-3 text-[12px] leading-snug text-dim">
-          This is the SOL wallet the bot uses. Use a <span className="text-warn">burner only</span> — never your main wallet.
-          Pick one action:
+          {(setup?.wallet.unlocked || setup?.wallet.source === "env") ? (
+            <>
+              Your bot already has a private key in <span className="text-fg">.env</span> — you’re good.
+              Encrypted wallet below is optional (extra lock / backup). Still use a{" "}
+              <span className="text-warn">burner only</span>.
+            </>
+          ) : (
+            <>
+              This is the SOL wallet the bot uses. Use a <span className="text-warn">burner only</span> — never your main wallet.
+              Pick one action:
+            </>
+          )}
         </p>
         {setup?.wallet.publicKey && (
           <div className="mb-3 border border-grid bg-bg px-2 py-2">
             <div className="text-[10px] tracking-wider text-dim uppercase">Address</div>
             <p className="mt-0.5 break-all font-mono text-[11px] text-ok">{setup.wallet.publicKey}</p>
           </div>
+        )}
+        {(setup?.wallet.unlocked || setup?.wallet.source === "env") && !setup?.wallet.encrypted && (
+          <p className="mb-3 text-[11px] text-ok">
+            No action required. Only use Make new / Import if you want to replace this key with an encrypted one.
+          </p>
         )}
         <div className="mb-3 flex gap-1 border border-grid p-0.5">
           {([
