@@ -961,9 +961,14 @@ export class LiveExecutor implements Executor {
         const sig = await this.send(tx);
         const delta = await this.walletDelta([sig]);
         const tokens = batch.map((a) => ({ mint: a.mint, symbol: a.symbol, account: a.pubkey.toBase58() }));
+        const posId = batch.length === 1
+          ? (getDb().prepare(
+              "SELECT id FROM positions WHERE token_mint = ? ORDER BY id DESC LIMIT 1"
+            ).get(batch[0]!.mint) as { id: number } | undefined)?.id ?? null
+          : null;
         getDb().prepare(
-          "INSERT INTO events (position_id, ts, type, tx_sig, sol_delta, detail_json) VALUES (NULL, ?, 'rent_reclaim', ?, ?, ?)"
-        ).run(now(), sig, delta ?? 0, JSON.stringify({
+          "INSERT INTO events (position_id, ts, type, tx_sig, sol_delta, detail_json) VALUES (?, ?, 'rent_reclaim', ?, ?, ?)"
+        ).run(posId, now(), sig, delta ?? 0, JSON.stringify({
           accounts: tokens.map((t) => t.account),
           tokens,
         }));

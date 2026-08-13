@@ -7,12 +7,63 @@ import { resolve } from "node:path";
 import { createRequire } from "node:module";
 import { execSync } from "node:child_process";
 
+const require = createRequire(import.meta.url);
+
 export const REALIZED_PNL = `
   CASE WHEN open_cost_sol IS NOT NULL AND close_return_sol IS NOT NULL
        THEN close_return_sol + fees_measured_sol + recovered_sol - open_cost_sol
        WHEN entry_sol > 0
        THEN exit_sol - entry_sol + fees_claimed_sol
        ELSE 0 END`;
+
+/** Map closed token-account addresses → { mint, symbol } for rent_reclaim rows. */
+function buildReclaimAtaIndex(db) {
+  const map = new Map();
+  try {
+    const { Keypair, PublicKey } = require("@solana/web3.js");
+    const {
+      getAssociatedTokenAddressSync,
+      TOKEN_PROGRAM_ID,
+      TOKEN_2022_PROGRAM_ID,
+    } = require("@solana/spl-token");
+    const bs58mod = require("bs58");
+    const bs58 = bs58mod.default ?? bs58mod;
+
+    let ownerStr = process.env.WALLET_PUBKEY || process.env.PUBLIC_WALLET || null;
+    if (!ownerStr && process.env.WALLET_PRIVATE_KEY) {
+      ownerStr = Keypair.fromSecretKey(bs58.decode(process.env.WALLET_PRIVATE_KEY)).publicKey.toBase58();
+    }
+    if (!ownerStr) return map;
+    const owner = new PublicKey(ownerStr);
+
+    const mints = db.prepare(`
+      SELECT token_mint AS mint,
+             (SELECT p2.symbol FROM positions p2
+              WHERE p2.token_mint = p.token_mint AND IFNULL(p2.symbol,'') != ''
+              ORDER BY p2.id DESC LIMIT 1) AS symbol
+      FROM positions p
+      WHERE token_mint IS NOT NULL
+      GROUP BY token_mint
+    `).all();
+
+    for (const r of mints) {
+      if (!r.mint || !r.symbol) continue;
+      let mintPk;
+      try { mintPk = new PublicKey(r.mint); } catch { continue; }
+      for (const prog of [TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID]) {
+        for (const off of [false, true]) {
+          try {
+            map.set(getAssociatedTokenAddressSync(mintPk, owner, off, prog).toBase58(), {
+              mint: r.mint,
+              symbol: r.symbol,
+            });
+          } catch { /* */ }
+        }
+      }
+    }
+  } catch { /* deps / env missing — leave map empty */ }
+  return map;
+}
 
 function git(root, cmd) {
   try {
@@ -526,6 +577,8 @@ export function buildLiveBookSnapshot(root) {
     ]);
     const activitySince = now - 24 * 3600;
     const activity = [];
+    /** Lazily built once if any legacy rent_reclaim needs ATA→ticker resolution. */
+    let ataIndex = null;
 
     for (const r of db.prepare(
       `SELECT d.ts, datetime(d.ts,'unixepoch') at, d.mint, d.pool, ROUND(d.score,1) score,
@@ -631,6 +684,15 @@ export function buildLiveBookSnapshot(root) {
         } else if (!symbol && (j?.symbol || j?.mint)) {
           symbol = j.symbol || String(j.mint).slice(0, 8);
           mint = mint || j.mint || null;
+        } else if (!symbol && Array.isArray(j?.accounts) && j.accounts.length) {
+          // Legacy rent_reclaim rows only stored ATA pubkeys — map back via known positions.
+          if (!ataIndex) ataIndex = buildReclaimAtaIndex(db);
+          const hits = j.accounts.map((a) => ataIndex.get(a)).filter(Boolean);
+          if (hits.length) {
+            symbol = [...new Set(hits.map((h) => h.symbol))].join("+");
+            if (hits.length === 1) mint = hits[0].mint;
+            if (hits.length > 1) detailExtra = `${hits.length} accounts`;
+          }
         }
       } catch { /* */ }
       if (!symbol && mint) {
