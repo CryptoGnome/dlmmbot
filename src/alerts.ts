@@ -25,18 +25,22 @@ export async function alert(kind: AlertKind, message: string): Promise<void> {
   const chatId = process.env.TELEGRAM_CHAT_ID;
   if (!token || !chatId) return;
 
-  const since = Date.now() - lastSend;
-  if (since < MIN_INTERVAL_MS) await new Promise((r) => setTimeout(r, MIN_INTERVAL_MS - since));
-  lastSend = Date.now();
-
-  try {
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text: `meteora-farmer\n${line}` }),
-      signal: AbortSignal.timeout(10_000),
-    });
-  } catch (e) {
-    console.error("[alert] telegram send failed:", (e as Error).message);
-  }
+  // Fire-and-forget: Telegram RTT + flood sleep used to stretch the manage
+  // tick by tens of seconds and push position_marks gaps past 60s (RANGE-SHAPE
+  // integrity (a)). Console line above is the durable local record.
+  void (async () => {
+    try {
+      const since = Date.now() - lastSend;
+      if (since < MIN_INTERVAL_MS) await new Promise((r) => setTimeout(r, MIN_INTERVAL_MS - since));
+      lastSend = Date.now();
+      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, text: `meteora-farmer\n${line}` }),
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch (e) {
+      console.error("[alert] telegram send failed:", (e as Error).message);
+    }
+  })();
 }

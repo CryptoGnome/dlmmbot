@@ -302,27 +302,23 @@ function loadOpenPositions(): Position[] {
   }));
 }
 
-/** One manager tick over all open positions. */
+/** One manager tick over all open positions.
+ * Two-pass: mark every position before any close/claim. A sibling exit used to
+ * delay peer marks by 50–80s (3/4161 gaps ≥60s, but enough to fail RANGE-SHAPE
+ * integrity (a) on max_gap).
+ */
 export async function managePositions(exec: Executor): Promise<void> {
   const m = config().manage;
   const positions = loadOpenPositions();
-  let marksOk = 0, marksFailed = 0, unrealizedSol = 0;
+  let marksFailed = 0, unrealizedSol = 0;
+  const marked: Array<{ pos: Position; mark: Awaited<ReturnType<Executor["mark"]>> }> = [];
 
   for (const pos of positions) {
     try {
       if (exec instanceof PaperExecutor) await exec.accrueFees(pos, m.poll_s);
       const mark = await exec.mark(pos);
-      marksOk++;
       unrealizedSol += mark.valueSol - pos.entrySol;
-      const ageH = (now() - pos.entryTs) / 3600;
       const valueFrac = pos.entrySol > 0 ? mark.valueSol / pos.entrySol : 1;
-      // Instrumentation (RANGE-SHAPE-DECISION.md): record the mark we just paid
-      // for instead of discarding it. This is the series that makes traversal
-      // depth measured rather than inferred from 65s pool_snapshots, and the
-      // one the Spot-vs-BidAsk stop replay is scored against.
-      // Own try: this is new, untested-in-anger code sitting directly above the
-      // P0-P5 state machine. Instrumentation must never be able to gate the
-      // risk logic below it.
       try {
         getDb().prepare(
           `INSERT INTO position_marks
@@ -333,12 +329,22 @@ export async function managePositions(exec: Executor): Promise<void> {
       } catch (e) {
         console.error("[manager] position_marks insert failed:", (e as Error).message);
       }
-      // Persisted (not just in-memory): restarts must not forget a position
-      // was in range, or P3 exits misclassify win as missed (pos#2 incident).
       if (mark.inRange && !everInRange.has(pos.id)) {
         everInRange.add(pos.id);
         getDb().prepare("UPDATE positions SET ever_in_range = 1 WHERE id = ?").run(pos.id);
       }
+      marked.push({ pos, mark });
+    } catch (e) {
+      marksFailed++;
+      console.error(`[manager] position ${pos.id} (${pos.symbol}):`, (e as Error).message);
+    }
+  }
+  if (marksFailed > 0) console.warn(`[manager] ${marksFailed}/${positions.length} marks failed this tick`);
+
+  for (const { pos, mark } of marked) {
+    try {
+      const ageH = (now() - pos.entryTs) / 3600;
+      const valueFrac = pos.entrySol > 0 ? mark.valueSol / pos.entrySol : 1;
 
       // --- P0 SAFETY: pool death, price crash, TVL drain, rugcheck flip ---
       // TODO(phase 2, live): wallet-dump / new-whale via tx stream.
@@ -346,7 +352,6 @@ export async function managePositions(exec: Executor): Promise<void> {
         ((mark.price - pos.entryPrice) / pos.entryPrice) * 100 <= m.safety_price_crash_pct;
       const tvlDrained = mark.tvlUsd > 0 && tvlDropTriggered(pos.id, mark.tvlUsd);
       const rugFlip = !crashed && !tvlDrained && mark.valueSol > 0 && await rugcheckFlipped(pos.id, pos.tokenMint);
-      // Holder watch (live only): wallet-dump / new-whale via GMGN snapshots.
       const holderTrig = exec.mode === "live" && !crashed && !tvlDrained && !rugFlip
         ? await holderCheck(pos.id, pos.tokenMint) : null;
       if (mark.valueSol === 0 || crashed || tvlDrained || rugFlip || holderTrig) {
@@ -388,9 +393,6 @@ export async function managePositions(exec: Executor): Promise<void> {
       }
 
       // --- P3 ABOVE RANGE -> TAKE PROFIT (with sustain timer, §4 P3) ---
-      // Wins (price traveled through range) close after above_range_sustain_min
-      // so follow can arm. Missed (never converted) uses a longer timer — the
-      // 10m path was churning slots for ~0.002 SOL rent (18/27 near-zero).
       if (mark.aboveRange) {
         const dbFlag = (getDb().prepare("SELECT ever_in_range AS e FROM positions WHERE id = ?")
           .get(pos.id) as { e: number } | undefined)?.e === 1;
@@ -412,9 +414,9 @@ export async function managePositions(exec: Executor): Promise<void> {
           recordDecision(pos.tokenMint, pos.poolAddress, "exited", `P3_above_${classification}`, null, { mark, sustainedS: now() - since, exitSol, sustainMin });
           if (pos.followChainId == null) armFollowChain(pos, mark.price);
         }
-        continue; // above range: nothing earns; wait out the sustain window
+        continue;
       }
-      aboveRangeSince.delete(pos.id); // back in (or below) range — reset timer
+      aboveRangeSince.delete(pos.id);
 
       // --- P5 BELOW RANGE (grace timer, §4 P5: wick tolerance) ---
       if (mark.belowRange) {
@@ -422,9 +424,6 @@ export async function managePositions(exec: Executor): Promise<void> {
         if (since === undefined) {
           belowRangeSince.set(pos.id, now());
           console.log(`[manager] pos#${pos.id} ${pos.symbol} below range — grace timer started (${m.below_range_grace_min}m)`);
-          // Bank fees at the top of the drop: claim converts token-side fees
-          // to SOL now instead of letting them ride a dump through the grace
-          // window. Failure is non-fatal — the grace timer still runs.
           if (mark.unclaimedFeesSol >= m.grace_claim_min_sol) {
             try {
               const { claimedSol } = await exec.claimFees(pos);
@@ -439,21 +438,14 @@ export async function managePositions(exec: Executor): Promise<void> {
           blacklist(pos.tokenMint, "token", "below range cut", m.loss_reentry_cooldown_h);
           recordDecision(pos.tokenMint, pos.poolAddress, "exited", "P5_below", null, { mark, graceS: now() - since });
         }
-        continue; // below range: nothing earns; wait out the grace window
+        continue;
       }
-      belowRangeSince.delete(pos.id); // back in range — wick survived, reset
+      belowRangeSince.delete(pos.id);
 
-      // --- ESCAPE HATCH (§4, Gmet's reshape simplified): price fell through
-      // the deep part of our range, then recovered to the top slice — close
-      // now, selling the accumulated token side near/above average acquisition
-      // and realizing fees, instead of waiting to round-trip back down.
-      // Follow legs are exempt: escape depth is a FRACTION of range depth, and
-      // at the follow range's 30% width it would arm around -19% and fire on
-      // ordinary wiggles (the trap RANGE-SHAPE-DECISION.md documents at 25%).
-      // A follow leg is already the product of an escape-shaped cycle.
+      // --- ESCAPE HATCH ---
       if (pos.followChainId == null) {
         const depth = pos.maxBinId - pos.minBinId;
-        const frac = depth > 0 ? (pos.maxBinId - mark.activeBinId) / depth : 0; // 0 = top, 1 = bottom
+        const frac = depth > 0 ? (pos.maxBinId - mark.activeBinId) / depth : 0;
         if (frac >= m.escape_hatch_depth_pct / 100) {
           if (!fellDeep.has(pos.id)) {
             fellDeep.add(pos.id);
@@ -484,31 +476,24 @@ export async function managePositions(exec: Executor): Promise<void> {
         pos.profitLockFires < m.profit_lock_max_fires &&
         valueFrac >= m.profit_lock_at_frac
       ) {
-        const { withdrawnSol } = await exec.withdraw(pos, m.profit_lock_withdraw_pct * 100); // pct -> bps
+        const { withdrawnSol } = await exec.withdraw(pos, m.profit_lock_withdraw_pct * 100);
         await alert("profit_lock", `${pos.symbol} pos#${pos.id}: profit lock at +${((valueFrac - 1) * 100).toFixed(0)}% — withdrew ${withdrawnSol.toFixed(4)} SOL`);
       }
-      // TODO(phase 2): hybrid/compound fee destination.
     } catch (e) {
-      marksFailed++;
-      console.error(`[manager] position ${pos.id} (${pos.symbol}):`, (e as Error).message);
+      console.error(`[manager] position ${pos.id} (${pos.symbol}) act:`, (e as Error).message);
     }
   }
 
-  // Health is now the getSlot probe (rpcProbe), not marks. The old signal was
-  // `positions.length === 0 || marksOk > 0`, which refreshed on every flat tick
-  // — and the book is flat ~87% of wall-clock — so it could not see an outage
-  // while flat, which is exactly when the bot is trying to ENTER. It was also a
-  // global OR over a book that has never exceeded 2 positions, so at n=1 any
-  // position-specific fault (dead pool, missing position_accounts row) read as
-  // a book-wide RPC outage. marksFailed is kept for the health rows.
-  if (marksFailed > 0) console.warn(`[manager] ${marksFailed}/${positions.length} marks failed this tick`);
-
-  // Daily PnL rollup (§7) — keeps today's row current for promotion tracking.
   try {
     await rollupDaily(exec.mode, unrealizedSol);
   } catch (e) {
     console.error("[pnl] rollup failed:", (e as Error).message);
   }
+}
+
+/** Remaining sleep so short ticks keep poll cadence; long ticks never stack extra delay. */
+export function pollSleepMs(elapsedMs: number, pollMs: number): number {
+  return Math.max(0, pollMs - elapsedMs);
 }
 
 /**
@@ -922,6 +907,8 @@ export async function runLoop(): Promise<void> {
   let lastSweep = 0;
 
   for (;;) {
+    const tickStart = Date.now();
+    const pollMs = config().manage.poll_s * 1000;
     if (haltRequested()) {
       console.log("[farmer] HALT file present — closing all positions and stopping");
       for (const pos of loadOpenPositions()) await closeAndReport(exec, pos, "manual", config().exec.exit_slippage_bps, "close", "manual HALT");
@@ -954,37 +941,39 @@ export async function runLoop(): Promise<void> {
           console.warn(`[farmer] entries frozen — ${probeFailures} consecutive RPC probe failures`);
         }
       } else if (Date.now() - lastScan > config().scanner.interval_s * 1000) {
-        lastScan = Date.now();
-        await enterNewPositions(exec);
+        // Defer scan when manage already ate the poll window — otherwise a close
+        // + fixed sleep stacked to 70–80s mark gaps (RANGE-SHAPE integrity (a)).
+        if (Date.now() - tickStart < pollMs) {
+          lastScan = Date.now();
+          await enterNewPositions(exec);
+        } else {
+          console.warn(`[farmer] deferring entry scan — tick already ${Date.now() - tickStart}ms (poll ${pollMs}ms)`);
+        }
       }
       if (exec.sweepResiduals && Date.now() - lastSweep > RESIDUAL_SWEEP_INTERVAL_MS) {
-        lastSweep = Date.now();
-        for (const r of await exec.sweepResiduals(RESIDUAL_SWEEP_MIN_SOL)) {
-          const tag = r.positionId ? ` pos#${r.positionId}` : "";
-          // No ledger insert here. sweepResiduals already credits the same
-          // lamports to positions.recovered_sol, and `banked` is subtracted from
-          // deployable in computeBankroll — so banking it too counted the sweep
-          // twice AND shrank the working bankroll by recovered principal. Two of
-          // the ledger's first twelve rows (0.0367 SOL) are this double-count.
-          // A sweep lands after the close alert, so that alert's true PnL was
-          // short by exactly this. Restate it rather than leave the wrong
-          // number as the last word on the position.
-          let restated = "";
-          if (r.positionId) {
-            const p = getDb().prepare(
-              "SELECT open_cost_sol o, close_return_sol c, fees_measured_sol f, recovered_sol v FROM positions WHERE id = ?"
-            ).get(r.positionId) as { o: number | null; c: number | null; f: number; v: number } | undefined;
-            if (p?.o != null && p.c != null) {
-              restated = `\n${r.symbol} pos#${r.positionId} true PnL now ${(p.c + p.f + p.v - p.o >= 0 ? "+" : "")}${(p.c + p.f + p.v - p.o).toFixed(4)} SOL`;
+        if (Date.now() - tickStart < pollMs) {
+          lastSweep = Date.now();
+          for (const r of await exec.sweepResiduals(RESIDUAL_SWEEP_MIN_SOL)) {
+            const tag = r.positionId ? ` pos#${r.positionId}` : "";
+            let restated = "";
+            if (r.positionId) {
+              const p = getDb().prepare(
+                "SELECT open_cost_sol o, close_return_sol c, fees_measured_sol f, recovered_sol v FROM positions WHERE id = ?"
+              ).get(r.positionId) as { o: number | null; c: number | null; f: number; v: number } | undefined;
+              if (p?.o != null && p.c != null) {
+                restated = `\n${r.symbol} pos#${r.positionId} true PnL now ${(p.c + p.f + p.v - p.o >= 0 ? "+" : "")}${(p.c + p.f + p.v - p.o).toFixed(4)} SOL`;
+              }
             }
+            await alert("claim", `🧹 [sweep] sold stranded ${r.symbol}${tag} residue for ${r.soldSol.toFixed(4)} SOL${restated}`);
           }
-          await alert("claim", `🧹 [sweep] sold stranded ${r.symbol}${tag} residue for ${r.soldSol.toFixed(4)} SOL${restated}`);
+        } else {
+          console.warn(`[farmer] deferring residual sweep — tick already ${Date.now() - tickStart}ms`);
         }
       }
     } catch (e) {
       console.error("[farmer] tick error:", (e as Error).message);
     }
     writeHeartbeat(exec, loadOpenPositions().length);
-    await new Promise((r) => setTimeout(r, config().manage.poll_s * 1000));
+    await new Promise((r) => setTimeout(r, pollSleepMs(Date.now() - tickStart, pollMs)));
   }
 }

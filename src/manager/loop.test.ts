@@ -1,9 +1,18 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { managePositions } from "./loop.js";
+import { managePositions, pollSleepMs } from "./loop.js";
 import { FakeExecutor } from "../test/fakeExecutor.js";
 import { installConfig, restoreConfig } from "../test/config.js";
 import { useMemoryDb, resetTestDb, insertOpenPosition } from "../test/db.js";
 import { getDb } from "../db/db.js";
+import type { ExitReason, Position } from "../types.js";
+
+describe("pollSleepMs", () => {
+  it("keeps cadence on short ticks and never stacks after long ones", () => {
+    expect(pollSleepMs(2_000, 15_000)).toBe(13_000);
+    expect(pollSleepMs(15_000, 15_000)).toBe(0);
+    expect(pollSleepMs(50_000, 15_000)).toBe(0);
+  });
+});
 
 describe("managePositions contracts", () => {
   let exec: FakeExecutor;
@@ -33,10 +42,36 @@ describe("managePositions contracts", () => {
     vi.useRealTimers();
   });
 
+  it("marks all positions before closing any (sibling close must not delay peer marks)", async () => {
+    const order: string[] = [];
+    const a = insertOpenPosition({ entrySol: 0.4, symbol: "A" });
+    const b = insertOpenPosition({ entrySol: 0.4, symbol: "B" });
+    exec.setMark(a, { valueSol: 0.28, price: 0.8, activeBinId: 150, inRange: true });
+    exec.setMark(b, { valueSol: 0.4, price: 1, activeBinId: 150, inRange: true });
+
+    const mark = exec.mark.bind(exec);
+    const close = exec.close.bind(exec);
+    exec.mark = async (pos: Position) => {
+      order.push(`mark:${pos.id}`);
+      return mark(pos);
+    };
+    exec.close = async (pos: Position, reason: ExitReason, slip: number) => {
+      order.push(`close:${pos.id}`);
+      return close(pos, reason, slip);
+    };
+
+    await managePositions(exec);
+    expect(order.indexOf(`mark:${a}`)).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf(`mark:${b}`)).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf(`close:${a}`)).toBeGreaterThanOrEqual(0);
+    expect(Math.max(order.indexOf(`mark:${a}`), order.indexOf(`mark:${b}`)))
+      .toBeLessThan(order.indexOf(`close:${a}`));
+  });
+
   it("P1 stop when valueFrac < stop_loss_frac", async () => {
     const id = insertOpenPosition({ entrySol: 0.4 });
     exec.setMark(id, {
-      valueSol: 0.28, // 0.7 < 0.75
+      valueSol: 0.28,
       price: 0.8,
       activeBinId: 150,
       inRange: true,
@@ -49,7 +84,6 @@ describe("managePositions contracts", () => {
 
   it("escape hatch after deep dip recovers to top", async () => {
     const id = insertOpenPosition({ entrySol: 0.4, minBinId: 100, maxBinId: 200, fellDeep: 1 });
-    // frac = (200 - 180) / 100 = 0.20 <= 0.25 recovery
     exec.setMark(id, {
       valueSol: 0.42,
       price: 1.05,
@@ -75,11 +109,11 @@ describe("managePositions contracts", () => {
     await managePositions(exec);
     expect(exec.closed).toHaveLength(0);
 
-    vi.setSystemTime(new Date("2026-08-13T12:12:00Z")); // 12m < 45m missed
+    vi.setSystemTime(new Date("2026-08-13T12:12:00Z"));
     await managePositions(exec);
     expect(exec.closed).toHaveLength(0);
 
-    vi.setSystemTime(new Date("2026-08-13T12:50:00Z")); // 50m >= 45m
+    vi.setSystemTime(new Date("2026-08-13T12:50:00Z"));
     await managePositions(exec);
     expect(exec.closed).toEqual([{ id, reason: "P3_above" }]);
     const row = getDb().prepare("SELECT state FROM positions WHERE id = ?").get(id) as { state: string };
