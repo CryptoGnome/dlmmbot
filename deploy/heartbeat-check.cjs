@@ -16,12 +16,11 @@
 
 const { readFileSync, existsSync, writeFileSync } = require("node:fs");
 const { resolve } = require("node:path");
+const { evaluateHeartbeat, shouldAlert } = require("./heartbeat-logic.cjs");
 
 const ROOT = resolve(__dirname, "..");
-const DB_PATH = resolve(ROOT, "data/farmer.db");
-const STATE = "/tmp/farmer-heartbeat-state";
-const STALE_S = 300;      // 20 ticks at poll_s=15
-const REMIND_S = 3600;    // re-alert at most hourly while down
+const DB_PATH = process.env.FARMER_DB_PATH || resolve(ROOT, "data/farmer.db");
+const STATE = process.env.FARMER_HEARTBEAT_STATE || "/tmp/farmer-heartbeat-state";
 
 function env(key) {
   try {
@@ -50,14 +49,12 @@ async function notify(text) {
   }
 }
 
-// Alert on the falling edge, then at most hourly. Without this a 6-hour outage
-// is 180 identical messages and you stop reading them.
-function shouldAlert(nowS) {
-  let last = 0;
-  try { last = Number(readFileSync(STATE, "utf8").trim()) || 0; } catch { /* first run */ }
-  if (nowS - last < REMIND_S) return false;
+function readLastAlert() {
+  try { return Number(readFileSync(STATE, "utf8").trim()) || 0; } catch { return 0; }
+}
+
+function writeLastAlert(nowS) {
   try { writeFileSync(STATE, String(nowS)); } catch { /* best effort */ }
-  return true;
 }
 
 function clearAlert() {
@@ -75,36 +72,27 @@ function clearAlert() {
     process.exit(2);
   }
 
-  let hb;
+  let hb = null;
   try {
     const db = new Database(DB_PATH, { readonly: true, fileMustExist: true });
     const row = db.prepare("SELECT value FROM meta WHERE key = 'heartbeat'").get();
     db.close();
-    if (!row) {
-      // No beacon at all. Either the farmer has never run this build, or the
-      // meta row was cleared — both worth a human look, neither is "healthy".
-      if (shouldAlert(nowS)) await notify("no heartbeat row in the DB — farmer has not completed a tick on this build");
-      process.exit(1);
-    }
-    hb = JSON.parse(row.value);
+    if (row) hb = JSON.parse(row.value);
   } catch (e) {
     console.error("[heartbeat] db read failed:", e.message);
     process.exit(2); // do not alert on our own failure to read
   }
 
-  const age = nowS - (hb.ts || 0);
-  if (age > STALE_S) {
-    if (shouldAlert(nowS)) {
-      await notify(
-        `farmer heartbeat is ${Math.floor(age / 60)}m stale (last tick ${new Date(hb.ts * 1000).toISOString()}, ` +
-        `pid ${hb.pid}, build ${hb.build}). ${hb.open || 0} position(s) were open. ` +
-        `The process is not completing ticks — check \`pm2 list\` and the logs.`
-      );
+  const result = evaluateHeartbeat(hb, nowS);
+  if (result.status !== "ok") {
+    if (shouldAlert(nowS, readLastAlert())) {
+      writeLastAlert(nowS);
+      await notify(result.message);
     }
     process.exit(1);
   }
 
   clearAlert();
-  console.log(`[heartbeat] ok — ${age}s old, pid ${hb.pid}, build ${hb.build}, ${hb.open || 0} open` +
+  console.log(`[heartbeat] ok — ${result.age}s old, pid ${hb.pid}, build ${hb.build}, ${hb.open || 0} open` +
     (hb.entriesFrozen ? ", ENTRIES FROZEN" : ""));
 })();

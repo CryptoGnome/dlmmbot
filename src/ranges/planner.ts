@@ -11,6 +11,9 @@ import type { RangePlan } from "../types.js";
 
 const BINS_PER_POSITION = 69; // one DLMM position account spans <= 69 bins
 const SOL_DECIMALS = 9;
+/** Worst-case bin-array rent; matches estBinRentSol in planRange / planFollowRange. */
+const BIN_ARRAY_RENT_SOL = 0.075;
+const BINS_PER_ARRAY_EST = 70;
 
 // Margin between the deepest bin we will fund and the P0 price-crash exit.
 // P0 force-closes the position at safety_price_crash_pct, so any bin below that
@@ -28,6 +31,51 @@ export function priceToBinId(uiPrice: number, binStep: number, decimalsX: number
 
 export function binIdToPrice(binId: number, binStep: number, decimalsX: number): number {
   return Math.pow(1 + binStep / 10_000, binId) * 10 ** (decimalsX - SOL_DECIMALS);
+}
+
+function buildPlan(
+  minBinId: number,
+  maxBinId: number,
+  currentPrice: number,
+  binStep: number,
+  decimalsX: number,
+  fibAnchor: RangePlan["fibAnchor"],
+): RangePlan {
+  const binCount = maxBinId - minBinId + 1;
+  return {
+    minBinId,
+    maxBinId,
+    binCount,
+    positionAccounts: Math.ceil(binCount / BINS_PER_POSITION),
+    bottomPricePct: (binIdToPrice(minBinId, binStep, decimalsX) / currentPrice - 1) * 100,
+    fibAnchor,
+    estBinRentSol: Math.ceil(binCount / BINS_PER_ARRAY_EST) * BIN_ARRAY_RENT_SOL,
+  };
+}
+
+/**
+ * Raise the range bottom (fewer bins) until estimated bin-array rent fits
+ * budgetSol. Never shallower than minDownPct — return null if rent and depth
+ * cannot both be satisfied (caller skips with bin_rent).
+ */
+export function fitPlanToRentBudget(
+  plan: RangePlan,
+  budgetSol: number,
+  currentPrice: number,
+  binStep: number,
+  decimalsX: number,
+  minDownPct: number,
+): RangePlan | null {
+  if (plan.estBinRentSol <= budgetSol) return plan;
+  const maxArrays = Math.floor(budgetSol / BIN_ARRAY_RENT_SOL + 1e-12);
+  if (maxArrays < 1) return null;
+  const maxBins = maxArrays * BINS_PER_ARRAY_EST;
+  const minBinForRent = plan.maxBinId - maxBins + 1;
+  const minBinForDepth = priceToBinId(currentPrice * (1 - minDownPct / 100), binStep, decimalsX);
+  // Higher minBinId = shallower. Rent forces minBinForRent; depth requires
+  // minBinId <= minBinForDepth. Impossible when rent floor is above depth floor.
+  if (minBinForRent > minBinForDepth) return null;
+  return buildPlan(minBinForRent, plan.maxBinId, currentPrice, binStep, decimalsX, plan.fibAnchor);
 }
 
 /** Swing high/low from candles (max 24h lookback of 5m candles). */
@@ -83,19 +131,7 @@ export function planRange(
   const maxBins = BINS_PER_POSITION * e.max_position_accounts;
   if (maxBinId - minBinId + 1 > maxBins) minBinId = maxBinId - maxBins + 1;
 
-  const binCount = maxBinId - minBinId + 1;
-  return {
-    minBinId,
-    maxBinId,
-    binCount,
-    positionAccounts: Math.ceil(binCount / BINS_PER_POSITION),
-    bottomPricePct: (binIdToPrice(minBinId, binStep, decimalsX) / currentPrice - 1) * 100,
-    fibAnchor,
-    // ~0.000015 SOL per never-before-funded bin is negligible; the real cost is
-    // binArray account creation (~0.075 SOL per array of 70 bins, refundable
-    // only if we created it). Estimate worst case; executor refines on-chain.
-    estBinRentSol: Math.ceil(binCount / 70) * 0.075,
-  };
+  return buildPlan(minBinId, maxBinId, currentPrice, binStep, decimalsX, fibAnchor);
 }
 
 /**
@@ -117,14 +153,5 @@ export function planFollowRange(
   let minBinId = priceToBinId(currentPrice * (1 - depthPct / 100), binStep, decimalsX);
   const maxBins = BINS_PER_POSITION * config().entry.max_position_accounts;
   if (maxBinId - minBinId + 1 > maxBins) minBinId = maxBinId - maxBins + 1;
-  const binCount = maxBinId - minBinId + 1;
-  return {
-    minBinId,
-    maxBinId,
-    binCount,
-    positionAccounts: Math.ceil(binCount / BINS_PER_POSITION),
-    bottomPricePct: (binIdToPrice(minBinId, binStep, decimalsX) / currentPrice - 1) * 100,
-    fibAnchor: null,
-    estBinRentSol: Math.ceil(binCount / 70) * 0.075,
-  };
+  return buildPlan(minBinId, maxBinId, currentPrice, binStep, decimalsX, null);
 }

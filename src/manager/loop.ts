@@ -9,7 +9,7 @@ import type { Executor } from "../executor/executor.js";
 import { PaperExecutor } from "../executor/paper.js";
 import { rollupDaily } from "../pnl/rollup.js";
 import { fetchSummary } from "../vetting/rugcheck.js";
-import { planRange } from "../ranges/planner.js";
+import { planRange, fitPlanToRentBudget } from "../ranges/planner.js";
 import { fetchCandles, fetchPool } from "../scanner/meteora.js";
 import { trendingByMint } from "../scanner/gmgn.js";
 import { feeMomentumPart, opportunityScore, structurePart, turnoverPart } from "../scanner/score.js";
@@ -809,11 +809,21 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     }
 
     const candles = await fetchCandles(cand.pool.address, "5m").catch(() => []);
-    const range = planRange(cand.pool.price, cand.pool.binStep, candles, cand.pool.decimalsX);
-    if (range.estBinRentSol > config().entry.bin_rent_budget_sol * 3) {
-      // Rent budget is a soft-cap in paper mode; TODO(phase 2): shrink range instead.
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "bin_rent", score, { range });
-      continue;
+    let range = planRange(cand.pool.price, cand.pool.binStep, candles, cand.pool.decimalsX);
+    const rentBudget = config().entry.bin_rent_budget_sol;
+    if (range.estBinRentSol > rentBudget) {
+      const fitted = fitPlanToRentBudget(
+        range, rentBudget, cand.pool.price, cand.pool.binStep, cand.pool.decimalsX, config().entry.min_down_pct
+      );
+      if (!fitted) {
+        recordDecision(cand.tokenMint, cand.pool.address, "skipped", "bin_rent", score, { range, rentBudget });
+        continue;
+      }
+      console.log(
+        `[enter] ${cand.symbol}: shrunk range for rent ${range.estBinRentSol.toFixed(3)}→${fitted.estBinRentSol.toFixed(3)} SOL ` +
+        `(${range.binCount}→${fitted.binCount} bins, depth ${range.bottomPricePct.toFixed(0)}%→${fitted.bottomPricePct.toFixed(0)}%)`
+      );
+      range = fitted;
     }
 
     // A failed open used to throw straight past recordDecision to the tick
