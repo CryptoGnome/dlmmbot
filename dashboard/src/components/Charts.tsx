@@ -202,3 +202,88 @@ export function ExitsChart({ data }: { data: HistorySnap["exits"] }) {
     </ResponsiveContainer>
   );
 }
+
+/** Open-book proxy: daily unrealized from pnl_daily. */
+export function CapitalChart({
+  data,
+}: {
+  data: NonNullable<HistorySnap["stats"]>["capital_series"];
+}) {
+  if (!data.length) return <Empty msg="No capital series yet" />;
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <AreaChart data={data} margin={{ top: 12, right: 12, left: 4, bottom: 4 }}>
+        <CartesianGrid {...grid} />
+        <XAxis dataKey="day" {...axis} tickFormatter={(d: string) => d.slice(5)} />
+        <YAxis {...axis} width={56} tickFormatter={(v: number) => `${v.toFixed(1)}`} />
+        <Tooltip
+          cursor={{ stroke: "#6B6B6B", strokeDasharray: "3 3" }}
+          content={({ active, label, payload }) => {
+            if (!active || !payload?.length) return null;
+            const row = payload[0]?.payload as {
+              unrealized_sol?: number; fees_sol?: number; realized_sol?: number;
+            };
+            return (
+              <ChartTip
+                title={String(label)}
+                rows={[
+                  { label: "Unrealized", value: fmtSol(row?.unrealized_sol), tone: "accent" },
+                  { label: "Day fees", value: fmtSol(row?.fees_sol), tone: "ok" },
+                  { label: "Day realized", value: fmtSol(row?.realized_sol), tone: (row?.realized_sol ?? 0) >= 0 ? "ok" : "danger" },
+                ]}
+              />
+            );
+          }}
+        />
+        <Area
+          type="monotone"
+          dataKey="unrealized_sol"
+          name="Unrealized"
+          stroke="#1E90FF"
+          fill="rgba(30,144,255,0.15)"
+          strokeWidth={2}
+        />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+/** Daily entered / skipped / open-failed. */
+export function FunnelChart({
+  data,
+}: {
+  data: HistorySnap["activity"];
+}) {
+  if (!data.length) return <Empty msg="No funnel activity in range" />;
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={data} margin={{ top: 12, right: 12, left: 4, bottom: 4 }}>
+        <CartesianGrid {...grid} />
+        <XAxis dataKey="day" {...axis} tickFormatter={(d: string) => d.slice(5)} />
+        <YAxis {...axis} width={40} allowDecimals={false} />
+        <Tooltip
+          cursor={{ fill: "rgba(92,107,127,0.15)" }}
+          content={({ active, label, payload }) => {
+            if (!active || !payload?.length) return null;
+            const row = payload[0]?.payload as {
+              entered?: number; skipped?: number; open_failed?: number;
+            };
+            return (
+              <ChartTip
+                title={String(label)}
+                rows={[
+                  { label: "Entered", value: String(row?.entered ?? 0), tone: "ok" },
+                  { label: "Skipped", value: String(row?.skipped ?? 0), tone: "fg" },
+                  { label: "Open fail", value: String(row?.open_failed ?? 0), tone: "danger" },
+                ]}
+              />
+            );
+          }}
+        />
+        <Bar dataKey="entered" name="Entered" stackId="a" fill="#00FF85" />
+        <Bar dataKey="skipped" name="Skipped" stackId="a" fill="#6B6B6B" />
+        <Bar dataKey="open_failed" name="Open fail" stackId="a" fill="#FF4D6A" />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}

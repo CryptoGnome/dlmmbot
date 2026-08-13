@@ -219,5 +219,64 @@ export interface HistorySnap {
   }>;
   skip_top: Array<{ g: string; n: number }>;
   skip_series: Array<Record<string, string | number>>;
-  activity: Array<{ day: string; entered: number; skipped: number }>;
+  activity: Array<{ day: string; entered: number; skipped: number; open_failed?: number }>;
+  stats?: AnalyticsStats;
+}
+
+export interface AnalyticsBucket {
+  n: number;
+  pnl: number;
+  entry_sol: number;
+  pct: number | null;
+  wins: number;
+  losses: number;
+  win_rate: number | null;
+  avg_pnl: number | null;
+  hold_median_h: number | null;
+}
+
+export interface AnalyticsStats {
+  headline: {
+    closes: number;
+    win_rate: number | null;
+    avg_win_sol: number | null;
+    avg_loss_sol: number | null;
+    expectancy_sol: number | null;
+    fees_sol: number;
+    inventory_sol: number | null;
+    pnl_sol: number;
+  };
+  by_reason: Array<AnalyticsBucket & { reason: string }>;
+  by_sleeve: Array<AnalyticsBucket & { sleeve: string }>;
+  fee_vs_inventory: {
+    fees_sol: number;
+    inventory_sol: number | null;
+    n_with_inventory: number;
+  };
+  tokens_best: Array<AnalyticsBucket & { symbol: string; mint?: string }>;
+  tokens_worst: Array<AnalyticsBucket & { symbol: string; mint?: string }>;
+  follow: AnalyticsBucket & { chains: number };
+  funnel: {
+    entered: number;
+    skipped: number;
+    open_failed: number;
+    fail_rate: number | null;
+    skip_share: Array<{ g: string; n: number; share: number | null }>;
+    fail_codes: Array<{ code: string; n: number }>;
+    entry_scores: { n: number; median: number | null; p25: number | null; p75: number | null };
+  };
+  time_in_range: { avg_pct: number | null; n: number; with_marks: number };
+  fee_tvl_buckets: Array<AnalyticsBucket & {
+    label: string; fee_tvl_min: number; fee_tvl_max: number;
+  }>;
+  capital_series: Array<{
+    day: string; unrealized_sol: number; fees_sol: number; realized_sol: number;
+  }>;
+  cluster_pressure: {
+    hard_loss_exits: number;
+    pnl: number;
+    recent: Array<{
+      id: number; symbol: string; mint?: string; reason: string; pnl: number; at: string;
+    }>;
+  };
 }
