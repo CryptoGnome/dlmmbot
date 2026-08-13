@@ -1,16 +1,19 @@
 @import "tailwindcss";
 
+/* Midnight ops — slate base + cool semantic accents */
 @theme {
-  --color-bg: #070b08;
-  --color-panel: #0c1410;
-  --color-grid: #1a2e22;
-  --color-fg: #39ff14;
-  --color-muted: #7cff9a;
-  --color-dim: #3d6b4a;
-  --color-accent: #00e5ff;
-  --color-warn: #ffb020;
-  --color-danger: #ff2d55;
-  --color-ok: #00c853;
+  --color-bg: #0b0f14;
+  --color-panel: #12171f;
+  --color-grid: #1e2633;
+  --color-fg: #e8edf5;
+  --color-muted: #9aa8bc;
+  --color-dim: #5c6b7f;
+  --color-accent: #5b9fd4;
+  --color-warn: #e0a84a;
+  --color-danger: #e06c75;
+  --color-ok: #3ecf8e;
+  --color-violet: #a78bfa;
+  --color-teal: #2dd4bf;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
@@ -20,6 +23,7 @@
 
 html, body, #root {
   min-height: 100%;
+  height: 100%;
 }
 
 body {
@@ -32,42 +36,27 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* CRT scanlines — subtle */
-.scanlines::after {
-  content: "";
-  pointer-events: none;
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0, 0, 0, 0.12) 2px,
-    rgba(0, 0, 0, 0.12) 3px
-  );
-  opacity: 0.35;
-}
-
 @keyframes blink {
   0%, 49% { opacity: 1; }
-  50%, 100% { opacity: 0.25; }
+  50%, 100% { opacity: 0.35; }
 }
 
 .live-blink {
-  animation: blink 1.4s step-end infinite;
+  animation: blink 1.6s step-end infinite;
 }
 
 .panel {
   background: var(--color-panel);
   border: 1px solid var(--color-grid);
+  border-radius: 2px;
 }
 
 .recharts-default-tooltip {
-  background: var(--color-panel) !important;
-  border: 1px solid var(--color-fg) !important;
-  border-radius: 0 !important;
+  background: #12171f !important;
+  border: 1px solid #1e2633 !important;
+  border-radius: 2px !important;
   font-family: var(--font-mono) !important;
   font-size: 11px !important;
-  color: var(--color-fg) !important;
+  color: #e8edf5 !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }

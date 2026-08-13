@@ -52,12 +52,12 @@ export default function App() {
   const near = watch?.bin_rent_near_miss.since_fix;
 
   return (
-    <div className="scanlines min-h-screen bg-bg text-fg">
-      <div className="mx-auto max-w-[1440px] space-y-3 p-3 md:p-4">
+    <div className="min-h-screen bg-bg text-fg">
+      <div className="w-full space-y-3 px-4 py-3 md:px-6 md:py-4">
         {/* Header */}
-        <header className="panel flex flex-wrap items-center justify-between gap-3 px-3 py-2">
+        <header className="panel flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
           <div className="flex items-center gap-3">
-            <span className="text-sm font-bold tracking-[0.2em]">METEORA // LIVE OPS</span>
+            <span className="text-sm font-semibold tracking-[0.18em] text-fg">METEORA // LIVE OPS</span>
             <span className={`live-blink text-[10px] tracking-widest ${stale ? "text-danger" : "text-ok"}`}>
               ● {stale ? "STALE" : "LIVE"}
             </span>
@@ -75,13 +75,13 @@ export default function App() {
         </header>
 
         {err && (
-          <div className="border border-danger bg-panel px-3 py-2 text-danger text-[11px]">
+          <div className="border border-danger/60 bg-panel px-3 py-2 text-danger text-[11px]">
             ERR // {err}
           </div>
         )}
 
         {/* KPI strip */}
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
           <Kpi label="Open" value={String(watch?.open.length ?? 0)} sub={`max ${watch?.config.max_positions ?? "—"}`} />
           <Kpi label="PnL 24h" value={fmtSol(pnl24)} tone={pnl24 >= 0 ? "ok" : "danger"} sub={`${watch?.book.last_24h.n ?? 0} closes`} />
           <Kpi label="All-time" value={fmtSol(allPnl)} tone={allPnl >= 0 ? "ok" : "danger"} sub={`${watch?.book.all_time_live.n ?? 0} closes`} />
@@ -100,24 +100,24 @@ export default function App() {
         </div>
 
         {/* Charts — centerpiece */}
-        <div className="grid gap-2 lg:grid-cols-2">
-          <Panel title="Equity // cum realized + fees" className="min-h-[280px] lg:min-h-[360px]">
-            <div className="h-[240px] lg:h-[300px]">
+        <div className="grid gap-3 xl:grid-cols-2">
+          <Panel title="Equity // cum realized + fees" className="min-h-[320px] xl:min-h-[420px]">
+            <div className="h-[280px] xl:h-[360px]">
               <EquityChart data={hist?.equity ?? []} />
             </div>
           </Panel>
-          <Panel title="Exits // daily PnL by reason" className="min-h-[280px] lg:min-h-[360px]">
-            <div className="h-[240px] lg:h-[300px]">
+          <Panel title="Exits // daily PnL by reason" className="min-h-[320px] xl:min-h-[420px]">
+            <div className="h-[280px] xl:h-[360px]">
               <ExitsChart data={hist?.exits ?? []} reasons={hist?.exit_reasons ?? []} />
             </div>
           </Panel>
         </div>
 
         {/* Mid tables */}
-        <div className="grid gap-2 lg:grid-cols-2">
+        <div className="grid gap-3 xl:grid-cols-2">
           <Panel title="Open positions">
             {!watch?.open.length ? (
-              <div className="py-6 text-center text-[11px] tracking-wider text-dim">NO POSITIONS // book flat</div>
+              <div className="py-8 text-center text-[11px] tracking-wider text-dim">NO POSITIONS // book flat</div>
             ) : (
               <table className="w-full text-left text-[11px]">
                 <thead className="text-dim">
@@ -144,9 +144,9 @@ export default function App() {
 
           <Panel title="Exit ladder // recent closes">
             {!hist?.ladder.length ? (
-              <div className="py-6 text-center text-[11px] tracking-wider text-dim">NO CLOSES // in range</div>
+              <div className="py-8 text-center text-[11px] tracking-wider text-dim">NO CLOSES // in range</div>
             ) : (
-              <div className="max-h-[220px] overflow-auto">
+              <div className="max-h-[280px] overflow-auto">
                 <table className="w-full text-left text-[11px]">
                   <thead className="sticky top-0 bg-panel text-dim">
                     <tr>
@@ -175,14 +175,14 @@ export default function App() {
         </div>
 
         {/* Bottom */}
-        <div className="grid gap-2 lg:grid-cols-2">
+        <div className="grid gap-3 xl:grid-cols-2">
           <Panel
             title="Skip funnel // top gates"
             right={<Badge tone={watch?.open_failed_since_fix.n ? "danger" : "ok"}>
               open_fail {watch?.open_failed_since_fix.n ?? 0}
             </Badge>}
           >
-            <div className="mb-3 h-[160px]">
+            <div className="mb-3 h-[200px]">
               <SkipChart
                 data={hist?.skip_series ?? []}
                 gates={(hist?.skip_top ?? []).map((s) => s.g)}

@@ -77,7 +77,7 @@ export function RangeTabs({
           onClick={() => onChange(o)}
           className={cn(
             "px-2.5 py-1 text-[10px] tracking-wider uppercase transition-colors",
-            value === o ? "bg-fg text-bg" : "text-muted hover:text-fg",
+            value === o ? "bg-accent text-bg" : "text-muted hover:text-fg",
           )}
         >
           {o}
