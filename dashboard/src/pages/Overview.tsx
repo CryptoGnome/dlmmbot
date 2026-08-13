@@ -4,6 +4,8 @@ import { Badge, Panel } from "@/components/ui";
 import { EquityChart } from "@/components/Charts";
 import { TokenSymbol } from "@/components/TokenSymbol";
 import { RangeBar, StatusBadge, type RangeStatus } from "@/components/RangeBar";
+import { ActivityFeedList } from "@/components/ActivityFeed";
+import { buildActivityFeed } from "@/lib/activityFeed";
 
 const toneN = (n: number | null | undefined) =>
   n == null ? "text-dim" : n >= 0 ? "text-ok" : "text-danger";
@@ -39,10 +41,11 @@ function HeroStat({
 }
 
 export function OverviewPage({
-  watch, hist,
+  watch, hist, onOpenActivity,
 }: {
   watch: LiveWatch | null;
   hist: HistorySnap | null;
+  onOpenActivity?: () => void;
 }) {
   const pnl24 = watch?.book.last_24h.pnl ?? 0;
   const pct24 = watch?.book.last_24h.pct ?? null;
@@ -52,6 +55,7 @@ export function OverviewPage({
   const balUsd = watch?.balance?.total_usd;
   const open = watch?.open ?? [];
   const closes = hist?.ladder ?? [];
+  const feedPreview = buildActivityFeed(watch, 3);
 
   let openPnl = 0;
   let openPnlKnown = 0;
@@ -102,6 +106,30 @@ export function OverviewPage({
         <div className="h-[280px] w-full md:h-[320px]">
           <EquityChart data={hist?.equity ?? []} />
         </div>
+      </Panel>
+
+      <Panel
+        title="Activity"
+        right={
+          onOpenActivity ? (
+            <button
+              type="button"
+              onClick={onOpenActivity}
+              className="text-[11px] text-accent hover:text-hot"
+            >
+              view all →
+            </button>
+          ) : (
+            <Badge tone="ok">{feedPreview.length}</Badge>
+          )
+        }
+        className="shrink-0"
+      >
+        <ActivityFeedList
+          items={feedPreview}
+          dense
+          empty="Waiting for live ops events…"
+        />
       </Panel>
 
       <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-2">

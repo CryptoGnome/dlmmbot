@@ -1,6 +1,7 @@
 import { gmgnUrl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { SquareArrowOutUpRight } from "lucide-react";
+import { rangeStatusIcon } from "@/lib/icons";
 
 const SUB = "₀₁₂₃₄₅₆₇₈₉";
 
@@ -71,16 +72,33 @@ export function RangeBar({
 }
 
 export function StatusBadge({ status }: { status: RangeStatus }) {
+  const IconCmp = rangeStatusIcon[status] ?? rangeStatusIcon.unknown;
   if (status === "in") {
-    return <span className="inline-flex border border-ok px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-ok">in</span>;
+    return (
+      <span className="inline-flex items-center gap-1 border border-ok px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-ok">
+        <IconCmp size={10} strokeWidth={1.75} aria-hidden />in
+      </span>
+    );
   }
   if (status === "above") {
-    return <span className="inline-flex border border-warn px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-warn">above</span>;
+    return (
+      <span className="inline-flex items-center gap-1 border border-warn px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-warn">
+        <IconCmp size={10} strokeWidth={1.75} aria-hidden />above
+      </span>
+    );
   }
   if (status === "below") {
-    return <span className="inline-flex border border-danger px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-danger">below</span>;
+    return (
+      <span className="inline-flex items-center gap-1 border border-danger px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-danger">
+        <IconCmp size={10} strokeWidth={1.75} aria-hidden />below
+      </span>
+    );
   }
-  return <span className="inline-flex border border-dim px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-dim">—</span>;
+  return (
+    <span className="inline-flex items-center gap-1 border border-dim px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-dim">
+      <IconCmp size={10} strokeWidth={1.75} aria-hidden />—
+    </span>
+  );
 }
 
 export function GmgnLink({ mint }: { mint?: string | null }) {

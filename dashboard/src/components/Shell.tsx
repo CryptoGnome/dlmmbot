@@ -1,6 +1,8 @@
 import type { LiveWatch } from "@/lib/types";
 import type { LiveStatus } from "@/lib/api";
 import type { ReactNode } from "react";
+import { CircleDot } from "lucide-react";
+import { Icon, PauseCircle, tabIcon, Unplug, Zap } from "@/lib/icons";
 
 export type TabId = "overview" | "book" | "analytics" | "activity" | "settings";
 
@@ -43,7 +45,7 @@ function BuildPill({ build }: { build: LiveWatch["build"] }) {
         : syncTone === "accent" ? "border-accent/70 text-accent"
           : "border-grid text-muted";
   return (
-    <span title={tip} className={`border px-1.5 py-0.5 text-[10px] tracking-widest ${cls}`}>
+    <span title={tip} className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10px] tracking-widest ${cls}`}>
       v{build.version ?? "?"} {build.describe ?? build.head ?? "—"} · {syncLabel}
       {sync === "behind" && build.origin ? ` → ${build.origin}` : ""}
     </span>
@@ -69,17 +71,21 @@ export function Shell({
           <div className="mt-0.5 text-[10px] tracking-widest text-dim">FARMER OPS</div>
         </div>
         <nav className="flex-1 py-2">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              className="shell-nav-btn"
-              data-active={tab === t.id}
-              onClick={() => onTab(t.id)}
-            >
-              {t.label}
-            </button>
-          ))}
+          {TABS.map((t) => {
+            const TabIcon = tabIcon[t.id];
+            return (
+              <button
+                key={t.id}
+                type="button"
+                className="shell-nav-btn"
+                data-active={tab === t.id}
+                onClick={() => onTab(t.id)}
+              >
+                <Icon icon={TabIcon} size={14} className="opacity-80" />
+                {t.label}
+              </button>
+            );
+          })}
         </nav>
       </aside>
 
@@ -87,26 +93,29 @@ export function Shell({
         <header className="flex flex-wrap items-center justify-between gap-2 border-b border-grid px-3 py-2.5 md:px-4">
           <div className="flex flex-wrap items-center gap-2">
             <span
-              className={`live-blink text-[10px] tracking-widest ${stale ? "text-danger" : "text-ok"}`}
+              className={`live-blink inline-flex items-center gap-1 text-[10px] tracking-widest ${stale ? "text-danger" : "text-ok"}`}
               title={stale ? "farmer heartbeat stale" : "farmer heartbeat fresh"}
             >
-              ● {stale ? "STALE" : "LIVE"}
+              <Icon icon={stale ? Unplug : CircleDot} size={11} />
+              {stale ? "STALE" : "LIVE"}
             </span>
             <span
-              className={`live-blink text-[10px] tracking-widest ${
+              className={`live-blink inline-flex items-center gap-1 text-[10px] tracking-widest ${
                 live === "open" ? "text-ok" : live === "connecting" ? "text-warn" : "text-danger"
               }`}
             >
-              ● {live === "open" ? "WS" : live === "connecting" ? "WS…" : "WS OFF"}
+              <Icon icon={Zap} size={11} />
+              {live === "open" ? "WS" : live === "connecting" ? "WS…" : "WS OFF"}
             </span>
             {watch && (
               <span
                 className={
                   watch.cluster.tripped
-                    ? "border border-danger/70 px-1.5 py-0.5 text-[10px] tracking-widest text-danger"
-                    : "border border-ok/70 px-1.5 py-0.5 text-[10px] tracking-widest text-ok"
+                    ? "inline-flex items-center gap-1 border border-danger/70 px-1.5 py-0.5 text-[10px] tracking-widest text-danger"
+                    : "inline-flex items-center gap-1 border border-ok/70 px-1.5 py-0.5 text-[10px] tracking-widest text-ok"
                 }
               >
+                <Icon icon={PauseCircle} size={11} />
                 {watch.cluster.tripped ? `BRAKE ${watch.cluster.remainingMin}m` : "BRAKE OFF"}
               </span>
             )}
@@ -123,20 +132,24 @@ export function Shell({
         </header>
 
         <div className="flex gap-1 overflow-x-auto border-b border-grid px-2 py-1.5 md:hidden no-scrollbar">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => onTab(t.id)}
-              className={
-                tab === t.id
-                  ? "shrink-0 border border-ok px-2.5 py-1 text-[10px] tracking-wider text-ok uppercase"
-                  : "shrink-0 border border-transparent px-2.5 py-1 text-[10px] tracking-wider text-muted uppercase hover:text-hover"
-              }
-            >
-              {t.label}
-            </button>
-          ))}
+          {TABS.map((t) => {
+            const TabIcon = tabIcon[t.id];
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => onTab(t.id)}
+                className={
+                  tab === t.id
+                    ? "inline-flex shrink-0 items-center gap-1 border border-ok px-2.5 py-1 text-[10px] tracking-wider text-ok uppercase"
+                    : "inline-flex shrink-0 items-center gap-1 border border-transparent px-2.5 py-1 text-[10px] tracking-wider text-muted uppercase hover:text-hover"
+                }
+              >
+                <Icon icon={TabIcon} size={12} />
+                {t.label}
+              </button>
+            );
+          })}
         </div>
 
         <main className="flex-1 space-y-3 overflow-auto px-3 py-3 md:px-4 md:py-4">

@@ -54,9 +54,9 @@ export function Kpi({
 }
 
 export function Badge({
-  children, tone = "fg",
+  children, tone = "fg", title,
 }: {
-  children: ReactNode; tone?: "fg" | "accent" | "warn" | "danger" | "ok";
+  children: ReactNode; tone?: "fg" | "accent" | "warn" | "danger" | "ok"; title?: string;
 }) {
   const border = {
     fg: "border-fg text-fg",
@@ -66,7 +66,7 @@ export function Badge({
     ok: "border-ok text-ok",
   }[tone];
   return (
-    <span className={cn("inline-flex border px-1.5 py-0.5 text-[10px] tracking-wider uppercase", border)}>
+    <span title={title} className={cn("inline-flex items-center justify-center border px-1.5 py-0.5 text-[10px] tracking-wider uppercase", border)}>
       {children}
     </span>
   );

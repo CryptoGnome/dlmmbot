@@ -100,7 +100,9 @@ export default function App() {
         </div>
       )}
 
-      {tab === "overview" && <OverviewPage watch={watch} hist={hist} />}
+      {tab === "overview" && (
+        <OverviewPage watch={watch} hist={hist} onOpenActivity={() => goTab("activity")} />
+      )}
       {tab === "book" && <BookPage watch={watch} hist={hist} />}
       {tab === "analytics" && <AnalyticsPage watch={watch} hist={hist} />}
       {tab === "activity" && <ActivityPage watch={watch} />}

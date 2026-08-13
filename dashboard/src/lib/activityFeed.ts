@@ -1,0 +1,139 @@
+import type { ActivityEvent, LiveWatch } from "@/lib/types";
+import { exitLabel, fmtRet, fmtSol, gateLabel } from "@/lib/utils";
+
+export type FeedKind = ActivityEvent["kind"];
+
+export type FeedItem = {
+  at: string;
+  kind: FeedKind;
+  label: string;
+  detail?: string;
+  tone: "ok" | "danger" | "warn" | "accent" | "muted";
+  mint?: string | null;
+  symbol?: string | null;
+  gate?: string | null;
+};
+
+function toneFor(kind: FeedKind, pnl?: number | null): FeedItem["tone"] {
+  if (kind === "entry") return "ok";
+  if (kind === "fail") return "danger";
+  if (kind === "exit") return pnl != null && pnl < 0 ? "danger" : "ok";
+  if (kind === "skip" || kind === "cluster") return "warn";
+  return "accent";
+}
+
+function labelFor(e: ActivityEvent): string {
+  const sym = e.symbol || "?";
+  switch (e.kind) {
+    case "entry":
+      return e.symbol && e.symbol !== "?" ? "entered" : `entered ${sym}`;
+    case "exit":
+      return `closed · ${exitLabel(e.gate)}`;
+    case "fail":
+      return "open failed";
+    case "skip":
+      return "skipped";
+    case "event":
+      return (e.gate ?? "event").replace(/_/g, " ");
+    case "cluster":
+      return `cluster · ${exitLabel(e.gate)}`;
+    default:
+      return sym;
+  }
+}
+
+function detailFor(e: ActivityEvent): string | undefined {
+  const bits: Array<string | null | undefined> = [];
+  if (e.kind === "skip" || e.kind === "fail") bits.push(e.gate ? gateLabel(e.gate) : null);
+  if (e.score != null) bits.push(`score ${e.score.toFixed(1)}`);
+  if (e.size != null && e.kind !== "event") bits.push(`${e.size.toFixed(2)} SOL`);
+  if (e.pnl != null && (e.kind === "exit" || e.kind === "event")) bits.push(fmtSol(e.pnl, 3));
+  if (e.sleeve && e.sleeve !== "meme") bits.push(e.sleeve);
+  if (e.detail) bits.push(e.detail);
+  if (e.kind === "exit" && e.pnl != null && e.size && e.size > 0) {
+    bits.push(fmtRet(e.pnl / e.size));
+  }
+  const s = bits.filter(Boolean).join(" · ");
+  return s || undefined;
+}
+
+/** Prefer server `recent_activity`; fall back to older watch fields. */
+export function buildActivityFeed(watch: LiveWatch | null, limit = 80): FeedItem[] {
+  if (!watch) return [];
+
+  if (watch.recent_activity?.length) {
+    return watch.recent_activity.slice(0, limit).map((e) => ({
+      at: e.at,
+      kind: e.kind,
+      label: labelFor(e),
+      detail: detailFor(e),
+      tone: toneFor(e.kind, e.pnl),
+      mint: e.mint,
+      symbol: e.symbol,
+      gate: e.gate,
+    }));
+  }
+
+  // Legacy fallback before dashboard-server redeploy
+  const items: FeedItem[] = [];
+  for (const r of watch.recent_passes ?? []) {
+    items.push({
+      at: r.at,
+      kind: "entry",
+      label: `entered ${r.symbol}`,
+      detail: [
+        r.score != null ? `score ${r.score.toFixed(1)}` : null,
+        r.size != null ? `${r.size.toFixed(2)} SOL` : null,
+        r.sleeve && r.sleeve !== "meme" ? r.sleeve : null,
+      ].filter(Boolean).join(" · ") || undefined,
+      tone: "ok",
+      mint: r.mint,
+      symbol: r.symbol,
+    });
+  }
+  for (const r of watch.open_failed_since_fix?.recent ?? []) {
+    items.push({
+      at: r.at,
+      kind: "fail",
+      label: `open failed${r.code ? ` (${r.code})` : ""}`,
+      detail: r.error?.slice(0, 120) ?? r.mint.slice(0, 8),
+      tone: "danger",
+      mint: r.mint,
+    });
+  }
+  for (const r of watch.cluster?.recent ?? []) {
+    if (!r.exit_ts) continue;
+    items.push({
+      at: new Date(r.exit_ts * 1000).toISOString(),
+      kind: "cluster",
+      label: `cluster ${r.symbol ?? "?"} ${exitLabel(r.exit_reason)}`,
+      tone: "warn",
+      symbol: r.symbol,
+    });
+  }
+  for (const r of watch.p3_missed_since_fix ?? []) {
+    items.push({
+      at: r.at,
+      kind: "exit",
+      label: `missed ${r.symbol}`,
+      detail: [fmtSol(r.pnl, 3), `${r.hold_min}m`].join(" · "),
+      tone: "warn",
+      mint: r.mint,
+      symbol: r.symbol,
+    });
+  }
+  for (const r of watch.bin_rent_near_miss?.last_24h?.recent ?? []) {
+    items.push({
+      at: r.at,
+      kind: "skip",
+      label: `skipped ${r.symbol ?? "?"}`,
+      detail: `${gateLabel(r.gate)} · score ${r.score}`,
+      tone: "warn",
+      mint: r.mint,
+      symbol: r.symbol,
+    });
+  }
+  return items
+    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+    .slice(0, limit);
+}

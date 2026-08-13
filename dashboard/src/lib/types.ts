@@ -120,6 +120,21 @@ export interface LiveWatch {
     isAlpha?: boolean;
     baseScore?: number | null;
   }>;
+  recent_activity?: ActivityEvent[];
+}
+
+export interface ActivityEvent {
+  at: string;
+  kind: "entry" | "exit" | "skip" | "fail" | "event" | "cluster";
+  symbol?: string | null;
+  mint?: string | null;
+  pool?: string | null;
+  score?: number | null;
+  size?: number | null;
+  sleeve?: string | null;
+  gate?: string | null;
+  pnl?: number | null;
+  detail?: string | null;
 }
 
 export interface BookWindow {

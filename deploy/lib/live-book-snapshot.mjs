@@ -501,6 +501,124 @@ export function buildLiveBookSnapshot(root) {
       };
     });
 
+    // Unified ops timeline for Activity + Overview preview (signal, not fee-gate noise).
+    const INTERESTING_SKIP = new Set([
+      "open_failed", "majors_open_failed", "tranche_open_failed",
+      "bin_rent", "majors_bin_rent", "size_zero", "already_positioned",
+      "slots_full", "follow_active", "reentry_limit", "insider_clusters",
+      "majors_rsi_warmup", "majors_swing_high", "majors_entry_timing",
+      "majors_fee_tvl_30m", "majors_token_open", "majors_deploy_cap",
+      "majors_pool_share", "micro_score", "micro_tvl", "micro_slots_full",
+      "age_min", "age_max", "displaced",
+    ]);
+    const activitySince = now - 24 * 3600;
+    const activity = [];
+
+    for (const r of db.prepare(
+      `SELECT d.ts, datetime(d.ts,'unixepoch') at, d.mint, d.pool, ROUND(d.score,1) score,
+              json_extract(d.features_json,'$.size') size,
+              json_extract(d.features_json,'$.sleeve') sleeve,
+              json_extract(d.features_json,'$.isAlpha') is_alpha,
+              json_extract(d.features_json,'$.pool.name') pool_name,
+              json_extract(d.features_json,'$.tranche') tranche,
+              COALESCE(NULLIF(t.symbol,''),
+                (SELECT p.symbol FROM positions p WHERE p.token_mint=d.mint ORDER BY p.id DESC LIMIT 1),
+                NULL) symbol
+       FROM decisions d LEFT JOIN tokens t ON t.mint=d.mint
+       WHERE d.action='entered' AND d.ts > ?
+       ORDER BY d.ts DESC LIMIT 40`
+    ).all(activitySince)) {
+      const sym = r.symbol || (r.pool_name ? String(r.pool_name).split("-")[0] : null) || "?";
+      activity.push({
+        ts: r.ts, at: r.at, kind: "entry",
+        symbol: sym, mint: r.mint || null, pool: r.pool || null,
+        score: r.score, size: typeof r.size === "number" ? Math.round(r.size * 1e4) / 1e4 : null,
+        sleeve: r.sleeve || null, gate: null, pnl: null, detail: r.tranche ? "tranche" : (r.is_alpha ? "alpha" : null),
+      });
+    }
+
+    for (const r of db.prepare(
+      `SELECT exit_ts AS ts, datetime(exit_ts,'unixepoch') at, id, symbol, token_mint AS mint, pool,
+              exit_reason AS gate, ROUND(entry_sol,4) entry_sol,
+              ROUND((${REALIZED_PNL}),4) pnl, ROUND((exit_ts-entry_ts)/60.0,1) hold_min,
+              tranche_of
+       FROM positions
+       WHERE mode='live' AND exit_ts IS NOT NULL AND exit_ts > ?
+       ORDER BY exit_ts DESC LIMIT 40`
+    ).all(activitySince)) {
+      activity.push({
+        ts: r.ts, at: r.at, kind: "exit",
+        symbol: r.symbol || "?", mint: r.mint || null, pool: r.pool || null,
+        score: null, size: r.entry_sol, sleeve: null, gate: r.gate,
+        pnl: r.pnl, detail: [
+          r.hold_min != null ? `${r.hold_min}m` : null,
+          r.tranche_of != null ? `tranche of #${r.tranche_of}` : `#${r.id}`,
+        ].filter(Boolean).join(" · ") || null,
+      });
+    }
+
+    for (const r of db.prepare(
+      `SELECT d.ts, datetime(d.ts,'unixepoch') at, d.mint, d.pool, d.failed_gate gate,
+              ROUND(d.score,1) score,
+              json_extract(d.features_json,'$.sleeve') sleeve,
+              json_extract(d.features_json,'$.pool.name') pool_name,
+              json_extract(d.features_json,'$.size') size,
+              json_extract(d.features_json,'$.error') error,
+              COALESCE(NULLIF(t.symbol,''),
+                (SELECT p.symbol FROM positions p WHERE p.token_mint=d.mint ORDER BY p.id DESC LIMIT 1),
+                NULL) symbol
+       FROM decisions d LEFT JOIN tokens t ON t.mint=d.mint
+       WHERE d.action='skipped' AND d.ts > ?
+         AND (
+           d.failed_gate IN (${[...INTERESTING_SKIP].map(() => "?").join(",")})
+           OR (d.score IS NOT NULL AND d.score >= 85)
+         )
+       ORDER BY d.ts DESC LIMIT 120`
+    ).all(activitySince, ...INTERESTING_SKIP)) {
+      const sym = r.symbol || (r.pool_name ? String(r.pool_name).split("-")[0] : null) || "?";
+      const isFail = /open_failed/.test(r.gate || "");
+      activity.push({
+        ts: r.ts, at: r.at, kind: isFail ? "fail" : "skip",
+        symbol: sym, mint: r.mint || null, pool: r.pool || null,
+        score: r.score, size: typeof r.size === "number" ? Math.round(r.size * 1e4) / 1e4 : null,
+        sleeve: r.sleeve || null, gate: r.gate, pnl: null,
+        detail: r.error ? String(r.error).slice(0, 100) : null,
+      });
+    }
+
+    for (const r of db.prepare(
+      `SELECT e.ts, datetime(e.ts,'unixepoch') at, e.type, e.position_id,
+              ROUND(e.sol_delta,4) sol_delta, p.symbol, p.token_mint AS mint, p.pool
+       FROM events e
+       LEFT JOIN positions p ON p.id = e.position_id
+       WHERE e.ts > ?
+         AND e.type IN ('claim','profit_lock','rebalance','rebalance_partial','rent_reclaim','force_close')
+       ORDER BY e.ts DESC LIMIT 30`
+    ).all(activitySince)) {
+      activity.push({
+        ts: r.ts, at: r.at, kind: "event",
+        symbol: r.symbol || (r.type === "rent_reclaim" ? "wallet" : "?"),
+        mint: r.mint || null, pool: r.pool || null,
+        score: null, size: r.sol_delta, sleeve: null, gate: r.type, pnl: r.sol_delta,
+        detail: r.position_id != null ? `#${r.position_id}` : null,
+      });
+    }
+
+    activity.sort((a, b) => b.ts - a.ts);
+    // Collapse skip spam: keep newest per mint+gate (still show every entry/exit/event/fail).
+    const seenSkip = new Set();
+    const deduped = [];
+    for (const a of activity) {
+      if (a.kind === "skip") {
+        const k = `${a.mint ?? a.symbol}|${a.gate}`;
+        if (seenSkip.has(k)) continue;
+        seenSkip.add(k);
+      }
+      deduped.push(a);
+      if (deduped.length >= 80) break;
+    }
+    const recentActivity = deduped.map(({ ts: _ts, ...rest }) => rest);
+
     function parseBinRentNearMiss(feat) {
       try {
         const j = JSON.parse(feat);
@@ -681,6 +799,7 @@ export function buildLiveBookSnapshot(root) {
         last_24h: binRentNearMiss(dayAgo),
       },
       recent_passes: recentPasses,
+      recent_activity: recentActivity,
     };
   } finally {
     db.close();
