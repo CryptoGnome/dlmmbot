@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { cachedHistory, cachedWatch, fetchHistory, fetchWatch } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import { cachedHistory, cachedWatch, connectLive } from "@/lib/api";
 import type { HistorySnap, LiveWatch, RangeKey } from "@/lib/types";
 import { exitLabel, fmtPct, fmtRet, fmtSol, fmtUsd, gateLabel, shortTime, clockTime, tokenFromUrl } from "@/lib/utils";
 import { Badge, Kpi, Panel, RangeTabs } from "@/components/ui";
@@ -17,57 +17,52 @@ export default function App() {
     return w?.ts ? w.ts * 1000 : 0;
   });
   const [fromCache, setFromCache] = useState(() => !!(cachedWatch() || cachedHistory("30d")));
+  const [live, setLive] = useState<"connecting" | "open" | "closed">("connecting");
   const hasWatch = useRef(!!cachedWatch());
   const hasHist = useRef(!!cachedHistory("30d"));
-
-  const loadWatch = useCallback(async () => {
-    try {
-      const w = await fetchWatch();
-      setWatch(w);
-      hasWatch.current = true;
-      setErr(null);
-      setUpdated(Date.now());
-      setFromCache(false);
-    } catch (e) {
-      if (!hasWatch.current) setErr((e as Error).message);
-    }
-  }, []);
-
-  const loadHist = useCallback(async (r: RangeKey) => {
-    const cached = cachedHistory(r);
-    if (cached) {
-      setHist(cached);
-      hasHist.current = true;
-    }
-    try {
-      const h = await fetchHistory(r);
-      setHist(h);
-      hasHist.current = true;
-      setFromCache(false);
-    } catch (e) {
-      if (!hasHist.current) setErr((e as Error).message);
-    }
-  }, []);
+  const rangeRef = useRef(range);
+  rangeRef.current = range;
+  const connRef = useRef<ReturnType<typeof connectLive> | null>(null);
 
   useEffect(() => {
     if (!tokenFromUrl()) {
       setErr("missing token — open with ?token=YOUR_DASH_TOKEN");
+      setLive("closed");
       return;
     }
-    void loadWatch();
-    void loadHist(range);
-    const a = setInterval(() => void loadWatch(), 15_000);
-    const b = setInterval(() => void loadHist(range), 60_000);
-    return () => { clearInterval(a); clearInterval(b); };
-  }, [loadWatch, loadHist, range]);
+    const conn = connectLive({
+      onWatch(w) {
+        setWatch(w);
+        hasWatch.current = true;
+        setErr(null);
+        setUpdated(Date.now());
+        setFromCache(false);
+      },
+      onHistory(h, r) {
+        if (r !== rangeRef.current) return;
+        setHist(h);
+        hasHist.current = true;
+        setFromCache(false);
+      },
+      onError(msg) {
+        if (!hasWatch.current) setErr(msg);
+      },
+      onStatus: setLive,
+    });
+    connRef.current = conn;
+    return () => {
+      conn.close();
+      connRef.current = null;
+    };
+  }, []);
 
-  // Instantly paint cached history when range tabs change
   useEffect(() => {
     const cached = cachedHistory(range);
     if (cached) {
       setHist(cached);
       setFromCache(true);
     }
+    connRef.current?.setRange(range);
   }, [range]);
 
   const stale = watch?.heartbeat_age_s != null && watch.heartbeat_age_s > 60;
@@ -84,8 +79,16 @@ export default function App() {
         <header className="panel flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
           <div className="flex items-center gap-3">
             <span className="text-sm font-semibold tracking-[0.18em] text-fg">METEORA // LIVE OPS</span>
-            <span className={`live-blink text-[10px] tracking-widest ${stale ? "text-danger" : "text-ok"}`}>
-              ● {stale ? "STALE" : "LIVE"}
+            <span
+              className={`live-blink text-[10px] tracking-widest ${
+                stale || live === "closed"
+                  ? "text-danger"
+                  : live === "connecting"
+                    ? "text-warn"
+                    : "text-ok"
+              }`}
+            >
+              ● {stale ? "STALE" : live === "open" ? "LIVE" : live === "connecting" ? "CONNECTING" : "OFFLINE"}
             </span>
             {watch && (
               <span

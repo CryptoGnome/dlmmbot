@@ -22,7 +22,7 @@ function write<T>(key: string, data: T): void {
   try {
     localStorage.setItem(key, JSON.stringify({ at: Date.now(), data }));
   } catch {
-    // quota / private mode — ignore
+    /* quota / private mode */
   }
 }
 
@@ -39,14 +39,6 @@ export function cachedHistory(range: RangeKey): HistorySnap | null {
   return read<HistorySnap>(HIST_PREFIX + range)?.data ?? null;
 }
 
-export function cacheAgeMs(kind: "watch" | "history", range?: RangeKey): number | null {
-  const env = kind === "watch"
-    ? read<LiveWatch>(WATCH_KEY)
-    : read<HistorySnap>(HIST_PREFIX + (range ?? "30d"));
-  return env ? Date.now() - env.at : null;
-}
-
-/** Network fetch; updates localStorage on success. */
 export async function fetchWatch(): Promise<LiveWatch> {
   const t = tokenFromUrl();
   const q = t ? `?token=${encodeURIComponent(t)}` : "";
@@ -66,4 +58,95 @@ export async function fetchHistory(range: RangeKey): Promise<HistorySnap> {
   const data = await res.json() as HistorySnap;
   write(HIST_PREFIX + range, data);
   return data;
+}
+
+export type LiveStatus = "connecting" | "open" | "closed";
+
+type LiveHandlers = {
+  onWatch: (w: LiveWatch) => void;
+  onHistory: (h: HistorySnap, range: RangeKey) => void;
+  onError: (msg: string) => void;
+  onStatus?: (s: LiveStatus) => void;
+};
+
+/** One WebSocket for watch + history. Reconnects with backoff. */
+export function connectLive(handlers: LiveHandlers): {
+  setRange: (range: RangeKey) => void;
+  close: () => void;
+} {
+  let range: RangeKey = "30d";
+  let ws: WebSocket | null = null;
+  let closed = false;
+  let attempt = 0;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const status = (s: LiveStatus) => handlers.onStatus?.(s);
+
+  const url = () => {
+    const t = tokenFromUrl();
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    const q = t ? `?token=${encodeURIComponent(t)}` : "";
+    return `${proto}//${location.host}/ws${q}`;
+  };
+
+  const connect = () => {
+    if (closed) return;
+    status("connecting");
+    const sock = new WebSocket(url());
+    ws = sock;
+
+    sock.onopen = () => {
+      attempt = 0;
+      status("open");
+      sock.send(JSON.stringify({ type: "range", range }));
+    };
+
+    sock.onmessage = (ev) => {
+      let msg: { type?: string; data?: unknown; range?: string; error?: string };
+      try { msg = JSON.parse(String(ev.data)); } catch { return; }
+      if (msg.type === "watch" && msg.data) {
+        const data = msg.data as LiveWatch;
+        write(WATCH_KEY, data);
+        handlers.onWatch(data);
+      } else if (msg.type === "history" && msg.data) {
+        const r = (msg.range === "7d" || msg.range === "30d" || msg.range === "all"
+          ? msg.range : range) as RangeKey;
+        const data = msg.data as HistorySnap;
+        write(HIST_PREFIX + r, data);
+        handlers.onHistory(data, r);
+      } else if (msg.type === "error" && msg.error) {
+        handlers.onError(msg.error);
+      }
+    };
+
+    sock.onerror = () => {
+      /* onclose handles retry */
+    };
+
+    sock.onclose = () => {
+      status("closed");
+      if (ws === sock) ws = null;
+      if (closed) return;
+      const delay = Math.min(10_000, 500 * 2 ** attempt);
+      attempt += 1;
+      timer = setTimeout(connect, delay);
+    };
+  };
+
+  connect();
+
+  return {
+    setRange(next) {
+      range = next;
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "range", range }));
+      }
+    },
+    close() {
+      closed = true;
+      if (timer) clearTimeout(timer);
+      ws?.close();
+      ws = null;
+    },
+  };
 }
