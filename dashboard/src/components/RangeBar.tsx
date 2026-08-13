@@ -75,27 +75,39 @@ export function StatusBadge({ status }: { status: RangeStatus }) {
   const IconCmp = rangeStatusIcon[status] ?? rangeStatusIcon.unknown;
   if (status === "in") {
     return (
-      <span className="inline-flex items-center gap-1 border border-ok px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-ok">
-        <IconCmp size={10} strokeWidth={1.75} aria-hidden />in
+      <span
+        className="inline-flex items-center gap-1 border border-ok px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-ok"
+        title="Pool price is inside your LP range — earning fees"
+      >
+        <IconCmp size={10} strokeWidth={1.75} aria-hidden />in range
       </span>
     );
   }
   if (status === "above") {
     return (
-      <span className="inline-flex items-center gap-1 border border-warn px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-warn">
-        <IconCmp size={10} strokeWidth={1.75} aria-hidden />above
+      <span
+        className="inline-flex items-center gap-1 border border-warn px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-warn"
+        title="Pool price moved above your range — not earning until it comes back"
+      >
+        <IconCmp size={10} strokeWidth={1.75} aria-hidden />above range
       </span>
     );
   }
   if (status === "below") {
     return (
-      <span className="inline-flex items-center gap-1 border border-danger px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-danger">
-        <IconCmp size={10} strokeWidth={1.75} aria-hidden />below
+      <span
+        className="inline-flex items-center gap-1 border border-danger px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-danger"
+        title="Pool price moved below your range — waiting on exit rules"
+      >
+        <IconCmp size={10} strokeWidth={1.75} aria-hidden />below range
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 border border-dim px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-dim">
+    <span
+      className="inline-flex items-center gap-1 border border-dim px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-dim"
+      title="Range status unknown"
+    >
       <IconCmp size={10} strokeWidth={1.75} aria-hidden />—
     </span>
   );
