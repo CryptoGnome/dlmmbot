@@ -76,7 +76,7 @@ Keep `gmgn_private.pem` off the bot. **GUI:** GMGN’s key-generator app → **G
 3. Paste your **public** key → copy the **API Key** GMGN shows you
 4. Paste that value as `GMGN_API_KEY`
 
-Rate limit is ~1 req/s; the farmer paces calls and degrades if GMGN is missing.
+Rate limit: GMGN’s query API uses a leaky bucket (`rate=10` / `capacity=10`, heavier weight on holders/traders) and documents ~1 req/s. The farmer runs **one serial CLI queue**, waits for each call to finish before the next, honors `X-RateLimit-Reset` / `reset_at` on 429 (never spam the cooldown — that extends bans), and degrades to Meteora-only data while cooling down.
 
 ## Quick copy checklist
 

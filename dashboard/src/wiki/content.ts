@@ -216,6 +216,12 @@ export const WIKI_SECTIONS: WikiSection[] = [
         title: "Soft stuff only tilts size",
         text: "Freefall, ATH blast, sell pressure — these change the score (how big / how soon), they don’t secretly override a hard fail.",
       },
+      {
+        type: "callout",
+        tone: "warn",
+        title: "GMGN is paced",
+        text: "Optional trending / honeypot / holder checks share one queue (~1 req/s, heavier routes cost more). A 429 parks GMGN until reset — Meteora scanning keeps going without it.",
+      },
     ],
   },
   {
