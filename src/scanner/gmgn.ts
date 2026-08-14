@@ -1,9 +1,16 @@
 import { execFile } from "node:child_process";
+import { createRequire } from "node:module";
 import { promisify } from "node:util";
 import { config, env } from "../config.js";
 import { logError } from "../db/db.js";
 
 const execFileP = promisify(execFile);
+const require = createRequire(import.meta.url);
+
+/** Bundled dependency — never `npx -y` (npm 429s were misread as GMGN bans). */
+function gmgnCliEntry(): string {
+  return require.resolve("gmgn-cli");
+}
 
 // GMGN discovery client — wraps the official `gmgn-cli` (query tier: API key
 // only; we deliberately do NOT configure the trading tier / private key).
@@ -11,10 +18,11 @@ const execFileP = promisify(execFile);
 // continues on Meteora-only discovery.
 //
 // Rate limits (gmgn-skills / OpenAPI, 2026): leaky bucket rate=20 capacity=20
-// **per module** (market, token, track) — not one global pool. Overlapping
-// CLI processes or two bots on one API key still double load. All calls share
-// one in-process serial queue; each module bucket is paced separately; park on
-// 429 until reset_at (never spam — each retry can extend the ban).
+// **per module** (market, token, track) — not one global pool. Our local bucket
+// is a best-effort mirror (cannot read server remaining). Overlapping bots on
+// one API key, or a drained server bucket after restart, can still 429. All
+// calls share one serial queue via the bundled `gmgn-cli` binary (not npx);
+// park on RATE_LIMIT_* until reset_at (never spam — each retry can extend the ban).
 
 export interface GmgnTrendingToken {
   address: string;
@@ -207,8 +215,11 @@ export function gmgnIsBanned(): boolean {
   return Date.now() < bannedUntil;
 }
 
-function isRateLimitText(text: string): boolean {
-  return /RATE_LIMIT|HTTP\s*429|\b429\b/.test(text);
+/** True only for GMGN OpenAPI rate-limit payloads — not bare "429" (npm/registry noise). */
+export function isGmgnRateLimitText(text: string): boolean {
+  if (/RATE_LIMIT(?:_EXCEEDED|_BANNED)?/i.test(text)) return true;
+  if (/HTTP\s*429/i.test(text) && /rate.?limit|gmgn|banned/i.test(text)) return true;
+  return false;
 }
 
 async function waitForBucketTokens(id: GmgnBucketId, weight: number): Promise<void> {
@@ -242,8 +253,7 @@ async function runOne(args: string[]): Promise<string> {
 
   try {
     // Own the cooldown — any CLI call during a ban extends RATE_LIMIT_BANNED (+5s each).
-    const { stdout, stderr } = await execFileP("npx", ["-y", "gmgn-cli", ...args], {
-      shell: true,
+    const { stdout, stderr } = await execFileP(process.execPath, [gmgnCliEntry(), ...args], {
       timeout: 30_000,
       maxBuffer: 8 * 1024 * 1024,
       env: {
@@ -254,7 +264,7 @@ async function runOne(args: string[]): Promise<string> {
       },
     });
     const combined = `${stdout}\n${stderr ?? ""}`;
-    if (isRateLimitText(combined)) {
+    if (isGmgnRateLimitText(combined)) {
       enterBan(parseGmgnResetMs(combined) ?? Date.now() + DEFAULT_BAN_MS);
       throw new Error("gmgn 429");
     }
@@ -263,7 +273,7 @@ async function runOne(args: string[]): Promise<string> {
   } catch (e) {
     const err = e as { stderr?: string; stdout?: string; message?: string };
     const text = `${err.message ?? ""}\n${err.stdout ?? ""}\n${err.stderr ?? ""}${String(e)}`;
-    if (isRateLimitText(text)) {
+    if (isGmgnRateLimitText(text)) {
       enterBan(parseGmgnResetMs(text) ?? Date.now() + DEFAULT_BAN_MS);
       throw new Error(BAN_ERR);
     }

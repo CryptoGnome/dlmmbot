@@ -220,7 +220,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
         type: "callout",
         tone: "warn",
         title: "GMGN is paced",
-        text: "Optional trending / honeypot / holder checks share one serial queue with **separate leaky buckets per module** (market, token, track). Holders/traders cost 5×; polls are staggered; trader tags off by default. A 429 **parks all GMGN until reset** — queued work is dropped (retries extend the ban). Meteora scanning continues. Staging + production on the same API key doubles load and will 429.",
+        text: "Optional trending / honeypot / holder checks share one serial queue with **separate leaky buckets per module** (market, token, track). Local pacing mirrors GMGN’s published limits but cannot see the server’s remaining tokens — another bot on the same key (or a drained bucket after restart) can still 429. Holders/traders cost 5×; trader tags off by default. A real `RATE_LIMIT_*` **parks all GMGN until reset** — queued work is dropped (retries extend the ban). Meteora scanning continues.",
       },
     ],
   },
