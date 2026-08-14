@@ -652,7 +652,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
         items: [
           {
             title: "Official",
-            text: "Conservative / Balanced / Aggressive shipped in the repo. Preview shows what will change before Apply.",
+            text: "Conservative / Balanced / Aggressive / Research Base shipped in the repo. Preview shows what will change before Apply. Research Base = STRATEGY §11 + playbook knobs.",
             icon: "check",
           },
           {
