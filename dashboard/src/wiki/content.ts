@@ -468,7 +468,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
         type: "cards",
         items: [
           { title: "Overview", text: "Money snapshot, open profit with slot occupancy (e.g. 3 of 5 · 2 free), equity chart. Engine ON/OFF + HALT live in the header.", icon: "chart" },
-          { title: "Book", text: "Open positions (slot badge) + recent closes.", icon: "book" },
+          { title: "Book", text: "Open positions (slot badge) + recent closes. Range bar: purple ≈ SOL still waiting, blue ≈ already converted to token as price walks the bins.", icon: "book" },
           { title: "Analytics", text: "Why we made/lost SOL — exits, sleeves, skips.", icon: "calc" },
           { title: "Activity", text: "Live play-by-play. SOL: green in / win, blue deployed (entries), red only for losses. On-chain rows link to Solscan.", icon: "zap" },
           { title: "Errors", text: "Broken stuff with copy/paste for bug reports. Each row has a plain label (Transient / Degraded / Needs attention).", icon: "alert", tone: "danger" },

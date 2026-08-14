@@ -21,6 +21,26 @@ export function fmtTinyPrice(p: number | null | undefined): string {
 
 export type RangeStatus = "in" | "above" | "below" | "out" | "unknown";
 
+/**
+ * Split the LP range into SOL (still waiting) vs token (already converted).
+ * For SOL-quoted DLMM: bins below the active price hold Y/SOL; bins the
+ * price has already crossed hold X/token. BidAsk-under starts all-SOL and
+ * fills token-side as price walks down the range.
+ */
+export function rangeComposition(
+  minBin: number,
+  maxBin: number,
+  activeBin: number | null,
+): { solFrac: number; tokenFrac: number } {
+  const span = Math.max(maxBin - minBin, 0);
+  if (span <= 0) return { solFrac: 1, tokenFrac: 0 };
+  if (activeBin == null) return { solFrac: 1, tokenFrac: 0 };
+  if (activeBin > maxBin) return { solFrac: 1, tokenFrac: 0 };
+  if (activeBin < minBin) return { solFrac: 0, tokenFrac: 1 };
+  const solFrac = (activeBin - minBin) / span;
+  return { solFrac, tokenFrac: 1 - solFrac };
+}
+
 export function RangeBar({
   minBin, maxBin, activeBin, status, minPrice, maxPrice, className,
 }: {
@@ -41,6 +61,9 @@ export function RangeBar({
   const width = ((maxBin - minBin) / span) * 100;
   const priceX = activeBin != null ? ((activeBin - lo) / span) * 100 : null;
   const out = status === "above" || status === "below" || status === "out";
+  const { solFrac, tokenFrac } = rangeComposition(minBin, maxBin, activeBin);
+  const solPct = Math.max(0, Math.min(100, solFrac * 100));
+  const tokPct = Math.max(0, Math.min(100, tokenFrac * 100));
 
   return (
     <div className={cn("min-w-[140px]", className)}>
@@ -50,13 +73,27 @@ export function RangeBar({
       </div>
       <div className="relative h-2 w-full rounded-sm bg-grid">
         <div
-          className="absolute top-0 h-full rounded-sm bg-accent/70"
+          className="absolute top-0 h-full overflow-hidden rounded-sm"
           style={{ left: `${left}%`, width: `${Math.max(width, 1.5)}%` }}
-        />
+          title={`≈${Math.round(solPct)}% SOL · ≈${Math.round(tokPct)}% token (by bin side of price)`}
+        >
+          {solPct > 0.5 && (
+            <div
+              className="absolute top-0 left-0 h-full bg-sol/80"
+              style={{ width: `${solPct}%` }}
+            />
+          )}
+          {tokPct > 0.5 && (
+            <div
+              className="absolute top-0 h-full bg-accent/80"
+              style={{ left: `${solPct}%`, width: `${tokPct}%` }}
+            />
+          )}
+        </div>
         {priceX != null && (
           <div
             className={cn(
-              "absolute top-[-2px] h-3 w-0.5 -translate-x-1/2",
+              "absolute top-[-2px] z-[1] h-3 w-0.5 -translate-x-1/2",
               out ? "bg-warn" : "bg-ok",
             )}
             style={{ left: `${Math.min(100, Math.max(0, priceX))}%` }}
@@ -64,8 +101,18 @@ export function RangeBar({
           />
         )}
       </div>
-      <div className="mt-0.5 text-[10px] text-dim">
-        {status === "above" ? "price above range" : status === "below" ? "price below range" : status === "in" ? "in range" : "—"}
+      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-dim">
+        <span>
+          {status === "above" ? "price above range" : status === "below" ? "price below range" : status === "in" ? "in range" : "—"}
+        </span>
+        <span className="inline-flex items-center gap-1.5" title="Bins left of price ≈ SOL still waiting; bins right ≈ already converted to token">
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-block h-1.5 w-1.5 bg-sol/80" />SOL
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-block h-1.5 w-1.5 bg-accent/80" />token
+          </span>
+        </span>
       </div>
     </div>
   );
