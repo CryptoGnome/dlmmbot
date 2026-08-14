@@ -81,7 +81,6 @@ export default defineConfig({
       { icon: "github", link: "https://github.com/CryptoGnome/dlmmbot" },
     ],
     footer: {
-      message: "Paper first. Burner only. Not financial advice.",
       copyright: "DLMM Bot",
     },
     search: {

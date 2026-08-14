@@ -779,7 +779,6 @@ code, pre { font-family: var(--mono); font-size: 0.9em; }
 
 /* —— Footer —— */
 .site-footer { border-top: 1px solid var(--grid); padding: 2rem 0 2.5rem; }
-.footer-inner { display: flex; flex-direction: column; gap: 1.25rem; }
 .footer-top {
   display: flex;
   align-items: center;
@@ -813,12 +812,6 @@ code, pre { font-family: var(--mono); font-size: 0.9em; }
   transition: color 140ms ease, border-color 140ms ease;
 }
 .footer-social a:hover { color: var(--fg); border-color: var(--dim); }
-.footer-note {
-  margin: 0;
-  font-size: 11.5px;
-  color: var(--dim);
-  line-height: 1.6;
-}
 @media (max-width: 640px) {
   .footer-top { flex-direction: column; align-items: flex-start; }
   .footer-nav { gap: 1rem; }
