@@ -93,7 +93,7 @@ npm run dash
 
 Open [http://localhost:8787](http://localhost:8787) with that token.
 
-The **Errors** tab streams structured runtime failures over WebSocket. Overview has **Halt / Resume** (same `HALT` file as `npm run halt`). Pending updates on **Changes** show risk chips (`strategy`, `deps`, `deploy`, `dash`, `docs`). The **Wiki** tab is the in-dashboard operator manual (scan → sleeves → exits → ops); keep it aligned with `STRATEGY.md` when behavior changes.
+The **Errors** tab streams structured runtime failures over WebSocket. Header **ON/HALT** toggle remote-stops the farmer (same `HALT` file as `npm run halt`; confirm with dash token). Pending updates on **Changes** show risk chips (`strategy`, `deps`, `deploy`, `dash`, `docs`). The **Wiki** tab is the in-dashboard operator manual (scan → sleeves → exits → ops); keep it aligned with `STRATEGY.md` when behavior changes.
 
 ## Keys & going live
 

@@ -1,26 +1,52 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { LiveWatch } from "@/lib/types";
 import { postHalt } from "@/lib/api";
 import { tokenFromUrl } from "@/lib/utils";
 import { toast } from "@/lib/toast";
-import { Badge, Panel } from "@/components/ui";
 import { Icon } from "@/lib/icons";
 import { OctagonX, Play } from "lucide-react";
 
-/** Emergency stop / resume — writes the same HALT file the farmer watches. */
-export function HaltControl({ watch }: { watch: LiveWatch | null }) {
+/**
+ * Header RUN / HALT switch — same HALT file as `npm run halt`.
+ * Confirm with dash token before toggling (closes all opens on halt).
+ */
+export function HaltToggle({ watch }: { watch: LiveWatch | null }) {
   const halted = !!watch?.ops?.halted;
+  const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
-  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
   const token = tokenFromUrl() ?? "";
 
-  const run = async (action: "halt" | "resume") => {
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) {
+        setOpen(false);
+        setConfirm("");
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        setConfirm("");
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const run = async () => {
+    const action = halted ? "resume" : "halt";
     setBusy(true);
     try {
       const r = await postHalt(action, confirm);
       toast({
-        title: action === "halt" ? "HALT requested" : "Resumed",
+        title: action === "halt" ? "Bot halted" : "Bot resumed",
         detail: r.note,
         tone: action === "halt" ? "danger" : "ok",
         kind: "event",
@@ -39,35 +65,45 @@ export function HaltControl({ watch }: { watch: LiveWatch | null }) {
     }
   };
 
+  const canSubmit = !!confirm && (!token || confirm === token) && !busy;
+
   return (
-    <Panel
-      title="Bot control"
-      right={<Badge tone={halted ? "danger" : "ok"}>{halted ? "HALTED" : "running"}</Badge>}
-    >
-      <p className="mb-3 text-[11px] text-dim">
-        {halted
-          ? `Idle since ${watch?.ops?.halt_at ?? "—"}. Resume clears HALT; the farmer picks up on the next tick.`
-          : "Halt closes all open positions, then idles (no new entries) until you Resume."}
-      </p>
-      {!open ? (
-        <button
-          type="button"
-          className={`inline-flex items-center gap-1.5 border px-3 py-1.5 text-[11px] tracking-wider uppercase ${
-            halted
-              ? "border-ok/70 text-ok hover:bg-ok/10"
-              : "border-danger/70 text-danger hover:bg-danger/10"
+    <div ref={wrapRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title={
+          halted
+            ? `Halted${watch?.ops?.halt_at ? ` since ${watch.ops.halt_at}` : ""} — click to resume`
+            : "Bot running — click to halt (closes all open positions)"
+        }
+        className={`inline-flex items-center gap-1.5 border px-1.5 py-0.5 text-[10px] tracking-widest ${
+          halted
+            ? "border-danger/70 text-danger"
+            : "border-ok/70 text-ok"
+        }`}
+      >
+        <span
+          className={`relative h-3 w-5 shrink-0 border ${
+            halted ? "border-danger/70 bg-danger/15" : "border-ok/70 bg-ok/15"
           }`}
-          onClick={() => setOpen(true)}
+          aria-hidden
         >
-          <Icon icon={halted ? Play : OctagonX} size={12} />
-          {halted ? "Resume bot" : "Halt bot"}
-        </button>
-      ) : (
-        <div className="space-y-2 border border-grid p-3">
-          <p className="text-[11px] text-warn">
+          <span
+            className={`absolute top-0.5 h-1.5 w-1.5 ${
+              halted ? "right-0.5 bg-danger" : "left-0.5 bg-ok"
+            }`}
+          />
+        </span>
+        {halted ? "HALT" : "ON"}
+      </button>
+
+      {open ? (
+        <div className="absolute top-full left-0 z-40 mt-1.5 w-[16.5rem] border border-grid bg-bg p-3 shadow-lg shadow-black/50">
+          <p className="text-[11px] leading-snug text-warn">
             {halted
-              ? "Re-enter your dash token to resume trading."
-              : "Re-enter your dash token. This closes every open position."}
+              ? "Re-enter dash token to resume entries."
+              : "Re-enter dash token. Halt closes every open position, then idles."}
           </p>
           <input
             type="password"
@@ -75,30 +111,34 @@ export function HaltControl({ watch }: { watch: LiveWatch | null }) {
             placeholder="DASH_TOKEN"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
-            className="w-full border border-grid bg-transparent px-2 py-1.5 font-mono text-[12px] text-fg"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && canSubmit) void run();
+            }}
+            className="mt-2 w-full border border-grid bg-transparent px-2 py-1.5 font-mono text-[12px] text-fg"
+            autoFocus
           />
-          <div className="flex flex-wrap gap-2">
+          <div className="mt-2 flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={busy || !confirm || (token ? confirm !== token : false)}
-              className={`inline-flex items-center gap-1.5 border px-3 py-1.5 text-[11px] tracking-wider uppercase disabled:opacity-40 ${
+              disabled={!canSubmit}
+              className={`inline-flex items-center gap-1.5 border px-2.5 py-1 text-[10px] tracking-wider uppercase disabled:opacity-40 ${
                 halted ? "border-ok/70 text-ok" : "border-danger/70 text-danger"
               }`}
-              onClick={() => void run(halted ? "resume" : "halt")}
+              onClick={() => void run()}
             >
-              <Icon icon={halted ? Play : OctagonX} size={12} />
-              {busy ? "…" : halted ? "Confirm resume" : "Confirm halt"}
+              <Icon icon={halted ? Play : OctagonX} size={11} />
+              {busy ? "…" : halted ? "Resume" : "Confirm halt"}
             </button>
             <button
               type="button"
-              className="border border-grid px-3 py-1.5 text-[11px] tracking-wider text-muted uppercase hover:text-hover"
+              className="border border-grid px-2.5 py-1 text-[10px] tracking-wider text-muted uppercase hover:text-hover"
               onClick={() => { setOpen(false); setConfirm(""); }}
             >
               Cancel
             </button>
           </div>
         </div>
-      )}
-    </Panel>
+      ) : null}
+    </div>
   );
 }

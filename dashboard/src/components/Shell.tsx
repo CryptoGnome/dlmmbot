@@ -3,6 +3,7 @@ import type { LiveStatus } from "@/lib/api";
 import type { ReactNode } from "react";
 import { BookText, CircleDot, ExternalLink } from "lucide-react";
 import { GithubMark, Icon, PauseCircle, tabIcon, Unplug, Zap } from "@/lib/icons";
+import { HaltToggle } from "@/components/HaltControl";
 
 export type TabId = "overview" | "book" | "analytics" | "activity" | "errors" | "research" | "wiki" | "changes" | "settings";
 
@@ -133,7 +134,7 @@ export function Shell({
   const mode = (watch?.heartbeat?.mode ?? "").toLowerCase();
   const modeLive = mode === "live";
   const hbAge = watch?.heartbeat_age_s;
-  const showBrake = !!watch?.ops?.halted || !!watch?.cluster?.tripped;
+  const showBrake = !!watch?.cluster?.tripped && !watch?.ops?.halted;
 
   return (
     <div className="flex h-screen overflow-hidden bg-bg text-fg">
@@ -175,18 +176,19 @@ export function Shell({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-grid px-3 py-2.5 md:px-4">
           <div className="flex flex-wrap items-center gap-2">
+            <HaltToggle watch={watch} />
             <span
               className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10px] tracking-widest ${
-                stale ? "border-danger/70 text-danger" : "border-ok/70 text-ok"
+                stale ? "border-danger/70 text-danger" : "border-grid text-dim"
               }`}
               title={
                 stale
-                  ? `bot heartbeat stale / off${hbAge != null ? ` (${hbAge}s)` : ""}`
-                  : `bot heartbeat fresh${hbAge != null ? ` (${hbAge}s)` : ""}`
+                  ? `farmer heartbeat stale${hbAge != null ? ` (${hbAge}s)` : ""}`
+                  : `farmer heartbeat fresh${hbAge != null ? ` (${hbAge}s)` : ""}`
               }
             >
               <Icon icon={stale ? Unplug : CircleDot} size={11} />
-              {stale ? "OFF" : "ON"}
+              {stale ? "HB?" : "HB"}
             </span>
             <span
               className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10px] tracking-widest ${
@@ -210,11 +212,10 @@ export function Shell({
             {showBrake && (
               <span
                 className="inline-flex items-center gap-1 border border-danger/70 px-1.5 py-0.5 text-[10px] tracking-widest text-danger"
+                title="Cluster brake — new entries paused"
               >
                 <Icon icon={PauseCircle} size={11} />
-                {watch?.ops?.halted
-                  ? "HALTED"
-                  : `BRAKE ${watch?.cluster?.remainingMin ?? "?"}m`}
+                BRAKE {watch?.cluster?.remainingMin ?? "?"}m
               </span>
             )}
             {watch?.build && (

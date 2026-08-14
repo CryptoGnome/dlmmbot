@@ -412,7 +412,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           },
           {
             title: "HALT",
-            text: "Big red stop: close everything, idle until Resume. Same idea as Overview Halt.",
+            text: "Big red stop: close everything, idle until Resume. Header ON/HALT toggle.",
             icon: "alert",
             tone: "danger",
           },
@@ -474,7 +474,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
       {
         type: "cards",
         items: [
-          { title: "Overview", text: "Money snapshot, Halt, equity chart (pick 7d/30d/all here).", icon: "chart", tone: "accent" },
+          { title: "Overview", text: "Money snapshot, equity chart (pick 7d/30d/all here). Halt lives in the header ON/HALT toggle.", icon: "chart", tone: "accent" },
           { title: "Book", text: "Open positions + recent closes.", icon: "book", tone: "fg" },
           { title: "Analytics", text: "Why we made/lost SOL — exits, sleeves, skips.", icon: "calc", tone: "ok" },
           { title: "Activity", text: "Live play-by-play of decisions.", icon: "zap", tone: "accent" },
@@ -492,8 +492,9 @@ export const WIKI_SECTIONS: WikiSection[] = [
       {
         type: "ul",
         items: [
-          "ON/OFF = farmer heartbeat. WS = this page’s live feed.",
-          "PAPER / LIVE = mode. HALTED / BRAKE only appear when something paused entries.",
+          "ON/HALT = remote trading switch (confirm with dash token; halt closes opens).",
+          "HB = farmer process heartbeat. WS = this page’s live feed.",
+          "PAPER / LIVE = mode. BRAKE appears when the cluster brake paused entries.",
           "Build pill = are we current with GitHub? Host name sits on the right.",
         ],
       },
@@ -521,7 +522,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           },
           {
             title: "Halt",
-            text: "Overview → confirm with dash token → closes opens and idles until Resume.",
+            text: "Header ON/HALT toggle → confirm with dash token → closes opens and idles until Resume.",
             icon: "alert",
           },
           {
