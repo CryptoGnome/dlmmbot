@@ -27,5 +27,5 @@ On each **live** winning close, **1% of measured net profit** buys and burns **G
 :::
 
 ::: tip Settings profiles
-Dashboard **Settings → Profiles**: official packs, local saves on the volume, and a GitHub community gallery. **Share to GitHub** walks you through copy → fork (if needed) → PR in the browser — no git on Railway. Profiles never change paper/live mode or secrets.
+Dashboard **Settings → Profiles**: official packs, local saves, and a GitHub community gallery. **Share to GitHub** is browser-only (fork when asked). Full guide: [Settings profiles](./profiles).
 :::

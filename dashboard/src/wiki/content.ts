@@ -686,7 +686,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
         type: "callout",
         tone: "warn",
         title: "Fork = expected",
-        text: "Most operators are not collaborators. GitHub’s fork prompt is the path — not a bug. Full write-up: profiles/community/README.md in the repo.",
+        text: "Most operators are not collaborators. GitHub’s fork prompt is the path — not a bug. Full write-up: dlmmbot.com/setup/profiles",
       },
     ],
   },

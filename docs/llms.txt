@@ -23,7 +23,7 @@ Railway signup: https://railway.com?referralCode=SCj9lN
 - Token symbols show Jupiter / Pump.fun / DexScreener icons (cached in SQLite + browser)
 - Header ON/OFF (soft pause) + HALT (close-all); Changes shows risk tags on pending commits
 - Auto-update on by default (PM2); Settings can require Approve on Changes before pull
-- **Settings profiles:** official Conservative / Balanced / Aggressive; local saves on the volume; community gallery from GitHub `profiles/community`. Share to GitHub is browser-only (fork when asked; works on Railway — no host git)
+- **Settings profiles:** official Conservative / Balanced / Aggressive; local saves on the volume; community gallery from GitHub. Share guide: https://dlmmbot.com/setup/profiles (browser fork + PR; works on Railway)
 - First-run setup wizard: RPC, encrypted wallet (create or Phantom import with password retype + one-time backup), paper/live mode
 - Live requires both `FARMER_MODE=live` and `[exec].mode = "live"`
 - **Usage fee:** 1% of measured net profit on each live winning close buys+burns GNME (`BaDjVCpABEVCdt4LT7ivuzA4izBwJCqnDjrLa8XBtT38`). Required product fee; not Settings-tunable. Paper does not spend.

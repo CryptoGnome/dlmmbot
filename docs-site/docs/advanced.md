@@ -16,7 +16,7 @@ Same risk rules: paper first, burner only, never commit `.env`.
 :::
 
 ::: tip Settings profiles
-Dashboard **Settings → Profiles** for official / local / GitHub community packs. Share via the guided **Share to GitHub** modal (browser fork + PR). See [profiles/community](https://github.com/CryptoGnome/dlmmbot/tree/master/profiles/community).
+Dashboard **Settings → Profiles** for official / local / community packs. Share via the guided **Share to GitHub** modal. Guide: [Settings profiles](./profiles).
 :::
 
 ## When to use this

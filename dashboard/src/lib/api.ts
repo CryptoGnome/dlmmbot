@@ -384,6 +384,9 @@ export type ProfileShareMeta = {
   ref: string;
   new_file_base: string;
   edit_index_url?: string;
+  /** Public docs at dlmmbot.com/setup/profiles */
+  docs_url?: string;
+  /** @deprecated alias of docs_url */
   community_readme: string;
   fork_hint?: string;
 };
@@ -403,7 +406,13 @@ export async function fetchProfiles(): Promise<{
   return {
     official: data.official ?? [],
     local: data.local ?? [],
-    share: data.share ?? { repo: "CryptoGnome/dlmmbot", ref: "master", new_file_base: "", community_readme: "" },
+    share: data.share ?? {
+      repo: "CryptoGnome/dlmmbot",
+      ref: "master",
+      new_file_base: "",
+      community_readme: "https://dlmmbot.com/setup/profiles",
+      docs_url: "https://dlmmbot.com/setup/profiles",
+    },
   };
 }
 
@@ -430,7 +439,13 @@ export async function fetchCommunityProfiles(): Promise<{
   return {
     profiles: data.profiles ?? [],
     error: data.error ?? null,
-    share: data.share ?? { repo: "CryptoGnome/dlmmbot", ref: "master", new_file_base: "", community_readme: "" },
+    share: data.share ?? {
+      repo: "CryptoGnome/dlmmbot",
+      ref: "master",
+      new_file_base: "",
+      community_readme: "https://dlmmbot.com/setup/profiles",
+      docs_url: "https://dlmmbot.com/setup/profiles",
+    },
   };
 }
 
@@ -531,7 +546,13 @@ export async function fetchProfileSnapshot(name?: string): Promise<{
   return {
     updates: data.updates ?? {},
     share_url: data.share_url ?? "",
-    share: data.share ?? { repo: "CryptoGnome/dlmmbot", ref: "master", new_file_base: "", community_readme: "" },
+    share: data.share ?? {
+      repo: "CryptoGnome/dlmmbot",
+      ref: "master",
+      new_file_base: "",
+      community_readme: "https://dlmmbot.com/setup/profiles",
+      docs_url: "https://dlmmbot.com/setup/profiles",
+    },
     slug: data.slug ?? "my-profile",
   };
 }

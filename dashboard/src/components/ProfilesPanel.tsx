@@ -227,7 +227,8 @@ export function ProfilesPanel({
           repo: "CryptoGnome/dlmmbot",
           ref: "master",
           new_file_base: "",
-          community_readme: "",
+          community_readme: "https://dlmmbot.com/setup/profiles",
+          docs_url: "https://dlmmbot.com/setup/profiles",
         },
         createUrl: snap.share_url || `${meta?.new_file_base ?? ""}${snap.slug}.json`,
       });
@@ -360,14 +361,14 @@ export function ProfilesPanel({
             >
               How to contribute
             </button>
-            {share?.community_readme && (
+            { (share?.docs_url || share?.community_readme) && (
               <a
-                href={share.community_readme}
+                href={share.docs_url || share.community_readme}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1 text-[10px] tracking-wider text-muted no-underline uppercase hover:text-hover"
               >
-                README
+                Docs
                 <Icon icon={ExternalLink} size={9} />
               </a>
             )}
@@ -532,14 +533,14 @@ export function ProfilesPanel({
                       <Icon icon={ExternalLink} size={9} />
                     </a>
                   )}
-                  {shareGuide.share.community_readme && (
+                  {(shareGuide.share.docs_url || shareGuide.share.community_readme) && (
                     <a
-                      href={shareGuide.share.community_readme}
+                      href={shareGuide.share.docs_url || shareGuide.share.community_readme}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex items-center gap-1 border border-grid px-2 py-1 text-[10px] tracking-wider text-muted no-underline uppercase hover:text-hover"
                     >
-                      Full README
+                      Docs
                       <Icon icon={ExternalLink} size={9} />
                     </a>
                   )}

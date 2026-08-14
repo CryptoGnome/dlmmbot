@@ -27,6 +27,7 @@ export default defineConfig({
       { text: "Home", link: "https://dlmmbot.com/" },
       { text: "Easy (Railway)", link: "/easy" },
       { text: "Advanced", link: "/advanced" },
+      { text: "Profiles", link: "/profiles" },
       { text: "Strategy", link: "https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md" },
       { text: "GitHub", link: "https://github.com/CryptoGnome/dlmmbot" },
     ],
@@ -37,6 +38,12 @@ export default defineConfig({
           { text: "Choose a path", link: "/" },
           { text: "Easy — Railway", link: "/easy" },
           { text: "Advanced — local / VPS", link: "/advanced" },
+        ],
+      },
+      {
+        text: "Operate",
+        items: [
+          { text: "Settings profiles", link: "/profiles" },
         ],
       },
       {
