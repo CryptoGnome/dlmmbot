@@ -245,4 +245,14 @@ export function isLive(): boolean {
   return config().exec.mode === "live" && env().farmerMode === "live";
 }
 
+/**
+ * The positions.mode value this process reads and writes. The DB is shared
+ * across the paper→live promotion flow, so every open-position / risk query
+ * must filter on it — a live loop must never manage (or count, or learn from)
+ * paper rows, and vice versa.
+ */
+export function currentMode(): "paper" | "live" {
+  return isLive() ? "live" : "paper";
+}
+
 export const SOL_MINT = "So11111111111111111111111111111111111111112";

@@ -1,7 +1,7 @@
 import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { config, isLive } from "../config.js";
+import { config, currentMode, isLive } from "../config.js";
 import { reconcileLive } from "./reconcile.js";
 import { alert, type AlertKind } from "../alerts.js";
 import { blacklist, getDb, now, recordDecision, REALIZED_PNL_SQL, logError, installProcessErrorHooks } from "../db/db.js";
@@ -132,10 +132,11 @@ async function closeAndReport(
   // Re-read fees and actual wallet deltas: the close itself may claim
   // outstanding fees, and open_cost/close_return carry the real rent+tx costs.
   const row = getDb().prepare(
-    "SELECT fees_claimed_sol, fees_measured_sol, recovered_sol, open_cost_sol, close_return_sol, fees_at_close_sol FROM positions WHERE id = ?"
+    "SELECT fees_claimed_sol, fees_measured_sol, recovered_sol, open_cost_sol, close_return_sol, fees_at_close_sol, withdrawn_sol FROM positions WHERE id = ?"
   ).get(pos.id) as {
     fees_claimed_sol: number; fees_measured_sol: number; recovered_sol: number;
     open_cost_sol: number | null; close_return_sol: number | null; fees_at_close_sol: number;
+    withdrawn_sol: number;
   } | undefined;
   const feesClaimed = row?.fees_claimed_sol ?? pos.feesClaimedSol;
   const feesAtClose = row?.fees_at_close_sol ?? 0;
@@ -153,7 +154,7 @@ async function closeAndReport(
   // measured losses). Book / dash / circuit breaker already use REALIZED_PNL_SQL.
   const markPnl = res.exitSol + feesClaimed - pos.entrySol;
   const measuredPnl = row?.open_cost_sol != null && row?.close_return_sol != null
-    ? row.close_return_sol + row.fees_measured_sol + row.recovered_sol - row.open_cost_sol
+    ? row.close_return_sol + row.fees_measured_sol + row.withdrawn_sol + row.recovered_sol - row.open_cost_sol
     : null;
   const pnl = measuredPnl ?? markPnl;
   const pctBase = measuredPnl != null && row?.open_cost_sol ? row.open_cost_sol : pos.entrySol;
@@ -163,7 +164,7 @@ async function closeAndReport(
   let trueLine = "";
   if (measuredPnl != null && row) {
     trueLine = `\ntrue PnL (measured): ${measuredPnl >= 0 ? "+" : ""}${measuredPnl.toFixed(4)} SOL` +
-      ` [in ${row.open_cost_sol!.toFixed(4)} → out ${(row.close_return_sol! + row.fees_measured_sol + row.recovered_sol).toFixed(4)}]`;
+      ` [in ${row.open_cost_sol!.toFixed(4)} → out ${(row.close_return_sol! + row.fees_measured_sol + row.withdrawn_sol + row.recovered_sol).toFixed(4)}]`;
     if (Math.abs(markPnl - measuredPnl) > 0.02) {
       trueLine += `\nmark PnL (display-only): ${markPnl >= 0 ? "+" : ""}${markPnl.toFixed(4)} SOL`;
     }
@@ -391,12 +392,16 @@ function acquireInstanceLock(): void {
 }
 
 function loadOpenPositions(): Position[] {
+  // mode filter is load-bearing: the DB is shared across the paper→live
+  // promotion flow. A live loop that loads a leftover paper row finds no
+  // position_accounts behind it, marks it worthless, and P0-closes it through
+  // the LIVE executor — fake full loss, permanent blacklist, breaker food.
   const rows = getDb().prepare(
     `SELECT id, mode, pool, token_mint, symbol, tranche_of, entry_ts, entry_price, entry_sol,
             min_bin_id, max_bin_id, state, fees_claimed_sol, rent_paid_sol, profit_lock_fires,
             exit_ts, exit_sol, exit_reason, follow_chain_id
-     FROM positions WHERE state IN ('open','pending')`
-  ).all() as Array<Record<string, unknown>>;
+     FROM positions WHERE state IN ('open','pending') AND mode = ?`
+  ).all(currentMode()) as Array<Record<string, unknown>>;
   return rows.map((r) => ({
     id: r.id as number, mode: r.mode as "paper" | "live",
     poolAddress: r.pool as string, tokenMint: r.token_mint as string,
@@ -427,6 +432,18 @@ export async function managePositions(exec: Executor): Promise<void> {
     try {
       if (exec instanceof PaperExecutor) await exec.accrueFees(pos, m.poll_s);
       const mark = await exec.mark(pos);
+      // Adopted rows (reconcile inserts entry_sol = 0, no basis) get their cost
+      // basis from the first successful mark — "PnL from adoption point", as the
+      // adoption event promises. Without this the row has no P1 stop (value/0),
+      // no exposure accounting, and its close would be unknown-PnL forever.
+      if (pos.entrySol === 0 && mark.valueSol > 0) {
+        getDb().prepare(
+          "UPDATE positions SET entry_sol = ?, open_cost_sol = COALESCE(open_cost_sol, ?), entry_price = CASE WHEN entry_price = 0 THEN ? ELSE entry_price END WHERE id = ?"
+        ).run(mark.valueSol, mark.valueSol, mark.price, pos.id);
+        pos.entrySol = mark.valueSol;
+        if (pos.entryPrice === 0) pos.entryPrice = mark.price;
+        console.log(`[manager] adopted pos#${pos.id} baseline set from first mark: ${mark.valueSol.toFixed(4)} SOL @ ${mark.price}`);
+      }
       unrealizedSol += mark.valueSol - pos.entrySol;
       const valueFrac = pos.entrySol > 0 ? mark.valueSol / pos.entrySol : 1;
       try {
@@ -949,8 +966,8 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     // reentry_ladder_mult; hard stop after reentry_max_per_24h re-entries.
     const m = config().manage;
     const priorEntries24h = (getDb().prepare(
-      "SELECT COUNT(*) AS c FROM positions WHERE token_mint = ? AND entry_ts > ?"
-    ).get(cand.tokenMint, now() - 86_400) as { c: number }).c;
+      "SELECT COUNT(*) AS c FROM positions WHERE token_mint = ? AND entry_ts > ? AND mode = ?"
+    ).get(cand.tokenMint, now() - 86_400, currentMode()) as { c: number }).c;
     if (priorEntries24h > m.reentry_max_per_24h) {
       recordDecision(cand.tokenMint, cand.pool.address, "skipped", "reentry_limit", score, { priorEntries24h });
       continue;
@@ -1295,10 +1312,10 @@ export async function runLoop(): Promise<void> {
             let restated = "";
             if (r.positionId) {
               const p = getDb().prepare(
-                "SELECT open_cost_sol o, close_return_sol c, fees_measured_sol f, recovered_sol v FROM positions WHERE id = ?"
-              ).get(r.positionId) as { o: number | null; c: number | null; f: number; v: number } | undefined;
+                "SELECT open_cost_sol o, close_return_sol c, fees_measured_sol f, recovered_sol v, withdrawn_sol w FROM positions WHERE id = ?"
+              ).get(r.positionId) as { o: number | null; c: number | null; f: number; v: number; w: number } | undefined;
               if (p?.o != null && p.c != null) {
-                restated = `\n${r.symbol} pos#${r.positionId} true PnL now ${(p.c + p.f + p.v - p.o >= 0 ? "+" : "")}${(p.c + p.f + p.v - p.o).toFixed(4)} SOL`;
+                restated = `\n${r.symbol} pos#${r.positionId} true PnL now ${(p.c + p.f + p.v + p.w - p.o >= 0 ? "+" : "")}${(p.c + p.f + p.v + p.w - p.o).toFixed(4)} SOL`;
               }
             }
             await alert("claim", `🧹 [sweep] sold stranded ${r.symbol}${tag} residue for ${r.soldSol.toFixed(4)} SOL${restated}`);

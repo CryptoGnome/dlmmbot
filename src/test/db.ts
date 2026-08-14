@@ -27,7 +27,7 @@ export function resetTestDb(): void {
 
 export function insertClosedPosition(opts: {
   entrySol: number;
-  exitSol: number;
+  exitSol: number | null;
   exitReason?: string;
   exitTs?: number;
   feesClaimedSol?: number;
@@ -35,6 +35,7 @@ export function insertClosedPosition(opts: {
   closeReturnSol?: number | null;
   feesMeasuredSol?: number;
   recoveredSol?: number;
+  withdrawnSol?: number;
   followChainId?: number | null;
   mode?: string;
 }): number {
@@ -44,11 +45,13 @@ export function insertClosedPosition(opts: {
        mode, pool, token_mint, symbol, entry_ts, entry_price, entry_sol,
        min_bin_id, max_bin_id, state, fees_claimed_sol, rent_paid_sol,
        exit_ts, exit_sol, exit_reason, open_cost_sol, close_return_sol,
-       fees_measured_sol, recovered_sol, follow_chain_id
+       fees_measured_sol, recovered_sol, withdrawn_sol, follow_chain_id
      ) VALUES (?, 'pool', 'mint', 'TST', ?, 1, ?, 1, 10, 'closed_win', ?, 0,
-               ?, ?, ?, ?, ?, ?, ?, ?)`
+               ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
-    opts.mode ?? "live",
+    // Default "paper", matching the mode the test process runs in — the risk
+    // queries filter on currentMode() and would silently skip "live" rows.
+    opts.mode ?? "paper",
     ts - 3600,
     opts.entrySol,
     opts.feesClaimedSol ?? 0,
@@ -59,6 +62,7 @@ export function insertClosedPosition(opts: {
     opts.closeReturnSol === undefined ? null : opts.closeReturnSol,
     opts.feesMeasuredSol ?? 0,
     opts.recoveredSol ?? 0,
+    opts.withdrawnSol ?? 0,
     opts.followChainId === undefined ? null : opts.followChainId,
   );
   return Number(res.lastInsertRowid);
