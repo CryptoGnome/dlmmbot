@@ -143,41 +143,113 @@ export function safeBranch(raw) {
   return /^[A-Za-z0-9][\w./-]*$/.test(b) ? b : "main";
 }
 
+/** Platform-injected commit (Railway has no git binary / often no .git at runtime). */
+export function envCommitSha() {
+  const s = (
+    process.env.RAILWAY_GIT_COMMIT_SHA
+    || process.env.SOURCE_COMMIT
+    || process.env.COMMIT_SHA
+    || ""
+  ).trim();
+  return /^[0-9a-f]{7,40}$/i.test(s) ? s : null;
+}
+
+export function shortSha(full) {
+  if (!full) return null;
+  return full.length > 7 ? full.slice(0, 7) : full;
+}
+
+/** Full SHAs or abbreviated — Railway env vs GitHub tip. */
+export function shasMatch(a, b) {
+  if (!a || !b) return false;
+  const x = String(a).toLowerCase();
+  const y = String(b).toLowerCase();
+  return x === y || x.startsWith(y) || y.startsWith(x);
+}
+
+export function syncFromShas(headFull, originFull) {
+  if (!headFull || !originFull) return "unknown";
+  return shasMatch(headFull, originFull) ? "current" : "behind";
+}
+
+function parseGithubRepo(repoUrl) {
+  const m = /github\.com[/:]([^/]+)\/([^/#?\s]+)/i.exec(repoUrl || "");
+  if (!m) return null;
+  return { owner: m[1], repo: m[2].replace(/\.git$/i, "") };
+}
+
 /** Throttle GitHub fetches so the 3s watch loop does not hammer origin. */
 let lastOriginFetchAt = 0;
 let lastOriginFetchOk = false;
 const ORIGIN_FETCH_MS = Number(process.env.DASH_GIT_POLL_MS || 30_000);
 
+/** Stale-while-revalidate tip of origin/$branch via GitHub API (no local git). */
+let githubTip = { at: 0, branch: null, sha: null, message: null, pending: null };
+
+function scheduleGithubTip(repoUrl, branch) {
+  const now = Date.now();
+  if (githubTip.pending) return;
+  if (githubTip.branch === branch && now - githubTip.at < ORIGIN_FETCH_MS) return;
+  const parsed = parseGithubRepo(repoUrl);
+  if (!parsed) return;
+  githubTip.pending = (async () => {
+    try {
+      const res = await fetch(
+        `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/commits/${encodeURIComponent(branch)}`,
+        {
+          headers: {
+            accept: "application/vnd.github+json",
+            "user-agent": "dlmmbot-dashboard",
+          },
+          signal: AbortSignal.timeout(5_000),
+        },
+      );
+      if (!res.ok) throw new Error(`github ${res.status}`);
+      const j = await res.json();
+      const sha = typeof j.sha === "string" ? j.sha : null;
+      const message = typeof j.commit?.message === "string"
+        ? j.commit.message.split("\n")[0].slice(0, 120)
+        : null;
+      githubTip = { at: Date.now(), branch, sha, message, pending: null };
+      lastOriginFetchOk = !!sha;
+      lastOriginFetchAt = githubTip.at;
+    } catch {
+      githubTip = { ...githubTip, at: Date.now(), pending: null };
+      lastOriginFetchOk = false;
+      lastOriginFetchAt = Date.now();
+    }
+  })();
+}
+
 /**
  * Local checkout vs origin/$BRANCH (after a throttled fetch).
+ * On Railway (no git): uses RAILWAY_GIT_COMMIT_SHA + GitHub API tip.
  * sync: current | behind | ahead | diverged | unknown
  */
 function buildGitInfo(root) {
-  const branch = safeBranch(process.env.DEPLOY_BRANCH);
+  const branch = safeBranch(process.env.DEPLOY_BRANCH || process.env.RAILWAY_GIT_BRANCH);
   const nowMs = Date.now();
   if (nowMs - lastOriginFetchAt >= ORIGIN_FETCH_MS) {
     lastOriginFetchAt = nowMs;
     lastOriginFetchOk = gitOk(root, ["fetch", "origin", branch, "--quiet"]);
   }
 
-  const headFull = git(root, ["rev-parse", "HEAD"]);
-  const head = git(root, ["rev-parse", "--short", "HEAD"]);
-  const message = git(root, ["log", "-1", "--pretty=%s"]);
-  const describe = git(root, ["describe", "--always", "--dirty"]) || head;
+  let headFull = git(root, ["rev-parse", "HEAD"]) || envCommitSha();
+  let head = git(root, ["rev-parse", "--short", "HEAD"]) || shortSha(headFull);
+  let message = git(root, ["log", "-1", "--pretty=%s"])
+    || (process.env.RAILWAY_GIT_COMMIT_MESSAGE || "").trim().split("\n")[0].slice(0, 120)
+    || null;
+  let describe = git(root, ["describe", "--always", "--dirty"]) || head;
   // Ignore untracked clutter from SCP/deploy — only tracked diffs are "dirty".
-  const dirty = !!(git(root, ["status", "--porcelain", "--untracked-files=no"]));
-  const originFull = git(root, ["rev-parse", `refs/remotes/origin/${branch}`]);
-  const origin = originFull
+  // No git → not dirty (Railway image has no working tree to dirty).
+  const dirty = git(root, ["rev-parse", "HEAD"])
+    ? !!(git(root, ["status", "--porcelain", "--untracked-files=no"]))
+    : false;
+
+  let originFull = git(root, ["rev-parse", `refs/remotes/origin/${branch}`]);
+  let origin = originFull
     ? (git(root, ["rev-parse", "--short", `refs/remotes/origin/${branch}`]) || originFull.slice(0, 7))
     : null;
-
-  let sync = "unknown";
-  if (headFull && originFull) {
-    if (headFull === originFull) sync = "current";
-    else if (gitOk(root, ["merge-base", "--is-ancestor", headFull, originFull])) sync = "behind";
-    else if (gitOk(root, ["merge-base", "--is-ancestor", originFull, headFull])) sync = "ahead";
-    else sync = "diverged";
-  }
 
   let version = "0.0.0";
   let repoUrl = "https://github.com/CryptoGnome/dlmmbot";
@@ -189,6 +261,27 @@ function buildGitInfo(root) {
       repoUrl = raw.replace(/^git\+/, "").replace(/\.git$/, "").replace(/^git@github\.com:/, "https://github.com/");
     }
   } catch { /* */ }
+
+  // No local origin ref (common on Railway) — poll GitHub for the branch tip.
+  if (!originFull) {
+    scheduleGithubTip(repoUrl, branch);
+    if (githubTip.branch === branch && githubTip.sha) {
+      originFull = githubTip.sha;
+      origin = shortSha(originFull);
+      if (!message && githubTip.message && shasMatch(headFull, originFull)) {
+        message = githubTip.message;
+      }
+    }
+  }
+
+  let sync = "unknown";
+  if (headFull && originFull) {
+    if (shasMatch(headFull, originFull)) sync = "current";
+    else if (gitOk(root, ["merge-base", "--is-ancestor", headFull, originFull])) sync = "behind";
+    else if (gitOk(root, ["merge-base", "--is-ancestor", originFull, headFull])) sync = "ahead";
+    else if (!git(root, ["rev-parse", "HEAD"])) sync = syncFromShas(headFull, originFull);
+    else sync = "diverged";
+  }
 
   const releaseUrl = `${repoUrl}/releases`;
   const commitsUrl = `${repoUrl}/commits/${branch}`;

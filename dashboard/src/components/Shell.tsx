@@ -56,7 +56,8 @@ function BuildPill({ build, onOpenChanges }: {
         : sync === "behind" && build.needs_approval ? "APPROVE"
           : sync === "behind" ? "BEHIND"
             : sync === "ahead" ? "AHEAD"
-              : sync === "diverged" ? "DIVERGED" : "GIT?";
+              : sync === "diverged" ? "DIVERGED"
+                : (build.describe || build.head) ? "…" : "GIT?";
   const branch = build.branch || "main";
   const tip = [
     `v${build.version ?? "?"} · ${branch}`,

@@ -159,6 +159,8 @@ pm2 save
 
 Auto-update is **on by default**. To review first: flip **Auto on/off** next to the GitHub build pill. When GitHub is ahead, **Changes → Approve**. Don’t SCP a dirty tree and expect CURRENT — push + pull.
 
+**Railway:** the image often has no `git` binary, so the pill uses `RAILWAY_GIT_COMMIT_SHA` and checks GitHub for the branch tip. `GIT?` / a missing SHA usually means that env var isn’t set (redeploy from GitHub) or the tip fetch hasn’t completed yet.
+
 ## Dashboard from outside
 
 - **Tailscale / ZeroTier** — private access from your phone
