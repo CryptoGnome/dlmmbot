@@ -3,9 +3,13 @@ dist/
 data/
 coverage/
 .deploy-quarantine/
+.deploy-verify/
 .env
+.env.*
+!.env.example
 *.log
 HALT
 PAUSE
 secrets/
 .claude/
+tmp-*
