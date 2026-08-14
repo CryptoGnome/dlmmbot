@@ -30,17 +30,42 @@ type Field =
       hint?: (ui: number) => string;
     };
 
+type SleeveColumn = {
+  title: string;
+  blurb?: string;
+  fields: Field[];
+};
+
 type Group = {
   title: string;
   blurb?: string;
   /** Grid columns for fields (default 3). Use 2 for toggle+slider pairs. */
   cols?: 2 | 3 | 4;
   /** Pair each toggle with following sliders as clear rows (Token safety). */
-  layout?: "grid" | "gates";
+  layout?: "grid" | "gates" | "sleeves";
+  /** One bordered column per sleeve (Kelly / Fixed per-sleeve panels). */
+  sleeves?: SleeveColumn[];
   /** Show only when sizing.mode matches (Kelly vs Fixed panels). */
   whenMode?: "kelly" | "fixed";
   fields: Field[];
 };
+
+const KELLY_UNIT_OPTIONS: { value: string; label: string }[] = [
+  { value: "kelly", label: "Kelly (adaptive)" },
+  { value: "sol", label: "Fixed SOL" },
+  { value: "pct", label: "% of deployable" },
+];
+
+const FIXED_UNIT_OPTIONS: { value: string; label: string }[] = [
+  { value: "sol", label: "SOL" },
+  { value: "pct", label: "% of deployable" },
+];
+
+function withSleeves(
+  g: Omit<Group, "fields"> & { sleeves: SleeveColumn[]; extraFields?: Field[] },
+): Group {
+  return { ...g, fields: [...g.sleeves.flatMap((s) => s.fields), ...(g.extraFields ?? [])] };
+}
 
 const GROUPS: Group[] = [
   {
@@ -152,158 +177,98 @@ const GROUPS: Group[] = [
       },
     ],
   },
-  {
+  withSleeves({
     title: "Kelly per-sleeve",
     blurb: "Tweak Kelly size per sleeve: adaptive (× mult), fixed SOL, or % of deployable — like Fixed mode but Kelly still drives the default.",
     whenMode: "kelly",
-    cols: 3,
-    fields: [
+    layout: "sleeves",
+    sleeves: [
       {
-        path: "sizing.kelly_core_unit",
-        label: "Core unit",
-        kind: "select",
-        options: [
-          { value: "kelly", label: "Kelly (adaptive)" },
-          { value: "sol", label: "Fixed SOL" },
-          { value: "pct", label: "% of deployable" },
-        ],
-        help: "Meme BidAsk sleeve.",
-      },
-      { path: "sizing.kelly_core_mult", label: "Core Kelly ×", kind: "dec", min: 0.25, max: 3, step: 0.25, help: "When unit=Kelly — multiply adaptive base." },
-      { path: "sizing.kelly_core_sol", label: "Core SOL", kind: "sol", min: 0.1, max: 5, step: 0.05 },
-      { path: "sizing.kelly_core_pct", label: "Core %", kind: "pct", scale: "pct", min: 1, max: 25, step: 1, hint: (ui) => `${ui}% of deployable` },
-      {
-        path: "sizing.kelly_micro_unit",
-        label: "Micro unit",
-        kind: "select",
-        options: [
-          { value: "kelly", label: "Kelly (adaptive)" },
-          { value: "sol", label: "Fixed SOL" },
-          { value: "pct", label: "% of deployable" },
-        ],
-        help: "100–200k mcap sleeve.",
-      },
-      { path: "sizing.kelly_micro_mult", label: "Micro Kelly ×", kind: "dec", min: 0.25, max: 3, step: 0.25 },
-      { path: "sizing.kelly_micro_sol", label: "Micro SOL", kind: "sol", min: 0.1, max: 2, step: 0.05 },
-      { path: "sizing.kelly_micro_pct", label: "Micro %", kind: "pct", scale: "pct", min: 1, max: 15, step: 1, hint: (ui) => `${ui}% of deployable` },
-      {
-        path: "sizing.kelly_majors_unit",
-        label: "Majors unit",
-        kind: "select",
-        options: [
-          { value: "kelly", label: "Kelly (adaptive)" },
-          { value: "sol", label: "Fixed SOL" },
-          { value: "pct", label: "% of deployable" },
+        title: "Core",
+        blurb: "Meme BidAsk sleeve.",
+        fields: [
+          { path: "sizing.kelly_core_unit", label: "Unit", kind: "select", options: KELLY_UNIT_OPTIONS },
+          { path: "sizing.kelly_core_mult", label: "Kelly ×", kind: "dec", min: 0.25, max: 3, step: 0.25, help: "When unit=Kelly — multiply adaptive base." },
+          { path: "sizing.kelly_core_sol", label: "SOL", kind: "sol", min: 0.1, max: 5, step: 0.05 },
+          { path: "sizing.kelly_core_pct", label: "% deployable", kind: "pct", scale: "pct", min: 1, max: 25, step: 1, hint: (ui) => `${ui}% of deployable` },
         ],
       },
-      { path: "sizing.kelly_majors_mult", label: "Majors Kelly ×", kind: "dec", min: 0.25, max: 3, step: 0.25 },
-      { path: "sizing.kelly_majors_sol", label: "Majors SOL", kind: "sol", min: 0.25, max: 5, step: 0.25 },
-      { path: "sizing.kelly_majors_pct", label: "Majors %", kind: "pct", scale: "pct", min: 1, max: 40, step: 1, hint: (ui) => `${ui}% of deployable` },
       {
-        path: "sizing.kelly_follow_unit",
-        label: "Follow unit",
-        kind: "select",
-        options: [
-          { value: "kelly", label: "Kelly (adaptive)" },
-          { value: "sol", label: "Fixed SOL" },
-          { value: "pct", label: "% of deployable" },
+        title: "Micro",
+        blurb: "100–200k mcap sleeve.",
+        fields: [
+          { path: "sizing.kelly_micro_unit", label: "Unit", kind: "select", options: KELLY_UNIT_OPTIONS },
+          { path: "sizing.kelly_micro_mult", label: "Kelly ×", kind: "dec", min: 0.25, max: 3, step: 0.25 },
+          { path: "sizing.kelly_micro_sol", label: "SOL", kind: "sol", min: 0.1, max: 2, step: 0.05 },
+          { path: "sizing.kelly_micro_pct", label: "% deployable", kind: "pct", scale: "pct", min: 1, max: 15, step: 1, hint: (ui) => `${ui}% of deployable` },
         ],
-        help: "Follow re-entry legs.",
       },
-      { path: "sizing.kelly_follow_mult", label: "Follow Kelly ×", kind: "dec", min: 0.25, max: 3, step: 0.25 },
-      { path: "sizing.kelly_follow_sol", label: "Follow SOL", kind: "sol", min: 0.1, max: 2, step: 0.05 },
-      { path: "sizing.kelly_follow_pct", label: "Follow %", kind: "pct", scale: "pct", min: 1, max: 15, step: 1, hint: (ui) => `${ui}% of deployable` },
+      {
+        title: "Majors",
+        blurb: "Spot majors sleeve.",
+        fields: [
+          { path: "sizing.kelly_majors_unit", label: "Unit", kind: "select", options: KELLY_UNIT_OPTIONS },
+          { path: "sizing.kelly_majors_mult", label: "Kelly ×", kind: "dec", min: 0.25, max: 3, step: 0.25 },
+          { path: "sizing.kelly_majors_sol", label: "SOL", kind: "sol", min: 0.25, max: 5, step: 0.25 },
+          { path: "sizing.kelly_majors_pct", label: "% deployable", kind: "pct", scale: "pct", min: 1, max: 40, step: 1, hint: (ui) => `${ui}% of deployable` },
+        ],
+      },
+      {
+        title: "Follow",
+        blurb: "Follow re-entry legs.",
+        fields: [
+          { path: "sizing.kelly_follow_unit", label: "Unit", kind: "select", options: KELLY_UNIT_OPTIONS },
+          { path: "sizing.kelly_follow_mult", label: "Kelly ×", kind: "dec", min: 0.25, max: 3, step: 0.25 },
+          { path: "sizing.kelly_follow_sol", label: "SOL", kind: "sol", min: 0.1, max: 2, step: 0.05 },
+          { path: "sizing.kelly_follow_pct", label: "% deployable", kind: "pct", scale: "pct", min: 1, max: 15, step: 1, hint: (ui) => `${ui}% of deployable` },
+        ],
+      },
     ],
-  },
-  {
+  }),
+  withSleeves({
     title: "Fixed sizing",
     blurb: "Exact SOL or % of deployable bankroll per sleeve. No Kelly, no score size tilt. Below minimum size → skip entry.",
     whenMode: "fixed",
-    cols: 3,
-    fields: [
+    layout: "sleeves",
+    sleeves: [
       {
-        path: "sizing.fixed_core_unit",
-        label: "Core unit",
-        kind: "select",
-        options: [
-          { value: "sol", label: "SOL" },
-          { value: "pct", label: "% of deployable" },
-        ],
-        help: "Meme BidAsk sleeve.",
-      },
-      { path: "sizing.fixed_core_sol", label: "Core SOL", kind: "sol", min: 0.1, max: 5, step: 0.05 },
-      {
-        path: "sizing.fixed_core_pct",
-        label: "Core %",
-        kind: "pct",
-        scale: "pct",
-        min: 1,
-        max: 25,
-        step: 1,
-        hint: (ui) => `${ui}% of deployable`,
-      },
-      {
-        path: "sizing.fixed_micro_unit",
-        label: "Micro unit",
-        kind: "select",
-        options: [
-          { value: "sol", label: "SOL" },
-          { value: "pct", label: "% of deployable" },
-        ],
-        help: "100–200k mcap sleeve.",
-      },
-      { path: "sizing.fixed_micro_sol", label: "Micro SOL", kind: "sol", min: 0.1, max: 2, step: 0.05 },
-      {
-        path: "sizing.fixed_micro_pct",
-        label: "Micro %",
-        kind: "pct",
-        scale: "pct",
-        min: 1,
-        max: 15,
-        step: 1,
-        hint: (ui) => `${ui}% of deployable`,
-      },
-      {
-        path: "sizing.fixed_majors_unit",
-        label: "Majors unit",
-        kind: "select",
-        options: [
-          { value: "sol", label: "SOL" },
-          { value: "pct", label: "% of deployable" },
+        title: "Core",
+        blurb: "Meme BidAsk sleeve.",
+        fields: [
+          { path: "sizing.fixed_core_unit", label: "Unit", kind: "select", options: FIXED_UNIT_OPTIONS },
+          { path: "sizing.fixed_core_sol", label: "SOL", kind: "sol", min: 0.1, max: 5, step: 0.05 },
+          { path: "sizing.fixed_core_pct", label: "% deployable", kind: "pct", scale: "pct", min: 1, max: 25, step: 1, hint: (ui) => `${ui}% of deployable` },
         ],
       },
-      { path: "sizing.fixed_majors_sol", label: "Majors SOL", kind: "sol", min: 0.25, max: 5, step: 0.25 },
       {
-        path: "sizing.fixed_majors_pct",
-        label: "Majors %",
-        kind: "pct",
-        scale: "pct",
-        min: 1,
-        max: 40,
-        step: 1,
-        hint: (ui) => `${ui}% of deployable`,
-      },
-      {
-        path: "sizing.fixed_follow_unit",
-        label: "Follow unit",
-        kind: "select",
-        options: [
-          { value: "sol", label: "SOL" },
-          { value: "pct", label: "% of deployable" },
+        title: "Micro",
+        blurb: "100–200k mcap sleeve.",
+        fields: [
+          { path: "sizing.fixed_micro_unit", label: "Unit", kind: "select", options: FIXED_UNIT_OPTIONS },
+          { path: "sizing.fixed_micro_sol", label: "SOL", kind: "sol", min: 0.1, max: 2, step: 0.05 },
+          { path: "sizing.fixed_micro_pct", label: "% deployable", kind: "pct", scale: "pct", min: 1, max: 15, step: 1, hint: (ui) => `${ui}% of deployable` },
         ],
-        help: "Follow re-entry legs.",
       },
-      { path: "sizing.fixed_follow_sol", label: "Follow SOL", kind: "sol", min: 0.1, max: 2, step: 0.05 },
       {
-        path: "sizing.fixed_follow_pct",
-        label: "Follow %",
-        kind: "pct",
-        scale: "pct",
-        min: 1,
-        max: 15,
-        step: 1,
-        hint: (ui) => `${ui}% of deployable`,
+        title: "Majors",
+        blurb: "Spot majors sleeve.",
+        fields: [
+          { path: "sizing.fixed_majors_unit", label: "Unit", kind: "select", options: FIXED_UNIT_OPTIONS },
+          { path: "sizing.fixed_majors_sol", label: "SOL", kind: "sol", min: 0.25, max: 5, step: 0.25 },
+          { path: "sizing.fixed_majors_pct", label: "% deployable", kind: "pct", scale: "pct", min: 1, max: 40, step: 1, hint: (ui) => `${ui}% of deployable` },
+        ],
       },
+      {
+        title: "Follow",
+        blurb: "Follow re-entry legs.",
+        fields: [
+          { path: "sizing.fixed_follow_unit", label: "Unit", kind: "select", options: FIXED_UNIT_OPTIONS },
+          { path: "sizing.fixed_follow_sol", label: "SOL", kind: "sol", min: 0.1, max: 2, step: 0.05 },
+          { path: "sizing.fixed_follow_pct", label: "% deployable", kind: "pct", scale: "pct", min: 1, max: 15, step: 1, hint: (ui) => `${ui}% of deployable` },
+        ],
+      },
+    ],
+    extraFields: [
       {
         path: "sizing.kelly_max_position_frac",
         label: "Max share of wallet",
@@ -315,7 +280,7 @@ const GROUPS: Group[] = [
         help: "Safety cap still applies in Fixed mode.",
       },
     ],
-  },
+  }),
   {
     title: "Risk",
     blurb: "Exits and fee banking.",
@@ -1120,6 +1085,27 @@ export function SettingsPage() {
                   </div>
                 );
               })}
+            </div>
+          ) : g.layout === "sleeves" && g.sleeves ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {g.sleeves.map((s) => (
+                  <div key={s.title} className="flex min-w-0 flex-col gap-2 border border-grid bg-panel/40 p-2.5">
+                    <div className="border-b border-grid pb-2">
+                      <h3 className="text-[11px] font-medium text-fg">{s.title}</h3>
+                      {s.blurb && <p className="mt-0.5 text-[9px] leading-snug text-dim">{s.blurb}</p>}
+                    </div>
+                    <div className="flex flex-col gap-2">{s.fields.map(renderField)}</div>
+                  </div>
+                ))}
+              </div>
+              {g.fields.length > g.sleeves.reduce((n, s) => n + s.fields.length, 0) && (
+                <div className={fieldGridClass(3)}>
+                  {g.fields
+                    .filter((f) => !g.sleeves!.some((s) => s.fields.some((sf) => sf.path === f.path)))
+                    .map(renderField)}
+                </div>
+              )}
             </div>
           ) : (
             <div className={fieldGridClass(g.cols)}>
