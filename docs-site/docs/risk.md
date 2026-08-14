@@ -96,7 +96,7 @@ The gate is advisory — the bot won't stop you from flipping both switches earl
 
 ## The usage fee
 
-On each **live winning close**, 1% of the measured net profit buys and burns GNME in one Jupiter transaction. It is hardcoded (not a Settings knob), skipped on losses and mark-only closes, and logged-but-not-spent in paper mode. Details in the [FAQ](./faq#whats-the-1-gnme-burn-fee).
+On each **live winning close**, 1% of the measured net profit buys and burns GNME in one Jupiter transaction. It is hardcoded (not a Settings knob), skipped on losses and mark-only closes, and logged-but-not-spent in paper mode. Details in the [FAQ](./faq#what-s-the-1-gnme-burn-fee).
 
 ## What the safety net cannot do
 

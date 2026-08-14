@@ -59,7 +59,7 @@ Crash-restart loops are handled by PM2/Railway supervision; the out-of-process h
 
 - **Paper:** the public `https://api.mainnet-beta.solana.com` endpoint works — no wallet needed at all.
 - **Live:** use a **private RPC** (`RPC_URL`). The manager polls every open position on a 15s cadence plus holder snapshots, claims, and swaps — free public endpoints rate-limit exactly when it matters. A Jupiter API key (`JUPITER_API_KEY`) is needed for the swap path.
-- If RPC goes dark, the bot **freezes new entries and alerts** — it never blind-closes positions it can't see. See [Risk & sizing → Watchdog](./risk#watchdog--liveness).
+- If RPC goes dark, the bot **freezes new entries and alerts** — it never blind-closes positions it can't see. See [Risk & sizing → Watchdog](./risk#watchdog-liveness).
 
 ## Why one bot instance per wallet?
 

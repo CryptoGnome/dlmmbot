@@ -259,7 +259,7 @@ Thresholds:
 | `paper_promotion_days` | `7` | Consecutive profitable paper days for live eligibility |
 
 ::: info Not a knob
-The 1% GNME buy-and-burn usage fee is hardcoded in `src/executor/profitBurn.ts` — it is deliberately **not** a config key. See the [FAQ](./faq#whats-the-1-gnme-burn-fee).
+The 1% GNME buy-and-burn usage fee is hardcoded in `src/executor/profitBurn.ts` — it is deliberately **not** a config key. See the [FAQ](./faq#what-s-the-1-gnme-burn-fee).
 :::
 
 ## `[watchdog]`
