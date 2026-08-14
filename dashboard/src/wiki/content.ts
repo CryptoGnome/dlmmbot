@@ -483,6 +483,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           { title: "Analytics", text: "Why we made/lost SOL — exits, sleeves, skips.", icon: "calc" },
           { title: "Activity", text: "Live play-by-play. SOL: green in / win, blue deployed (entries), red only for losses. On-chain rows link to Solscan.", icon: "zap" },
           { title: "Errors", text: "Broken stuff with copy/paste for bug reports. Each row has a plain label (Transient / Degraded / Needs attention).", icon: "alert", tone: "danger" },
+          { title: "Report", text: "Guided GitHub issue — pick type/area/severity, describe the problem, auto-attach build + recent errors, open prefilled issue in a new tab.", icon: "alert" },
           { title: "Research", text: "People we studied — not trade signals.", icon: "book" },
           { title: "Wiki", text: "This guided tour.", icon: "bot" },
           { title: "Changes", text: "Pending Git updates + Approve if auto-update is off.", icon: "refresh" },

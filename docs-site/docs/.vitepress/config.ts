@@ -19,6 +19,9 @@ export default defineConfig({
       },
     ],
     ["meta", { name: "theme-color", content: "#0D0D0D" }],
+    ["link", { rel: "icon", href: "/favicon.ico", sizes: "32x32" }],
+    ["link", { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }],
+    ["link", { rel: "apple-touch-icon", href: "/apple-touch-icon.png" }],
     [
       "script",
       {

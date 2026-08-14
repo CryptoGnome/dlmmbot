@@ -12,6 +12,7 @@ import { BookPage } from "@/pages/Book";
 import { AnalyticsPage } from "@/pages/Analytics";
 import { ActivityPage } from "@/pages/Activity";
 import { ErrorsPage } from "@/pages/Errors";
+import { ReportBugPage } from "@/pages/ReportBug";
 import { ResearchPage } from "@/pages/Research";
 import { WikiPage } from "@/pages/Wiki";
 import { ChangelogPage } from "@/pages/Changelog";
@@ -164,6 +165,7 @@ export default function App() {
         )}
         {tab === "activity" && <ActivityPage watch={watch} />}
         {tab === "errors" && <ErrorsPage watch={watch} />}
+        {tab === "report" && <ReportBugPage watch={watch} live={live} />}
         {tab === "research" && <ResearchPage />}
         {tab === "wiki" && <WikiPage />}
         {tab === "changes" && <ChangelogPage watch={watch} />}
