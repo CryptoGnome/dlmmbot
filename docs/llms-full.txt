@@ -42,12 +42,12 @@ Settings also exposes encrypted wallet create / import / unlock on the Wallet & 
 - Activity feed with signed SOL coloring (inflows/wins green, capital deployed blue, losses red)
 - Toasts for new entries/exits/fails/cluster/events and link/heartbeat edges (max two visible; pressure shortens TTL)
 - Changes tab + toasts when GitHub is ahead, a deploy lands, or the farmer restarts on a new build
-- Host updates: auto-update on by default (PM2 `meteora-deploy`); Settings toggle to require Approve on Changes before pull
+- Host updates: auto-update on by default (PM2 `meteora-deploy`); header Auto on/off next to the build pill requires Approve on Changes when off
 - Errors tab: live `error_log` over WebSocket (stacks, mint/pool, copy dump, open GitHub issue)
 - Token icons/names from Jupiter → Pump.fun → DexScreener, cached in SQLite `tokens` and browser localStorage
 - Header ON/OFF soft-pauses trading (PAUSE file; positions stay open); HALT closes opens and idles until cleared
 - Changes pending commits tagged by risk (strategy / deps / deploy / dash / docs)
-- Settings: Bot settings (sizing, risk, filters, **profiles**) and Wallet & secrets (vault, encrypted wallet, auto-update)
+- Settings: Bot settings (sizing, risk, filters, **profiles**) and Wallet & secrets (vault, encrypted wallet)
 - Settings profiles: official Conservative / Balanced / Aggressive; private local saves under `data/profiles/`; community gallery from GitHub `profiles/community`. Share guide: https://dlmmbot.com/setup/profiles — dashboard **Share to GitHub** (fork if needed) → PR. No git on Railway/VPS. Wiki → Settings profiles for the short tour.
 - Research page: public X credits (not partners/signals)
 - Wiki tab: operator manual (sleeves, P0–P5, follow, sizing, dash map); kept in sync with STRATEGY.md
