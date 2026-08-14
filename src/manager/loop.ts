@@ -34,6 +34,7 @@ import { vetToken } from "../vetting/vet.js";
 // sweep, heartbeat. Second tranche: dual-range BidAsk below primary (score gate).
 
 const HALT_FILE = resolve(process.cwd(), "HALT");
+const PAUSE_FILE = resolve(process.cwd(), "PAUSE");
 const LOCK_FILE = resolve(process.cwd(), "data", "farmer.lock");
 
 // Residual sweep: retry-sell tokens stranded by failed zap-out swaps.
@@ -360,6 +361,11 @@ async function rugcheckFlipped(posId: number, mint: string): Promise<boolean> {
 
 export function haltRequested(): boolean {
   return existsSync(HALT_FILE);
+}
+
+/** Soft pause: no manage/entry/sweep; leave positions open. */
+export function pauseRequested(): boolean {
+  return existsSync(PAUSE_FILE);
 }
 
 /**
@@ -1207,6 +1213,7 @@ export async function runLoop(): Promise<void> {
   let lastScan = 0;
   let lastSweep = 0;
   let haltCloseDone = false;
+  let pauseLogged = false;
 
   for (;;) {
     const tickStart = Date.now();
@@ -1228,6 +1235,19 @@ export async function runLoop(): Promise<void> {
     if (haltCloseDone) {
       console.log("[farmer] HALT cleared — resuming manage/entry loop");
       haltCloseDone = false;
+    }
+    if (pauseRequested()) {
+      if (!pauseLogged) {
+        console.log("[farmer] PAUSE — trading engine off; positions left open until ON");
+        pauseLogged = true;
+      }
+      await writeHeartbeat(exec, 0);
+      await new Promise((r) => setTimeout(r, Math.min(pollMs, 5_000)));
+      continue;
+    }
+    if (pauseLogged) {
+      console.log("[farmer] PAUSE cleared — trading engine on");
+      pauseLogged = false;
     }
     // Probe first and outside the shared try: watchdogCheck used to sit after
     // managePositions inside one try, so a throw from config() or

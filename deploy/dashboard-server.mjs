@@ -23,6 +23,7 @@ import {
 } from "./lib/deploy-prefs.mjs";
 import { insertError } from "./lib/error-log.mjs";
 import { requestHalt, clearHalt, readHaltState } from "./lib/halt.mjs";
+import { requestPause, clearPause, readPauseState } from "./lib/pause.mjs";
 import { execSync } from "node:child_process";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -407,7 +408,7 @@ const server = createServer(async (req, res) => {
 
   if (url.pathname === "/api/halt" && req.method === "GET") {
     try {
-      sendJson(res, 200, readHaltState(root));
+      sendJson(res, 200, { ...readHaltState(root), ...readPauseState(root) });
     } catch (e) {
       sendJson(res, 500, { error: e.message ?? String(e) });
     }
@@ -425,7 +426,25 @@ const server = createServer(async (req, res) => {
       const action = body?.action === "resume" ? "resume" : "halt";
       const state = action === "resume" ? clearHalt(root) : requestHalt(root);
       watchCache = { at: 0, data: null, building: null };
-      sendJson(res, 200, { ok: true, ...state });
+      sendJson(res, 200, { ok: true, ...state, ...readPauseState(root) });
+    } catch (e) {
+      sendJson(res, 400, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/engine" && req.method === "POST") {
+    try {
+      // Soft ON/OFF — already authenticated via dash token query/header.
+      if (!token) {
+        sendJson(res, 401, { error: "dash token required" });
+        return;
+      }
+      const body = await readBody(req);
+      const action = body?.action === "off" ? "off" : "on";
+      const pause = action === "off" ? requestPause(root) : clearPause(root);
+      watchCache = { at: 0, data: null, building: null };
+      sendJson(res, 200, { ok: true, ...pause, ...readHaltState(root) });
     } catch (e) {
       sendJson(res, 400, { error: e.message ?? String(e) });
     }

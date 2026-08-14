@@ -5,6 +5,10 @@ export interface LiveWatch {
   at: string;
   host: string;
   ops?: {
+    /** Soft pause — no trades; positions stay open. */
+    paused?: boolean;
+    pause_at?: string | null;
+    /** Emergency halt — closes opens, then idles. */
     halted?: boolean;
     halt_at?: string | null;
   };

@@ -6,4 +6,5 @@ coverage/
 .env
 *.log
 HALT
+PAUSE
 secrets/

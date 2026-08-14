@@ -179,8 +179,19 @@ async function main(): Promise<void> {
       }
       break;
     }
+    case "pause": {
+      const pausePath = resolve(process.cwd(), "PAUSE");
+      if (existsSync(pausePath)) {
+        unlinkSync(pausePath);
+        console.log("PAUSE cleared — trading engine ON on the next tick");
+      } else {
+        writeFileSync(pausePath, new Date().toISOString());
+        console.log("PAUSE set — trading engine OFF; open positions left alone");
+      }
+      break;
+    }
     default:
-      console.log("usage: npm run <scan|vet -- <mint>|run|status|halt|release [-- <sol> [note]]>");
+      console.log("usage: npm run <scan|vet -- <mint>|run|status|halt|pause|release [-- <sol> [note]]>");
   }
 }
 

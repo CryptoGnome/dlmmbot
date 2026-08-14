@@ -2,8 +2,8 @@ import type { LiveWatch } from "@/lib/types";
 import type { LiveStatus } from "@/lib/api";
 import type { ReactNode } from "react";
 import { BookText, CircleDot, ExternalLink } from "lucide-react";
-import { GithubMark, Icon, PauseCircle, tabIcon, Unplug, Zap } from "@/lib/icons";
 import { HaltToggle } from "@/components/HaltControl";
+import { GithubMark, Icon, PauseCircle, tabIcon, Unplug, Zap } from "@/lib/icons";
 
 export type TabId = "overview" | "book" | "analytics" | "activity" | "errors" | "research" | "wiki" | "changes" | "settings";
 

@@ -14,6 +14,7 @@ import {
   decorateWithMeta, loadTokenMetaMap, scheduleTokenMetaBackfill,
 } from "./token-meta.mjs";
 import { readHaltState } from "./halt.mjs";
+import { readPauseState } from "./pause.mjs";
 
 const execAsync = promisify(exec);
 
@@ -1032,15 +1033,19 @@ export function buildLiveBookSnapshot(root) {
     decorateWithMeta(recentErrors, tokenMeta);
     scheduleTokenMetaBackfill(root, metaMints);
     const halt = readHaltState(root);
+    const pause = readPauseState(root);
 
     return {
       ts: now,
       at: new Date(now * 1000).toISOString(),
       host: git(root, "hostname") ?? "local",
       ops: {
+        paused: pause.paused,
+        pause_at: pause.pause_at,
         halted: halt.halted,
         halt_at: halt.halt_at,
-      },      build: {
+      },
+      build: {
         version: gitInfo.version,
         branch: gitInfo.branch,
         head: gitInfo.head,

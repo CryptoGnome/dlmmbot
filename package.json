@@ -14,6 +14,7 @@
     "run": "tsx src/cli.ts run",
     "status": "tsx src/cli.ts status",
     "halt": "tsx src/cli.ts halt",
+    "pause": "tsx src/cli.ts pause",
     "release": "tsx src/cli.ts release",
     "force-close": "tsx src/cli.ts force-close",
     "heartbeat-check": "node deploy/heartbeat-check.cjs",

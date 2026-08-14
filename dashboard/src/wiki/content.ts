@@ -412,7 +412,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           },
           {
             title: "HALT",
-            text: "Big red stop: close everything, idle until Resume. Header ON/HALT toggle.",
+            text: "Big red stop: close everything, idle until Resume. Header HALT button (separate from ON/OFF).",
             icon: "alert",
             tone: "danger",
           },
@@ -480,7 +480,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
       {
         type: "cards",
         items: [
-          { title: "Overview", text: "Money snapshot, equity chart (pick 7d/30d/all here). Halt lives in the header ON/HALT toggle.", icon: "chart", tone: "accent" },
+          { title: "Overview", text: "Money snapshot, equity chart (pick 7d/30d/all here). Engine ON/OFF + HALT live in the header.", icon: "chart", tone: "accent" },
           { title: "Book", text: "Open positions + recent closes.", icon: "book", tone: "fg" },
           { title: "Analytics", text: "Why we made/lost SOL — exits, sleeves, skips.", icon: "calc", tone: "ok" },
           { title: "Activity", text: "Live play-by-play of decisions. On-chain rows link to Solscan.", icon: "zap", tone: "accent" },
@@ -498,7 +498,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
       {
         type: "ul",
         items: [
-          "ON/HALT = remote trading switch (confirm with dash token; halt closes opens).",
+          "ON/OFF = soft pause (no trades; positions stay open). HALT = emergency close-all (confirm with dash token).",
           "HB = farmer process heartbeat. WS = this page’s live feed.",
           "PAPER / LIVE = mode. BRAKE appears when the cluster brake paused entries.",
           "Build pill = are we current with GitHub? Host name sits on the right.",
@@ -528,8 +528,13 @@ export const WIKI_SECTIONS: WikiSection[] = [
           },
           {
             title: "Halt",
-            text: "Header ON/HALT toggle → confirm with dash token → closes opens and idles until Resume.",
+            text: "Header red HALT button → confirm with dash token → closes opens and idles until Resume.",
             icon: "alert",
+          },
+          {
+            title: "Engine ON/OFF",
+            text: "Header toggle pauses the trading engine without closing positions (PAUSE file).",
+            icon: "pause",
           },
           {
             title: "Errors",

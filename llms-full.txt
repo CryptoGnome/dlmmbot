@@ -45,7 +45,7 @@ Settings also exposes encrypted wallet create / import / unlock on the Wallet & 
 - Host updates: auto-update on by default (PM2 `meteora-deploy`); Settings toggle to require Approve on Changes before pull
 - Errors tab: live `error_log` over WebSocket (stacks, mint/pool, copy dump, open GitHub issue)
 - Token icons/names from Jupiter → Pump.fun → DexScreener, cached in SQLite `tokens` and browser localStorage
-- Header ON/HALT toggle (writes HALT; farmer closes opens and idles until cleared)
+- Header ON/OFF soft-pauses trading (PAUSE file; positions stay open); HALT closes opens and idles until cleared
 - Changes pending commits tagged by risk (strategy / deps / deploy / dash / docs)
 - Settings: Bot settings (sizing, risk, filters) and Wallet & secrets (vault, encrypted wallet, auto-update)
 - Research page: public X credits (not partners/signals)

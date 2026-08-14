@@ -298,6 +298,7 @@ export async function postHalt(action: "halt" | "resume", confirm: string): Prom
   ok: boolean;
   halted: boolean;
   halt_at: string | null;
+  paused?: boolean;
   note?: string;
 }> {
   const t = tokenFromUrl();
@@ -308,13 +309,42 @@ export async function postHalt(action: "halt" | "resume", confirm: string): Prom
     body: JSON.stringify({ action, confirm }),
   });
   const data = await res.json() as {
-    ok?: boolean; halted?: boolean; halt_at?: string | null; note?: string; error?: string;
+    ok?: boolean; halted?: boolean; halt_at?: string | null; paused?: boolean; note?: string; error?: string;
   };
   if (!res.ok) throw new Error(data.error ?? `halt ${res.status}`);
   return {
     ok: !!data.ok,
     halted: !!data.halted,
     halt_at: data.halt_at ?? null,
+    paused: data.paused,
+    note: data.note,
+  };
+}
+
+/** Soft engine ON/OFF (PAUSE file) — does not close positions. */
+export async function postEngine(action: "on" | "off"): Promise<{
+  ok: boolean;
+  paused: boolean;
+  pause_at: string | null;
+  halted?: boolean;
+  note?: string;
+}> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/engine${q}`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ action }),
+  });
+  const data = await res.json() as {
+    ok?: boolean; paused?: boolean; pause_at?: string | null; halted?: boolean; note?: string; error?: string;
+  };
+  if (!res.ok) throw new Error(data.error ?? `engine ${res.status}`);
+  return {
+    ok: !!data.ok,
+    paused: !!data.paused,
+    pause_at: data.pause_at ?? null,
+    halted: data.halted,
     note: data.note,
   };
 }
