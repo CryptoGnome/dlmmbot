@@ -4,24 +4,31 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>DLMM Bot — Automated Meteora DLMM LP for Solana</title>
-  <meta name="description" content="Run a DLMM bot that farms fees for you 24/7. Scans hot Meteora pools, vets tokens, opens one-sided SOL LP, exits by rules. Paper first." />
+  <meta name="description" content="Run a DLMM bot that farms fees for you 24/7. Scans hot Meteora pools, vets tokens, opens one-sided SOL liquidity below price, exits by rules. Paper first." />
   <link rel="canonical" href="https://dlmmbot.com/" />
   <meta property="og:title" content="DLMM Bot" />
-  <meta property="og:description" content="Automated Meteora DLMM liquidity bot for Solana. Paper first. Burner only." />
+  <meta property="og:description" content="Automated Meteora DLMM liquidity bot for Solana. Scan, vet, enter, manage, exit — by rules. Paper first. Burner only." />
   <meta property="og:url" content="https://dlmmbot.com/" />
   <meta property="og:type" content="website" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230D0D0D'/%3E%3Cpath d='M6 24h4v-6H6zM13 24h4V12h-4zM20 24h4V6h-4z' fill='%2300FF85'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,650;1,500&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="assets/site.css" />
+  <script defer src="https://cloud.umami.is/script.js" data-website-id="3499aa8b-8f9b-4993-8bd5-6b660bebaff6"></script>
 </head>
 <body>
   <header class="nav">
     <div class="nav-inner">
-      <a class="brand" href="./">dlmm<span>bot</span></a>
+      <a class="brand" href="./" aria-label="DLMM Bot home">
+        <svg width="18" height="18" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="6" fill="#141414"/><path d="M6 24h4v-6H6zM13 24h4V12h-4zM20 24h4V6h-4z" fill="#00FF85"/></svg>
+        dlmm<span>bot</span>
+      </a>
       <nav class="nav-links" aria-label="Primary">
-        <a href="#how">How it works</a>
-        <a href="#features">Features</a>
+        <a href="#pipeline">Pipeline</a>
+        <a href="#ladder">The entry</a>
+        <a href="#exits">Exits</a>
+        <a href="#risk">Risk</a>
         <a href="#fee">Fee</a>
         <a href="setup/">Docs</a>
         <a href="https://github.com/CryptoGnome/dlmmbot">GitHub</a>
@@ -36,7 +43,11 @@
   </header>
 
   <main>
-    <section class="hero wrap">
+    <!-- ================= HERO ================= -->
+    <section class="hero">
+      <div class="binfield" aria-hidden="true">
+        <i style="--h:8;--i:0"></i><i style="--h:14;--i:1"></i><i style="--h:11;--i:2"></i><i style="--h:22;--i:3"></i><i style="--h:18;--i:4"></i><i style="--h:30;--i:5"></i><i style="--h:25;--i:6"></i><i style="--h:40;--i:7"></i><i style="--h:34;--i:8"></i><i style="--h:52;--i:9"></i><i style="--h:44;--i:10"></i><i style="--h:60;--i:11"></i><i style="--h:50;--i:12"></i><i style="--h:38;--i:13"></i><i style="--h:46;--i:14"></i><i style="--h:28;--i:15"></i><i style="--h:36;--i:16"></i><i style="--h:20;--i:17"></i><i style="--h:26;--i:18"></i><i style="--h:12;--i:19"></i><i style="--h:16;--i:20"></i><i style="--h:9;--i:21"></i>
+      </div>
       <div class="pill"><span class="dot" aria-hidden="true"></span> Paper first · live is double-locked</div>
       <h1>Run a DLMM bot that farms fees for you, <em>24/7.</em></h1>
       <p class="lede">
@@ -47,7 +58,7 @@
         <a class="btn btn-primary" href="https://railway.com?referralCode=SCj9lN" target="_blank" rel="noreferrer">
           Deploy on Railway <span class="arrow" aria-hidden="true">→</span>
         </a>
-        <a class="linkish" href="#how">See how it works</a>
+        <a class="linkish" href="#pipeline">Watch it work</a>
       </div>
 
       <div class="mock-stage reveal">
@@ -75,30 +86,14 @@
                 </div>
                 <div class="mock-kpi">
                   <div class="lab">Open</div>
-                  <div class="val">3</div>
+                  <div class="val">3 <span class="acc" style="font-size:0.8rem">of 5</span></div>
                 </div>
               </div>
-              <div class="mock-feed">
-                <div class="mock-row">
-                  <span class="t">14:02</span>
-                  <span>BONK · entered</span>
-                  <span class="bad">−0.500 SOL</span>
-                </div>
-                <div class="mock-row">
-                  <span class="t">13:41</span>
-                  <span>WIF · fee claim</span>
-                  <span class="ok">+0.014 SOL</span>
-                </div>
-                <div class="mock-row">
-                  <span class="t">13:18</span>
-                  <span>POPCAT · closed · Stop</span>
-                  <span class="bad">−0.062 SOL</span>
-                </div>
-                <div class="mock-row">
-                  <span class="t">12:55</span>
-                  <span>rent reclaim</span>
-                  <span class="ok">+0.008 SOL</span>
-                </div>
+              <div class="mock-feed" id="tickfeed">
+                <div class="mock-row"><span class="t">14:02</span><span>BONK · entered BidAsk −42%</span><span class="acc">0.500 SOL</span></div>
+                <div class="mock-row"><span class="t">13:41</span><span>WIF · fee claim</span><span class="ok">+0.014 SOL</span></div>
+                <div class="mock-row"><span class="t">13:18</span><span>POPCAT · closed · P1 stop</span><span class="bad">−0.062 SOL</span></div>
+                <div class="mock-row"><span class="t">12:55</span><span>rent reclaim</span><span class="ok">+0.008 SOL</span></div>
               </div>
             </div>
           </div>
@@ -106,89 +101,346 @@
       </div>
     </section>
 
-    <section class="section" id="how">
-      <div class="wrap">
-        <div class="how-head reveal">
-          <h2>Launch in minutes. It watches pools so you don’t have to.</h2>
-          <p class="muted">Scan → vet → open LP → manage exits. Same loop on Railway or your own box.</p>
-        </div>
-        <div class="steps-grid">
-          <article class="step reveal">
-            <div class="n">01 · Scan</div>
-            <h3>Hot SOL pools</h3>
-            <p>Every ~60s it ranks Meteora DLMM pools on fee momentum and volume.</p>
-          </article>
-          <article class="step reveal">
-            <div class="n">02 · Vet</div>
-            <h3>Token safety</h3>
-            <p>Age, holders, insiders, RugCheck, creator history — skip the obvious rugs.</p>
-          </article>
-          <article class="step reveal">
-            <div class="n">03 · Enter</div>
-            <h3>One-sided SOL</h3>
-            <p>Bid-ask below price for memes; spot-style for majors. Sized from your wallet.</p>
-          </article>
-          <article class="step reveal">
-            <div class="n">04 · Exit</div>
-            <h3>Rules, not vibes</h3>
-            <p>Stop, safety, above/below range, claims, reclaim — PnL lands in SQLite.</p>
-          </article>
+    <!-- ================= PIPELINE (pinned scene) ================= -->
+    <section id="pipeline">
+      <div class="scene" data-scene="pipeline">
+        <div class="scene-sticky">
+          <div class="wrap">
+            <div class="eyebrow">The tick loop · <b>every 15 seconds</b></div>
+            <div class="pipe-grid">
+              <div class="pipe-rail" role="list" aria-label="Pipeline stages">
+                <div class="pipe-stop" data-stop="0" role="listitem"><span class="k">01</span><span class="n">Scan</span></div>
+                <div class="pipe-stop" data-stop="1" role="listitem"><span class="k">02</span><span class="n">Vet</span></div>
+                <div class="pipe-stop" data-stop="2" role="listitem"><span class="k">03</span><span class="n">Enter</span></div>
+                <div class="pipe-stop" data-stop="3" role="listitem"><span class="k">04</span><span class="n">Manage</span></div>
+                <div class="pipe-stop" data-stop="4" role="listitem"><span class="k">05</span><span class="n">Exit</span></div>
+              </div>
+              <div class="pipe-panels">
+                <article class="pipe-panel" data-panel="0">
+                  <h3>Scan every hot pool. Every minute.</h3>
+                  <p>Sweeps the Meteora DLMM universe and ranks pools by fee momentum, turnover, and volume trend. Copycat symbols get deduped; pools that <em>were</em> hot but died get caught by the 30-minute check.</p>
+                  <div class="term" aria-hidden="true">
+                    <div><span class="c">$</span> scanning meteora dlmm pools…</div>
+                    <div>swept <span class="b">300</span> pools → <span class="g">4</span> candidates, 296 rejected</div>
+                    <div><span class="c">  WIF     score=84  feeTVL24h=31.2%/d  vol30m=$212k</span></div>
+                    <div><span class="c">  BONK    score=71  feeTVL24h=24.8%/d  vol30m=$96k</span></div>
+                  </div>
+                </article>
+                <article class="pipe-panel" data-panel="1">
+                  <h3>Vet the token. Hard gates, not vibes.</h3>
+                  <p>Mint and freeze authority revoked. Holder concentration and insider clusters under limits. Creator has never rugged — one strike is a permanent blacklist. RugCheck as a veto, never an approval. APIs down? The gate fails closed.</p>
+                  <div class="term" aria-hidden="true">
+                    <div><span class="g">✓</span> mint authority revoked · freeze revoked</div>
+                    <div><span class="g">✓</span> top holder 6.2% · top-10 28% · insiders 3.1%</div>
+                    <div><span class="g">✓</span> creator: 0 rugs · age 3h · rugcheck 12/100</div>
+                    <div><span class="r">✗</span> <span class="c">COPYCAT skipped: single_holder 61% — blacklisted</span></div>
+                  </div>
+                </article>
+                <article class="pipe-panel" data-panel="2">
+                  <h3>Enter one-sided. SOL only, below price.</h3>
+                  <p>No tokens bought up front. A bid-ask ladder of SOL goes under the market — heavier at the bottom — sized by Kelly from your own trade history, capped hard, and refused entirely when the edge reads negative.</p>
+                  <div class="term" aria-hidden="true">
+                    <div><span class="c">$</span> enter WIF score=84</div>
+                    <div>open <span class="b">BidAsk</span> range [−42% … 0%] · 55 bins · 1 account</div>
+                    <div>size <span class="b">0.62 SOL</span> <span class="c">(kelly 3.1% · score ×1.2 · regime ×1.0)</span></div>
+                    <div><span class="g">✓</span> pos#41 opened · rent 0.075 · <span class="c">tx 2 of 2 confirmed</span></div>
+                  </div>
+                </article>
+                <article class="pipe-panel" data-panel="3">
+                  <h3>Manage every position. Every poll.</h3>
+                  <p>Marks value against the chain, accrues and claims fees when it pays, locks a slice of big winners while the rest keeps earning, and watches TVL, holders, and RugCheck for anything that smells like a rug in progress.</p>
+                  <div class="term" aria-hidden="true">
+                    <div>pos#41 WIF · in range · value 0.64 <span class="c">(+3.2%)</span> · fees <span class="g">+0.011</span></div>
+                    <div>pos#38 BONK · <span class="y">below range · grace 9m of 15m</span></div>
+                    <div>pos#35 SOL-JUP · claim <span class="g">+0.052 SOL</span> → banked</div>
+                    <div>pos#41 WIF · <span class="g">profit lock: withdrew 0.19 SOL at +34%</span></div>
+                  </div>
+                </article>
+                <article class="pipe-panel" data-panel="4">
+                  <h3>Exit by rules. Never by conviction.</h3>
+                  <p>Six exit priorities, checked top-down every poll — safety first, profit last. Every close is measured from the wallet, not the chart, and lands in SQLite where the dashboard, the circuit breaker, and Kelly sizing all read the same number.</p>
+                  <div class="term" aria-hidden="true">
+                    <div><span class="r">P0</span> HYPERSOL · pool dead → closed, blacklisted</div>
+                    <div><span class="y">P5</span> BONK · below range 15m → cut <span class="bad">−0.041</span></div>
+                    <div><span class="g">P3</span> WIF · above range 10m → take-profit <span class="ok">+0.081</span></div>
+                    <div><span class="c">realized PnL (measured): +0.040 SOL · 2 wins 1 loss</span></div>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
 
+    <!-- ================= LADDER (signature scene) ================= -->
+    <section id="ladder">
+      <div class="scene" data-scene="ladder">
+        <div class="scene-sticky">
+          <div class="ladder-head wrap">
+            <div class="eyebrow"><b>The entry is the edge</b></div>
+            <h2>SOL waits below the price.<br />Volatility pays the fees.</h2>
+          </div>
+          <div class="ladder-stage">
+            <div class="ladder-viz" aria-label="Animated bid-ask liquidity ladder: SOL bins below price fill and earn fees as price dips">
+              <div class="bin" style="--h:92"></div>
+              <div class="bin" style="--h:86"></div>
+              <div class="bin" style="--h:80"></div>
+              <div class="bin" style="--h:74"></div>
+              <div class="bin" style="--h:69"></div>
+              <div class="bin" style="--h:63"></div>
+              <div class="bin" style="--h:58"></div>
+              <div class="bin" style="--h:52"></div>
+              <div class="bin" style="--h:47"></div>
+              <div class="bin" style="--h:42"></div>
+              <div class="bin" style="--h:37"></div>
+              <div class="bin" style="--h:32"></div>
+              <div class="bin" style="--h:27"></div>
+              <div class="bin" style="--h:23"></div>
+              <div class="bin" style="--h:19"></div>
+              <div class="bin" style="--h:15"></div>
+              <div class="price-line" aria-hidden="true"></div>
+            </div>
+            <div class="ladder-meta">
+              <span>−42%</span>
+              <span class="fee-counter">fees earned <b id="feeval">+0.000</b> SOL</span>
+              <span>entry price</span>
+            </div>
+            <div class="ladder-beats">
+              <p class="beat" data-beat="0"><b>One-sided SOL, bid-ask, below price.</b> Heavier bins deeper down. Nothing is bought until price comes to you.</p>
+              <p class="beat" data-beat="1"><b>Price dips — the ladder buys, every trade pays.</b> Each bin the price crosses converts at your level and earns swap fees both ways.</p>
+              <p class="beat" data-beat="2"><b>Fees bank to SOL. Exits are mechanical.</b> If the dip keeps going, the exit ladder cuts it. No bag-holding, ever.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= EXIT LADDER ================= -->
+    <section class="section" id="exits">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="eyebrow">P0 – P5 · <b>checked top-down, every poll</b></div>
+          <h2>The fire-escape checklist.</h2>
+          <p>Six exit priorities, in strict order. If P0 says run, nothing below it gets a vote.</p>
+        </div>
+        <div class="exit-list">
+          <div class="exit-row danger reveal">
+            <span class="p">P0</span>
+            <h3>Safety</h3>
+            <p>Pool dead, price crash, TVL drain, RugCheck flip, or a watched holder dumping — close immediately at high slippage, blacklist the token.</p>
+            <span class="act">close now</span>
+          </div>
+          <div class="exit-row danger reveal" style="--d:60ms">
+            <span class="p">P1</span>
+            <h3>Stop loss</h3>
+            <p>Position value down 25% against entry — cut it, cooldown the token. Capital preservation outranks the thesis.</p>
+            <span class="act">cut</span>
+          </div>
+          <div class="exit-row warn reveal" style="--d:120ms">
+            <span class="p">P2</span>
+            <h3>Rotation</h3>
+            <p>Fees decayed for consecutive polls, or max age reached — the position is dead weight; recycle capital to the queue.</p>
+            <span class="act">recycle</span>
+          </div>
+          <div class="exit-row win reveal" style="--d:180ms">
+            <span class="p">P3</span>
+            <h3>Above range</h3>
+            <p>Price traveled up through the range and stayed there — take profit, bank a slice, optionally arm follow mode for the next dip.</p>
+            <span class="act">take profit</span>
+          </div>
+          <div class="exit-row win reveal" style="--d:240ms">
+            <span class="p">P4</span>
+            <h3>Claim</h3>
+            <p>Unclaimed fees crossed the threshold — claim and convert to SOL. Fees are the product; they get banked, not re-risked.</p>
+            <span class="act">bank fees</span>
+          </div>
+          <div class="exit-row warn reveal" style="--d:300ms">
+            <span class="p">P5</span>
+            <h3>Below range</h3>
+            <p>Price fell under the ladder and stayed past the grace window — cut it. A wick gets tolerance; a trend gets an exit.</p>
+            <span class="act">cut</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= RISK MACHINERY ================= -->
+    <section class="section" id="risk">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="eyebrow">Capital preservation first</div>
+          <h2>Six brakes between the market and your wallet.</h2>
+          <p>Every sizing decision comes from your own measured ledger — and several systems exist only to say no.</p>
+        </div>
+        <div class="risk-grid reveal">
+          <div class="risk">
+            <div class="tag">Sizing</div>
+            <h3>Half-Kelly, from your ledger</h3>
+            <p>Position size estimated from your own closed trades, halved for estimation error, hard-capped per position. Reads negative edge? Entries stop.</p>
+            <div class="meter"><i style="--w:50%"></i></div>
+          </div>
+          <div class="risk stop">
+            <div class="tag">Brake</div>
+            <h3>Circuit breaker</h3>
+            <p>Measured daily loss beyond your set percent of the wallet — no new entries for 24 hours. Losses are measured from the wallet, not the chart.</p>
+            <div class="meter"><i style="--w:70%"></i></div>
+          </div>
+          <div class="risk stop">
+            <div class="tag">Brake</div>
+            <h3>Cluster brake</h3>
+            <p>Several hard stops inside one window means the market is the problem, not the picks — entries pause for a cool-down.</p>
+            <div class="meter"><i style="--w:55%"></i></div>
+          </div>
+          <div class="risk">
+            <div class="tag">Filter</div>
+            <h3>Regime filter</h3>
+            <p>SOL itself dumping shrinks every new position — or pauses entries entirely. The bot doesn't buy dips in a falling market at full size.</p>
+            <div class="meter"><i style="--w:35%"></i></div>
+          </div>
+          <div class="risk go">
+            <div class="tag">Gate</div>
+            <h3>Paper → live promotion</h3>
+            <p>Live isn't suggested until paper mode strings together seven consecutive profitable days — measured the same way live PnL is.</p>
+            <div class="meter"><i style="--w:85%"></i></div>
+          </div>
+          <div class="risk go">
+            <div class="tag">Lock</div>
+            <h3>Double-locked live mode</h3>
+            <p>Real funds move only when the config file <em>and</em> the environment both say live. One flag is never enough. Paper needs no wallet at all.</p>
+            <div class="meter"><i style="--w:100%"></i></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= SLEEVES ================= -->
+    <section class="section" id="sleeves">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="eyebrow">One scanner · three sleeves</div>
+          <h2>Sized for what it's touching.</h2>
+        </div>
+        <div class="sleeve-grid">
+          <div class="sleeve reveal">
+            <div>
+              <div class="band-lab">$100k – $200k mcap</div>
+              <div class="name">Micro</div>
+            </div>
+            <ul>
+              <li>Half Kelly size, one slot max</li>
+              <li>Stricter score bar and TVL floor</li>
+              <li>5% of wallet cap for the whole sleeve</li>
+            </ul>
+          </div>
+          <div class="sleeve main reveal" style="--d:80ms">
+            <div>
+              <div class="band-lab">$200k+ meme pools</div>
+              <div class="name">Meme</div>
+            </div>
+            <ul>
+              <li>The main strategy — BidAsk below price</li>
+              <li>Kelly sizing with score multipliers</li>
+              <li>Full P0–P5 exit ladder + follow mode</li>
+            </ul>
+          </div>
+          <div class="sleeve reveal" style="--d:160ms">
+            <div>
+              <div class="band-lab">Allowlisted SOL-quoted alts</div>
+              <div class="name">Majors</div>
+            </div>
+            <ul>
+              <li>Spot ranges centered on price</li>
+              <li>Fixed size, TA-gated timing</li>
+              <li>Separate manage rules, never in meme Kelly</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= DASHBOARD / FEATURES ================= -->
     <section class="section" id="features">
       <div class="wrap">
-        <div class="feat-head reveal">
-          <h2>Everything is observable, rule-bound, and reversible.</h2>
-          <p class="muted">Live feed, hard gates, paper mode — halt in one command when you want out.</p>
+        <div class="section-head reveal">
+          <div class="eyebrow">Everything observable</div>
+          <h2>A dashboard that shows its work.</h2>
+          <p>Every entry, skip, exit, and SOL flow — with the reason logged. Nothing the bot does is a mystery.</p>
         </div>
         <div class="feat-grid">
           <article class="feat reveal">
             <h3>Live decision feed</h3>
             <p>Entries, exits, claims, skips, and SOL flows — green in/win, blue deployed, red only for losses.</p>
           </article>
-          <article class="feat reveal">
+          <article class="feat reveal" style="--d:50ms">
             <h3>Token safety gates</h3>
-            <p>Toggle and tune vetting from Settings: age, insiders, holders, RugCheck, more.</p>
+            <p>Toggle and tune vetting from Settings: age, insiders, holders, RugCheck, honeypot checks, more.</p>
           </article>
-          <article class="feat reveal">
-            <h3>Paper first</h3>
-            <p>No wallet required to learn the loop. Live needs env + config — on purpose.</p>
+          <article class="feat reveal" style="--d:100ms">
+            <h3>Built-in Wiki</h3>
+            <p>The full strategy explained inside the dashboard — what every exit means, what every knob does.</p>
           </article>
-          <article class="feat reveal">
-            <h3>Railway or self-host</h3>
-            <p>One-click cloud for most people; PM2 + auto-deploy if you already have a box.</p>
-          </article>
-          <article class="feat reveal">
+          <article class="feat reveal" style="--d:150ms">
             <h3>Encrypted burner wallet</h3>
             <p>Create a keypair or import Phantom in the dash. Encrypted on your volume; unlock when you go live.</p>
           </article>
-          <article class="feat reveal">
-            <h3>Halt anytime</h3>
-            <p><code>npm run halt</code> (or dash controls) freezes new risk. You’re always in charge.</p>
+          <article class="feat reveal" style="--d:200ms">
+            <h3>Railway or self-host</h3>
+            <p>One-click cloud for most people; PM2 + auto-deploy if you already have a box. Same bot either way.</p>
           </article>
-          <article class="feat reveal">
+          <article class="feat reveal" style="--d:250ms">
+            <h3>Halt anytime</h3>
+            <p>One button (or <code>npm run halt</code>) closes everything and idles. You're always in charge.</p>
+          </article>
+          <article class="feat reveal" style="--d:300ms">
             <h3>Shareable settings profiles</h3>
-            <p>Conservative / Balanced / Aggressive presets, local saves, and a community gallery. Share from the dashboard — guide at dlmmbot.com/setup/profiles.</p>
+            <p>Conservative / Balanced / Aggressive presets, local saves, and a community gallery — share from the dashboard.</p>
+          </article>
+          <article class="feat reveal" style="--d:350ms">
+            <h3>Telegram alerts</h3>
+            <p>Safety exits, stops, circuit breaker, watchdog — the calls you'd want at 3am reach your phone.</p>
+          </article>
+          <article class="feat reveal" style="--d:400ms">
+            <h3>Restart-safe</h3>
+            <p>Positions live in SQLite; live mode reconciles against the chain on boot. The chain is always the truth.</p>
           </article>
         </div>
       </div>
     </section>
 
+    <!-- ================= HONESTY ================= -->
+    <section class="honest" id="honest">
+      <div class="eyebrow reveal">Read this part twice</div>
+      <h2 class="reveal">Memecoin LP can lose money. <em>All of it.</em></h2>
+      <p class="reveal">
+        Rules cut losses early and bank fees — they don't make a rug profitable. The bot ships in paper mode,
+        needs no wallet to learn, and won't suggest live until the paper ledger earns it. When you do go live:
+        burner wallet, small size, and watch it.
+      </p>
+      <div class="rules reveal">
+        <span>paper first</span>
+        <span>burner only</span>
+        <span>not financial advice</span>
+        <span>you can lose 100%</span>
+      </div>
+    </section>
+
+    <!-- ================= FEE ================= -->
     <section class="section" id="fee">
       <div class="wrap">
         <div class="fee-block reveal">
-          <h2>Usage fee: 1% of measured profit.</h2>
+          <div class="eyebrow">Usage fee</div>
+          <h2>1% of measured profit. Only when you win. Only live.</h2>
           <p>
-            On each <strong>live</strong> winning close, <strong>1%</strong> of measured wallet PnL buys and burns
+            On each <strong>live</strong> winning close, 1% of measured wallet PnL buys and burns
             <a href="https://solscan.io/token/BaDjVCpABEVCdt4LT7ivuzA4izBwJCqnDjrLa8XBtT38" target="_blank" rel="noreferrer">GNME</a>.
-            Required product fee — not adjustable in Settings. Paper mode does not spend.
+            Required product fee — not adjustable in Settings. Paper mode never spends anything.
           </p>
         </div>
       </div>
     </section>
 
+    <!-- ================= CTA ================= -->
     <section class="band" id="docs">
       <h2 class="reveal">Read the docs. Then deploy paper.</h2>
       <p class="reveal">Easy path on Railway. Advanced path for local / VPS / PM2. Same bot either way.</p>
@@ -201,11 +453,15 @@
 
   <footer class="site-footer">
     <div class="wrap footer-row">
-      <a class="brand" href="./">dlmm<span>bot</span></a>
+      <a class="brand" href="./">
+        <svg width="16" height="16" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="6" fill="#141414"/><path d="M6 24h4v-6H6zM13 24h4V12h-4zM20 24h4V6h-4z" fill="#00FF85"/></svg>
+        dlmm<span>bot</span>
+      </a>
       <div class="footer-links">
         <a href="setup/">Docs</a>
         <a href="setup/easy">Easy setup</a>
         <a href="setup/advanced">Advanced</a>
+        <a href="setup/profiles">Profiles</a>
         <a href="https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md">Strategy</a>
         <a href="https://railway.com?referralCode=SCj9lN" target="_blank" rel="noreferrer">Railway</a>
         <a href="https://github.com/CryptoGnome/dlmmbot">GitHub</a>
@@ -214,7 +470,7 @@
     <div class="wrap footer-note">
       Usage fee: 1% of measured net profit on live winning closes buys+burns GNME (required; not Settings-tunable).
       Memecoin LP can wipe a wallet. Not financial advice. Paper first. Burner only.
-      You can lose 100% of funds under this bot’s control.
+      You can lose 100% of funds under this bot's control.
     </div>
   </footer>
 
