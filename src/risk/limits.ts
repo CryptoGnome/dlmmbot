@@ -140,6 +140,29 @@ export function kellyStats(): KellyStats {
   };
 }
 
+/** Kelly-mode base for one sleeve before score tilt and wallet caps. */
+export function kellySleeveBase(
+  sleeve: FixedSleeve,
+  deployableSol: number,
+  kellyBase: number,
+): number {
+  const s = config().sizing;
+  const unit = s[`kelly_${sleeve}_unit`];
+  if (unit === "sol") return s[`kelly_${sleeve}_sol`];
+  if (unit === "pct") return deployableSol * (s[`kelly_${sleeve}_pct`] / 100);
+  return kellyBase * (s[`kelly_${sleeve}_mult`] ?? 1);
+}
+
+function kellyWalletBase(bankroll: Bankroll): number {
+  const s = config().sizing;
+  if (!s.kelly_enabled) {
+    return (bankroll.deployableSol + bankroll.deployedSol) / bankroll.effectiveSlots;
+  }
+  const k = kellyStats();
+  if (k.regime === "negative_edge" && s.kelly_block_negative) return 0;
+  return Math.max(bankroll.walletSol * k.appliedFraction, s.min_position_sol);
+}
+
 /** Position size for meme core or micro; 0 = don't enter. */
 export function positionSize(
   bankroll: Bankroll,
@@ -155,25 +178,16 @@ export function positionSize(
     return fixedSleeveSize(sleeve, bankroll.deployableSol, bankroll.walletSol);
   }
 
-  let base: number;
-  if (s.kelly_enabled) {
-    const k = kellyStats();
-    if (k.regime === "negative_edge" && s.kelly_block_negative) return 0;
-    base = bankroll.walletSol * k.appliedFraction;
-    // Small-bankroll floor: below min_position_sol fees can't beat tx+rent
-    // overhead, so the floor wins over strict Kelly (logged via decisions).
-    base = Math.max(base, s.min_position_sol);
-  } else {
-    // Legacy kelly_enabled=false without mode=fixed: equal-slot split.
-    base = (bankroll.deployableSol + bankroll.deployedSol) / bankroll.effectiveSlots;
-  }
+  const kellyBase = kellyWalletBase(bankroll);
+  if (kellyBase <= 0) return 0;
+  const base = kellySleeveBase(sleeve, bankroll.deployableSol, kellyBase);
 
   const size = Math.min(
     base * mult,
     bankroll.walletSol * s.kelly_max_position_frac >= s.min_position_sol
       ? bankroll.walletSol * s.kelly_max_position_frac
       : s.min_position_sol,
-    bankroll.deployableSol
+    bankroll.deployableSol,
   );
   return size >= s.min_position_sol ? size : 0;
 }

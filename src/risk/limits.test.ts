@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   regimeFactor, clusterBrakeTripped, circuitBreakerTripped, kellyStats, positionSize, computeBankroll,
-  fixedSleeveSize, sizingMode,
+  fixedSleeveSize, kellySleeveBase, sizingMode,
 } from "./limits.js";
 import { installConfig, restoreConfig } from "../test/config.js";
 import { useMemoryDb, resetTestDb, insertClosedPosition } from "../test/db.js";
@@ -233,6 +233,57 @@ describe("kellyStats + positionSize", () => {
     const br = computeBankroll(20);
     expect(positionSize(br, 50)).toBe(0); // below score floor
     expect(positionSize(br, 75)).toBeGreaterThan(0);
+  });
+});
+
+describe("kelly per-sleeve sizing", () => {
+  beforeEach(() => {
+    useMemoryDb();
+    installConfig((c) => {
+      c.sizing.mode = "kelly";
+      c.sizing.kelly_enabled = true;
+      c.sizing.kelly_min_samples = 5;
+      c.sizing.kelly_cold_start_frac = 0.05;
+      c.sizing.kelly_max_position_frac = 0.5;
+      c.sizing.kelly_block_negative = false;
+      c.sizing.min_position_sol = 0.15;
+      c.sizing.max_positions = 5;
+      c.sizing.score_mult_mid = 1;
+      c.sizing.reserve_sol = 0;
+      c.sizing.reserve_pct = 0;
+      c.sizing.kelly_core_unit = "kelly";
+      c.sizing.kelly_core_mult = 1;
+      c.sizing.kelly_majors_unit = "sol";
+      c.sizing.kelly_majors_sol = 1;
+      c.majors.max_position_sol = 3;
+    });
+  });
+  afterEach(() => {
+    resetTestDb();
+    restoreConfig();
+  });
+
+  it("scales adaptive core by kelly_core_mult", () => {
+    const br = computeBankroll(20);
+    const base = kellySleeveBase("core", br.deployableSol, 1);
+    expect(base).toBeCloseTo(1);
+    installConfig((c) => { c.sizing.kelly_core_mult = 2; });
+    expect(kellySleeveBase("core", br.deployableSol, 1)).toBeCloseTo(2);
+    expect(positionSize(br, 75)).toBeCloseTo(2);
+  });
+
+  it("uses explicit SOL when kelly_core_unit=sol", () => {
+    installConfig((c) => {
+      c.sizing.kelly_core_unit = "sol";
+      c.sizing.kelly_core_sol = 0.8;
+    });
+    const br = computeBankroll(20);
+    expect(positionSize(br, 75)).toBeCloseTo(0.8);
+  });
+
+  it("majors uses kelly_majors_sol in kelly mode", () => {
+    const br = computeBankroll(20);
+    expect(majorsPositionSize(br.deployableSol, br.walletSol)).toBeCloseTo(1);
   });
 });
 

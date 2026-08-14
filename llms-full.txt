@@ -57,7 +57,7 @@ On first login when setup is incomplete, a setup wizard walks through:
 
 - RPC_URL — suggested provider: Helius (https://www.helius.dev/). Sign up at dashboard.helius.dev, create a project, copy mainnet HTTPS URL (https://mainnet.helius-rpc.com/?api-key=…).
 - JUPITER_API_KEY — Jupiter Developer Portal (https://developers.jup.ag/portal): sign in → team → API Keys → Create → copy once. Free tier OK. Setup: https://developers.jup.ag/docs/portal/setup
-- GMGN_API_KEY (optional) — https://gmgn.ai/ai: generate Ed25519 public key, upload, copy API key. Query-only; no private key in bot. Farmer serializes CLI calls (~1 req/s, weight-aware) and cools down on 429 until reset. Guide: https://dlmmbot.com/setup/api-keys
+- GMGN_API_KEY (optional) — https://gmgn.ai/ai: generate Ed25519 public key, upload, copy API key. Query-only; no private key in bot. Farmer serializes CLI calls (~1 req/s, weight-aware), parks ~5m on 429; one key per running bot. Guide: https://dlmmbot.com/setup/api-keys
 
 ## Runtime data
 

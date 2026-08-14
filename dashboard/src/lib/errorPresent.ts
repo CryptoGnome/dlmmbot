@@ -46,6 +46,13 @@ function classifyLegacy(e: ErrorLogEntry): ErrorPresentation {
       kind: e.level === "error" ? "incident" : "degraded",
     };
   }
+  if (e.source === "gmgn" && e.code === "rate_limit") {
+    return {
+      label: "GMGN rate limited",
+      kind: "degraded",
+      hint: "Trending/vetting paused — Meteora scan continues.",
+    };
+  }
   if (isTimeout(msg) && (stack.includes("meteora") || e.source === "scanner" || e.code === "sweep_failed")) {
     return {
       label: "Pool scan timed out",

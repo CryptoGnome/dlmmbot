@@ -155,10 +155,11 @@ export function buildHistorySnapshot(root, range = "30d") {
        FROM decisions
        WHERE action='skipped' AND ts >= ? AND failed_gate IS NOT NULL
          AND failed_gate NOT LIKE '%open_failed%'
+         AND COALESCE(json_extract(features_json, '$.mode'), 'paper') = ?
        GROUP BY failed_gate
        ORDER BY n DESC
        LIMIT 8`
-    ).all(since);
+    ).all(since, bookMode);
 
     const topGates = skipTop.map((r) => r.g);
     let skipSeries = [];
@@ -168,9 +169,10 @@ export function buildHistorySnapshot(root, range = "30d") {
         `SELECT date(ts,'unixepoch') AS day, failed_gate AS g, COUNT(*) AS n
          FROM decisions
          WHERE action='skipped' AND ts >= ? AND failed_gate IN (${placeholders})
+           AND COALESCE(json_extract(features_json, '$.mode'), 'paper') = ?
          GROUP BY day, failed_gate
          ORDER BY day ASC`
-      ).all(since, ...topGates);
+      ).all(since, ...topGates, bookMode);
 
       const byDay = {};
       for (const r of skipRows) {
@@ -190,9 +192,10 @@ export function buildHistorySnapshot(root, range = "30d") {
               SUM(CASE WHEN IFNULL(failed_gate,'') LIKE '%open_failed%' THEN 1 ELSE 0 END) AS open_failed
        FROM decisions
        WHERE ts >= ?
+         AND COALESCE(json_extract(features_json, '$.mode'), 'paper') = ?
        GROUP BY day
        ORDER BY day ASC`
-    ).all(since);
+    ).all(since, bookMode);
 
     // --- Analytics aggregates (range-scoped closes + decisions) ---
     const closeRows = db.prepare(
@@ -388,8 +391,10 @@ export function buildHistorySnapshot(root, range = "30d") {
          SUM(CASE WHEN action='entered' THEN 1 ELSE 0 END) AS entered,
          SUM(CASE WHEN action='skipped' AND IFNULL(failed_gate,'') NOT LIKE '%open_failed%' THEN 1 ELSE 0 END) AS skipped,
          SUM(CASE WHEN IFNULL(failed_gate,'') LIKE '%open_failed%' THEN 1 ELSE 0 END) AS open_failed
-       FROM decisions WHERE ts >= ?`
-    ).get(since);
+       FROM decisions
+       WHERE ts >= ?
+         AND COALESCE(json_extract(features_json, '$.mode'), 'paper') = ?`
+    ).get(since, bookMode);
     const skipN = Number(funnelCounts?.skipped) || 0;
     const skip_share = skipTop
       .filter((s) => !String(s.g).includes("open_failed"))
@@ -400,8 +405,9 @@ export function buildHistorySnapshot(root, range = "30d") {
       }));
     const failRows = db.prepare(
       `SELECT features_json FROM decisions
-       WHERE IFNULL(failed_gate,'') LIKE '%open_failed%' AND ts >= ?`
-    ).all(since);
+       WHERE IFNULL(failed_gate,'') LIKE '%open_failed%' AND ts >= ?
+         AND COALESCE(json_extract(features_json, '$.mode'), 'paper') = ?`
+    ).all(since, bookMode);
     const failCodes = {};
     for (const r of failRows) {
       let code = "unknown";
@@ -417,8 +423,10 @@ export function buildHistorySnapshot(root, range = "30d") {
       .sort((a, b) => b.n - a.n)
       .slice(0, 8);
     const scoreRows = db.prepare(
-      `SELECT score FROM decisions WHERE action='entered' AND ts >= ? AND score IS NOT NULL`
-    ).all(since).map((r) => Number(r.score)).filter((n) => Number.isFinite(n)).sort((a, b) => a - b);
+      `SELECT score FROM decisions
+       WHERE action='entered' AND ts >= ? AND score IS NOT NULL
+         AND COALESCE(json_extract(features_json, '$.mode'), 'paper') = ?`
+    ).all(since, bookMode).map((r) => Number(r.score)).filter((n) => Number.isFinite(n)).sort((a, b) => a - b);
     function pctile(arr, p) {
       if (!arr.length) return null;
       const i = Math.min(arr.length - 1, Math.max(0, Math.floor((arr.length - 1) * p)));

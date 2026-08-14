@@ -20,6 +20,9 @@ export interface LiveWatch {
     version?: string;
     branch?: string;
     head: string | null;
+    /** railway | vercel | git | env | … — where the SHA came from */
+    head_source?: string;
+    head_source_label?: string;
     message: string | null;
     describe?: string | null;
     dirty?: boolean;

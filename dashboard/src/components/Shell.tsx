@@ -56,10 +56,12 @@ function BuildPill({ build, onOpenChanges }: {
         : sync === "behind" && build.needs_approval ? "APPROVE"
           : sync === "behind" ? "BEHIND"
             : sync === "ahead" ? "AHEAD"
-              : sync === "diverged" ? "DIVERGED" : "GIT?";
+              : sync === "diverged" ? "DIVERGED"
+                : (build.describe || build.head) ? "…" : "GIT?";
   const branch = build.branch || "main";
   const tip = [
     `v${build.version ?? "?"} · ${branch}`,
+    build.head_source_label ? `sha from ${build.head_source_label}` : null,
     build.message ? `"${build.message}"` : null,
     `disk ${build.describe ?? build.head ?? "—"}`,
     build.running && build.running !== build.describe ? `running ${build.running}` : null,

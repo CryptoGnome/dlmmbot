@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { hostname } from "node:os";
 import { resolve } from "node:path";
 import { resolveBuildLabel } from "../buildLabel.js";
+import { currentMode } from "../config.js";
 import { presentError } from "../errors/present.js";
 
 // Schema per STRATEGY.md §7. On-chain state is the source of truth for live
@@ -434,7 +435,8 @@ export function recordDecision(
   score: number | null,
   features: unknown
 ): void {
-  let payload: unknown = features;
+  const mode = currentMode();
+  let payload: Record<string, unknown>;
   if (features && typeof features === "object" && !Array.isArray(features)) {
     const f = features as Record<string, unknown>;
     const cand = f.cand && typeof f.cand === "object" ? f.cand as Record<string, unknown> : null;
@@ -444,7 +446,13 @@ export function recordDecision(
       (typeof cand?.symbol === "string" && cand.symbol) ||
       (typeof poolObj?.symbol === "string" && poolObj.symbol) ||
       null;
-    payload = symbol && f.symbol !== symbol ? { ...f, symbol } : f;
+    payload = {
+      ...f,
+      ...(symbol && f.symbol !== symbol ? { symbol } : {}),
+      mode: typeof f.mode === "string" ? f.mode : mode,
+    };
+  } else {
+    payload = { mode, value: features };
   }
   getDb()
     .prepare(

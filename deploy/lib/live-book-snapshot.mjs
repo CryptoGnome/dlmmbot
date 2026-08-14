@@ -17,10 +17,21 @@ import {
 import { readHaltState } from "./halt.mjs";
 import { readPauseState } from "./pause.mjs";
 import { readWalletMeta } from "./wallet-crypto.mjs";
+import {
+  envCommitMessage,
+  headSourceLabel,
+  resolveDeployBranch,
+  resolveHeadSha,
+  safeBranch,
+  shasMatch,
+  shortSha,
+  syncFromShas,
+} from "./git-source.mjs";
+
+// Re-export for tests / external callers
+export { envCommitSha, safeBranch, shortSha, shasMatch, syncFromShas } from "./git-source.mjs";
 
 const require = createRequire(import.meta.url);
-
-/** Solana pubkeys are base58, 32–44 chars. Reject anything else before use. */
 const BASE58_PUBKEY_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 /** First env var whose value is a well-formed base58 pubkey (defense in depth —
@@ -137,10 +148,10 @@ function gitOk(root, args) {
   }
 }
 
-/** Branch names come from env — restrict to sane git ref characters (and never a leading "-"). */
-export function safeBranch(raw) {
-  const b = (raw ?? "").trim();
-  return /^[A-Za-z0-9][\w./-]*$/.test(b) ? b : "main";
+function parseGithubRepo(repoUrl) {
+  const m = /github\.com[/:]([^/]+)\/([^/#?\s]+)/i.exec(repoUrl || "");
+  if (!m) return null;
+  return { owner: m[1], repo: m[2].replace(/\.git$/i, "") };
 }
 
 /** Throttle GitHub fetches so the 3s watch loop does not hammer origin. */
@@ -148,36 +159,80 @@ let lastOriginFetchAt = 0;
 let lastOriginFetchOk = false;
 const ORIGIN_FETCH_MS = Number(process.env.DASH_GIT_POLL_MS || 30_000);
 
+/** Stale-while-revalidate tip of origin/$branch via GitHub API (no local git). */
+let githubTip = { at: 0, branch: null, sha: null, message: null, pending: null };
+
+function scheduleGithubTip(repoUrl, branch) {
+  const now = Date.now();
+  if (githubTip.pending) return;
+  if (githubTip.branch === branch && now - githubTip.at < ORIGIN_FETCH_MS) return;
+  const parsed = parseGithubRepo(repoUrl);
+  if (!parsed) return;
+  githubTip.pending = (async () => {
+    try {
+      const res = await fetch(
+        `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/commits/${encodeURIComponent(branch)}`,
+        {
+          headers: {
+            accept: "application/vnd.github+json",
+            "user-agent": "dlmmbot-dashboard",
+          },
+          signal: AbortSignal.timeout(5_000),
+        },
+      );
+      if (!res.ok) throw new Error(`github ${res.status}`);
+      const j = await res.json();
+      const sha = typeof j.sha === "string" ? j.sha : null;
+      const message = typeof j.commit?.message === "string"
+        ? j.commit.message.split("\n")[0].slice(0, 120)
+        : null;
+      githubTip = { at: Date.now(), branch, sha, message, pending: null };
+      lastOriginFetchOk = !!sha;
+      lastOriginFetchAt = githubTip.at;
+    } catch {
+      githubTip = { ...githubTip, at: Date.now(), pending: null };
+      lastOriginFetchOk = false;
+      lastOriginFetchAt = Date.now();
+    }
+  })();
+}
+
 /**
  * Local checkout vs origin/$BRANCH (after a throttled fetch).
+ * PaaS: platform env SHA + GitHub API tip. VPS PM2: local git + origin fetch.
  * sync: current | behind | ahead | diverged | unknown
  */
 function buildGitInfo(root) {
-  const branch = safeBranch(process.env.DEPLOY_BRANCH);
+  const branch = resolveDeployBranch();
+  const headRes = resolveHeadSha(root, git);
+  const headSource = headRes.source;
+  const trustLocalGit = headSource === "git";
+
   const nowMs = Date.now();
-  if (nowMs - lastOriginFetchAt >= ORIGIN_FETCH_MS) {
+  if (trustLocalGit && nowMs - lastOriginFetchAt >= ORIGIN_FETCH_MS) {
     lastOriginFetchAt = nowMs;
     lastOriginFetchOk = gitOk(root, ["fetch", "origin", branch, "--quiet"]);
   }
 
-  const headFull = git(root, ["rev-parse", "HEAD"]);
-  const head = git(root, ["rev-parse", "--short", "HEAD"]);
-  const message = git(root, ["log", "-1", "--pretty=%s"]);
-  const describe = git(root, ["describe", "--always", "--dirty"]) || head;
-  // Ignore untracked clutter from SCP/deploy — only tracked diffs are "dirty".
-  const dirty = !!(git(root, ["status", "--porcelain", "--untracked-files=no"]));
-  const originFull = git(root, ["rev-parse", `refs/remotes/origin/${branch}`]);
-  const origin = originFull
-    ? (git(root, ["rev-parse", "--short", `refs/remotes/origin/${branch}`]) || originFull.slice(0, 7))
+  let headFull = headRes.sha;
+  let head = headRes.short;
+  let message = trustLocalGit
+    ? git(root, ["log", "-1", "--pretty=%s"])
     : null;
+  message ||= envCommitMessage();
+  let describe = trustLocalGit
+    ? (git(root, ["describe", "--always", "--dirty"]) || head)
+    : head;
+  const dirty = trustLocalGit
+    ? !!(git(root, ["status", "--porcelain", "--untracked-files=no"]))
+    : false;
 
-  let sync = "unknown";
-  if (headFull && originFull) {
-    if (headFull === originFull) sync = "current";
-    else if (gitOk(root, ["merge-base", "--is-ancestor", headFull, originFull])) sync = "behind";
-    else if (gitOk(root, ["merge-base", "--is-ancestor", originFull, headFull])) sync = "ahead";
-    else sync = "diverged";
-  }
+  let originFull = trustLocalGit
+    ? git(root, ["rev-parse", `refs/remotes/origin/${branch}`])
+    : null;
+  let origin = originFull
+    ? (git(root, ["rev-parse", "--short", `refs/remotes/origin/${branch}`]) || shortSha(originFull))
+    : null;
 
   let version = "0.0.0";
   let repoUrl = "https://github.com/CryptoGnome/dlmmbot";
@@ -189,6 +244,27 @@ function buildGitInfo(root) {
       repoUrl = raw.replace(/^git\+/, "").replace(/\.git$/, "").replace(/^git@github\.com:/, "https://github.com/");
     }
   } catch { /* */ }
+
+  // No local origin ref (PaaS / no git) — poll GitHub for the branch tip.
+  if (!originFull) {
+    scheduleGithubTip(repoUrl, branch);
+    if (githubTip.branch === branch && githubTip.sha) {
+      originFull = githubTip.sha;
+      origin = shortSha(originFull);
+      if (!message && githubTip.message && shasMatch(headFull, originFull)) {
+        message = githubTip.message;
+      }
+    }
+  }
+
+  let sync = "unknown";
+  if (headFull && originFull) {
+    if (shasMatch(headFull, originFull)) sync = "current";
+    else if (trustLocalGit && gitOk(root, ["merge-base", "--is-ancestor", headFull, originFull])) sync = "behind";
+    else if (trustLocalGit && gitOk(root, ["merge-base", "--is-ancestor", originFull, headFull])) sync = "ahead";
+    else if (!trustLocalGit) sync = syncFromShas(headFull, originFull);
+    else sync = "diverged";
+  }
 
   const releaseUrl = `${repoUrl}/releases`;
   const commitsUrl = `${repoUrl}/commits/${branch}`;
@@ -231,10 +307,12 @@ function buildGitInfo(root) {
     return order.filter((t) => tags.has(t));
   }
 
-  const recent = parseLog(git(root, ["log", "-20", "--pretty=format:%h%x09%ct%x09%s"]));
+  const recent = trustLocalGit
+    ? parseLog(git(root, ["log", "-20", "--pretty=format:%h%x09%ct%x09%s"]))
+    : [];
   let pending = [];
   let behindCount = 0;
-  if (sync === "behind" && originFull) {
+  if (sync === "behind" && originFull && trustLocalGit) {
     behindCount = Number(git(root, ["rev-list", "--count", `HEAD..${originFull}`])) || 0;
     pending = parseLog(git(root, ["log", `HEAD..${originFull}`, "-20", "--pretty=format:%h%x09%ct%x09%s"]))
       .map((c) => ({ ...c, risk: riskTagsForSha(c.sha) }));
@@ -250,6 +328,8 @@ function buildGitInfo(root) {
     version,
     branch,
     head,
+    head_source: headSource,
+    head_source_label: headSourceLabel(headSource),
     message,
     describe,
     dirty,
@@ -658,8 +738,9 @@ export function buildLiveBookSnapshot(root) {
       `SELECT datetime(ts,'unixepoch') at, mint, substr(features_json,1,400) feat
        FROM decisions
        WHERE failed_gate='open_failed' AND ts > ?
+         AND COALESCE(json_extract(features_json, '$.mode'), 'paper') = ?
        ORDER BY ts DESC LIMIT 20`
-    ).all(fixTs);
+    ).all(fixTs, bookMode);
 
     function parseOpenFail(feat) {
       try {
@@ -744,6 +825,9 @@ export function buildLiveBookSnapshot(root) {
       }
     }
 
+    /** Untagged legacy decisions were paper-era; live only shows stamped live rows. */
+    const DECISION_MODE = `COALESCE(json_extract(d.features_json, '$.mode'), 'paper')`;
+
     const recentPasses = db.prepare(
       `SELECT datetime(d.ts,'unixepoch') at, d.mint, d.pool, ROUND(d.score,1) score,
               COALESCE(NULLIF(t.symbol,''), NULLIF(
@@ -758,9 +842,17 @@ export function buildLiveBookSnapshot(root) {
        FROM decisions d
        LEFT JOIN tokens t ON t.mint = d.mint
        WHERE d.action='entered' AND d.ts > ?
+         AND (
+           ${DECISION_MODE} = ?
+           OR EXISTS (
+             SELECT 1 FROM positions p
+             WHERE p.token_mint = d.mint AND p.mode = ?
+               AND p.entry_ts BETWEEN d.ts - 30 AND d.ts + 600
+           )
+         )
        ORDER BY d.ts DESC
        LIMIT 12`
-    ).all(weekAgo).map((r) => {
+    ).all(weekAgo, bookMode, bookMode).map((r) => {
       const name = r.pool_name ? String(r.pool_name).split("-")[0] : null;
       const size = typeof r.size === "number" ? Math.round(r.size * 1e4) / 1e4 : null;
       const baseScore = typeof r.base_score === "number" ? Math.round(r.base_score * 10) / 10 : null;
@@ -821,13 +913,16 @@ export function buildLiveBookSnapshot(root) {
               ) AS tx_sig
        FROM decisions d LEFT JOIN tokens t ON t.mint=d.mint
        WHERE d.action='entered' AND d.ts > ?
-         AND EXISTS (
-           SELECT 1 FROM positions p
-           WHERE p.token_mint = d.mint AND p.mode = ?
-             AND p.entry_ts BETWEEN d.ts - 30 AND d.ts + 600
+         AND (
+           ${DECISION_MODE} = ?
+           OR EXISTS (
+             SELECT 1 FROM positions p
+             WHERE p.token_mint = d.mint AND p.mode = ?
+               AND p.entry_ts BETWEEN d.ts - 30 AND d.ts + 600
+           )
          )
        ORDER BY d.ts DESC LIMIT 40`
-    ).all(activitySince, bookMode)) {
+    ).all(activitySince, bookMode, bookMode)) {
       const sym = r.symbol || (r.pool_name ? String(r.pool_name).split("-")[0] : null) || (r.mint ? String(r.mint).slice(0, 6) : "?");
       activity.push({
         ts: r.ts, at: r.at, kind: "entry",
@@ -885,12 +980,13 @@ export function buildLiveBookSnapshot(root) {
               ) symbol
        FROM decisions d LEFT JOIN tokens t ON t.mint=d.mint
        WHERE d.action='skipped' AND d.ts > ?
+         AND ${DECISION_MODE} = ?
          AND (
            d.failed_gate IN (${[...INTERESTING_SKIP].map(() => "?").join(",")})
            OR (d.score IS NOT NULL AND d.score >= 85)
          )
        ORDER BY d.ts DESC LIMIT 120`
-    ).all(activitySince, ...INTERESTING_SKIP)) {
+    ).all(activitySince, bookMode, ...INTERESTING_SKIP)) {
       const sym = r.symbol || (r.pool_name ? String(r.pool_name).split("-")[0] : null) || (r.mint ? String(r.mint).slice(0, 6) : "?");
       const isFail = /open_failed/.test(r.gate || "");
       activity.push({
@@ -906,11 +1002,12 @@ export function buildLiveBookSnapshot(root) {
       `SELECT e.ts, datetime(e.ts,'unixepoch') at, e.type, e.position_id, e.detail_json, e.tx_sig,
               ROUND(e.sol_delta,4) sol_delta, p.symbol, p.token_mint AS mint, p.pool
        FROM events e
-       LEFT JOIN positions p ON p.id = e.position_id
+       JOIN positions p ON p.id = e.position_id
        WHERE e.ts > ?
+         AND p.mode = ?
          AND e.type IN ('claim','profit_lock','rebalance','rebalance_partial','rent_reclaim','force_close')
        ORDER BY e.ts DESC LIMIT 30`
-    ).all(activitySince)) {
+    ).all(activitySince, bookMode)) {
       let symbol = r.symbol || null;
       let mint = r.mint || null;
       let detailExtra = null;
@@ -1001,8 +1098,9 @@ export function buildLiveBookSnapshot(root) {
         `SELECT failed_gate g, COUNT(*) n
          FROM decisions
          WHERE action='skipped' AND failed_gate IN (${gates}) AND score >= ? AND ts > ?
+           AND COALESCE(json_extract(features_json, '$.mode'), 'paper') = ?
          GROUP BY failed_gate ORDER BY n DESC`
-      ).all(...BIN_RENT_GATES, BIN_RENT_SCORE_MIN, since);
+      ).all(...BIN_RENT_GATES, BIN_RENT_SCORE_MIN, since, bookMode);
       const n = byGate.reduce((s, r) => s + r.n, 0);
       const recent = db.prepare(
         `SELECT datetime(d.ts,'unixepoch') at, d.mint, d.pool, d.failed_gate g, ROUND(d.score,1) score,
@@ -1013,8 +1111,9 @@ export function buildLiveBookSnapshot(root) {
          FROM decisions d
          LEFT JOIN tokens t ON t.mint = d.mint
          WHERE d.action='skipped' AND d.failed_gate IN (${gates}) AND d.score >= ? AND d.ts > ?
+           AND ${DECISION_MODE} = ?
          ORDER BY d.ts DESC LIMIT 8`
-      ).all(...BIN_RENT_GATES, BIN_RENT_SCORE_MIN, since);
+      ).all(...BIN_RENT_GATES, BIN_RENT_SCORE_MIN, since, bookMode);
       const best = db.prepare(
         `SELECT datetime(d.ts,'unixepoch') at, d.mint, d.pool, d.failed_gate g, ROUND(d.score,1) score,
                 COALESCE(NULLIF(t.symbol,''), NULLIF(
@@ -1024,8 +1123,9 @@ export function buildLiveBookSnapshot(root) {
          FROM decisions d
          LEFT JOIN tokens t ON t.mint = d.mint
          WHERE d.action='skipped' AND d.failed_gate IN (${gates}) AND d.score >= ? AND d.ts > ?
+           AND ${DECISION_MODE} = ?
          ORDER BY d.score DESC LIMIT 1`
-      ).get(...BIN_RENT_GATES, BIN_RENT_SCORE_MIN, since);
+      ).get(...BIN_RENT_GATES, BIN_RENT_SCORE_MIN, since, bookMode);
       const mapRow = (r) => {
         if (!r) return null;
         const feat = parseBinRentNearMiss(r.feat);
@@ -1127,6 +1227,8 @@ export function buildLiveBookSnapshot(root) {
         version: gitInfo.version,
         branch: gitInfo.branch,
         head: gitInfo.head,
+        head_source: gitInfo.head_source,
+        head_source_label: gitInfo.head_source_label,
         message: gitInfo.message,
         describe: gitInfo.describe,
         dirty: gitInfo.dirty,

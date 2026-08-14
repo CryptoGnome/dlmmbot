@@ -1,5 +1,5 @@
 import { config, env } from "../config.js";
-import { gmgnCli } from "./gmgn.js";
+import { gmgnCli, gmgnIsBanned } from "./gmgn.js";
 
 // Smart-money / KOL flow collector (practitioner research adoption, phase 2).
 // GMGN's track feeds are GLOBAL recent-trade streams (~100 trades / 2 min), so
@@ -29,6 +29,7 @@ function parseList(raw: string): Array<Record<string, unknown>> {
 }
 
 async function pollOnce(): Promise<void> {
+  if (gmgnIsBanned()) return;
   for (const feed of ["smartmoney", "kol"] as const) {
     try {
       const raw = await gmgnCli(["track", feed, "--chain", "sol", "--limit", "200", "--raw"]);
