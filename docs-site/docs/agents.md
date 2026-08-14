@@ -58,11 +58,12 @@ Live mode is **out of scope** unless they explicitly ask — and then both `FARM
 
 Canonical steps: [Easy setup](./easy). Summary:
 
-1. **Railway** — [railway.com?referralCode=SCj9lN](https://railway.com?referralCode=SCj9lN) → New Project → Deploy from GitHub → `CryptoGnome/dlmmbot` (or their fork). One service. Build/start come from `railway.toml`.
-2. **Volume** — mount `/app/data`. Redeploy once after attaching.
-3. **Domain** — Networking → Generate domain.
-4. **Dash token** — set a strong `DASH_TOKEN` Railway variable (≥24 random chars; `node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"`). Open `https://<domain>/?token=…`. Do not copy tokens from deploy logs (only a prefix is printed).
-5. **Wizard** — human accepts Terms, pastes RPC + Jupiter (+ optional GMGN), creates/imports an encrypted **burner**, stays on **paper**.
+1. **Fork** — human forks [CryptoGnome/dlmmbot](https://github.com/CryptoGnome/dlmmbot) (Railway only deploys repos they can access).
+2. **Railway** — [railway.com?referralCode=SCj9lN](https://railway.com?referralCode=SCj9lN) → New Project → Deploy from GitHub → **their fork**. One service. Build/start come from `railway.toml`.
+3. **Volume** — mount `/app/data`. Redeploy once after attaching.
+4. **Domain** — Networking → Generate domain.
+5. **Dash token** — set a strong `DASH_TOKEN` Railway variable (≥24 random chars; `node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"`). Open `https://<domain>/?token=…`. Do not copy tokens from deploy logs (only a prefix is printed).
+6. **Wizard** — human accepts Terms, pastes RPC + Jupiter (+ optional GMGN), creates/imports an encrypted **burner**, stays on **paper**.
 
 ### Secrets the human must create
 

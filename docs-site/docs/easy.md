@@ -15,9 +15,14 @@ One service. Attach a volume, open the URL, finish secrets in the dashboard.
 
 ## Deploy
 
-### 1. New project from GitHub
+### 1. Fork, then deploy from GitHub
 
-Railway → **New Project → Deploy from GitHub** → `CryptoGnome/dlmmbot` (or your fork). One service is enough — start/build come from `railway.toml`.
+Railway only deploys GitHub repos **you can access**. You are not a collaborator on ours, so:
+
+1. On GitHub: open [CryptoGnome/dlmmbot](https://github.com/CryptoGnome/dlmmbot) → **Fork** (your account / org).
+2. Railway → **New Project → Deploy from GitHub** → pick **your fork** (`you/dlmmbot`). One service is enough — start/build come from `railway.toml`.
+
+Connect the Railway GitHub App to that fork if prompted. Later updates: merge/rebase upstream `main` into your fork (or sync fork in GitHub), and Railway will redeploy.
 
 Boot defaults: paper mode, public `PORT`, volume-backed `config.toml` / `.env`.
 

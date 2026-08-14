@@ -15,7 +15,7 @@ When a human asks you to install DLMM Bot:
 
 1. Read https://dlmmbot.com/llms.txt then this file.
 2. Prefer Railway easy path unless they ask for VPS/local.
-3. Deploy GitHub repo `CryptoGnome/dlmmbot` (or their fork) as one Railway service.
+3. Fork `CryptoGnome/dlmmbot`, then deploy **their fork** as one Railway service (Railway only lists repos they can access).
 4. Attach volume at `/app/data`, generate a public domain, set a strong `DASH_TOKEN` Railway variable (≥24 random chars), open dashboard with `?token=…`.
 5. Guide the human through the wizard: accept Terms, paste Helius RPC + Jupiter key, create/import burner, stay paper.
 6. Do not commit secrets, do not use a main wallet, do not enable live unless they explicitly request it (needs both env + config live switches).
@@ -39,7 +39,7 @@ Operators who want paper trading first, then a burner wallet for live. Not custo
 
 ## Deploy paths
 
-1. Easy — Railway: deploy the repo template/service, attach a persistent volume at `/app/data`, generate a public domain, set `DASH_TOKEN` as a Railway variable (≥24 random chars), open `?token=…`. `railway.toml` builds the dashboard and runs farmer + dash together. Default mode is paper.
+1. Easy — Railway: fork the GitHub repo, deploy the fork, attach a persistent volume at `/app/data`, generate a public domain, set `DASH_TOKEN` as a Railway variable (≥24 random chars), open `?token=…`. `railway.toml` builds the dashboard and runs farmer + dash together. Default mode is paper.
 2. Advanced — local, VPS, or PM2: see https://dlmmbot.com/setup/advanced
 
 ## First-run dashboard

@@ -18,7 +18,7 @@ GMGN API key: https://gmgn.ai/ai (optional — see docs/setup/api-keys)
 
 1. Read this file, then https://dlmmbot.com/llms-full.txt
 2. Follow https://dlmmbot.com/setup/agents (preferred) and https://dlmmbot.com/setup/easy
-3. Deploy `CryptoGnome/dlmmbot` on Railway → volume `/app/data` → generate domain → open dashboard with `DASH_TOKEN`
+3. Fork `CryptoGnome/dlmmbot` → deploy **the fork** on Railway → volume `/app/data` → generate domain → open dashboard with `DASH_TOKEN`
 4. Human accepts Terms in wizard; paste Helius `RPC_URL` + Jupiter key; create burner; stay paper unless they explicitly ask for live
 5. Never commit secrets; never use a main wallet; live needs both `FARMER_MODE=live` and `[exec].mode = "live"`
 
