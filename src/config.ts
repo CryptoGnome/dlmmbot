@@ -174,11 +174,14 @@ export interface Env {
 const CONFIG_PATH = resolve(process.env.FARMER_CONFIG_PATH!);
 
 // Minimal .env loader (no dependency): KEY=VALUE lines, # comments,
-// existing process.env always wins. Volume path (FARMER_ENV_PATH) wins last.
+// existing process.env always wins. The loader is first-set-wins, so the
+// runtime volume's .env (FARMER_ENV_PATH — where the dashboard and
+// railway-start write) is listed FIRST: the old order let a stale key in the
+// repo checkout's .env silently override every dashboard settings write.
 (() => {
   const files = [
-    resolve(process.cwd(), ".env"),
     process.env.FARMER_ENV_PATH,
+    resolve(process.cwd(), ".env"),
   ].filter(Boolean) as string[];
   for (const file of files) {
     try {
@@ -195,13 +198,54 @@ const CONFIG_PATH = resolve(process.env.FARMER_CONFIG_PATH!);
   }
 })();
 
-let current: Config = load();
-const listeners: Array<(c: Config) => void> = [];
+// Every top-level section the code reads. A parse that comes back without one
+// of these is either a truncated read (racing a settings write) or a gutted
+// file — swapping it in would make gate comparisons like `tvl < undefined`
+// silently false, i.e. hard gates silently passing.
+const REQUIRED_SECTIONS = [
+  "scanner", "gates", "vetting", "timing", "score_caps", "smartflow", "score",
+  "entry", "manage", "sizing", "follow", "majors", "rotation", "exec", "gmgn",
+  "watchdog", "apis",
+] as const;
+
+/** Recursively fill keys missing from `target` with the template's values. */
+function fillMissing(target: Record<string, unknown>, template: Record<string, unknown>): void {
+  for (const [key, tmplVal] of Object.entries(template)) {
+    const cur = target[key];
+    if (cur === undefined) {
+      target[key] = tmplVal;
+    } else if (
+      cur !== null && typeof cur === "object" && !Array.isArray(cur) &&
+      tmplVal !== null && typeof tmplVal === "object" && !Array.isArray(tmplVal)
+    ) {
+      fillMissing(cur as Record<string, unknown>, tmplVal as Record<string, unknown>);
+    }
+  }
+}
 
 function load(): Config {
-  const raw = parse(readFileSync(CONFIG_PATH, "utf8"));
+  const raw = parse(readFileSync(CONFIG_PATH, "utf8")) as unknown as Record<string, unknown>;
+  // Back-fill keys the repo template gained after this deployment's runtime
+  // config.toml was seeded — data/config.toml is copied exactly once, so a new
+  // key read by newer code was silently `undefined` forever (NaN sizing,
+  // gates comparing against undefined). Values the operator set always win;
+  // only absent keys are filled.
+  const tmplPath = resolve(process.cwd(), "config.toml");
+  if (resolve(CONFIG_PATH) !== tmplPath && existsSync(tmplPath)) {
+    try {
+      fillMissing(raw, parse(readFileSync(tmplPath, "utf8")) as unknown as Record<string, unknown>);
+    } catch { /* unreadable template — run with what we have */ }
+  }
+  for (const section of REQUIRED_SECTIONS) {
+    if (raw[section] === undefined || typeof raw[section] !== "object") {
+      throw new Error(`config.toml is missing required section [${section}] — refusing to load a gutted config`);
+    }
+  }
   return raw as unknown as Config;
 }
+
+let current: Config = load();
+const listeners: Array<(c: Config) => void> = [];
 
 export function config(): Config {
   return current;

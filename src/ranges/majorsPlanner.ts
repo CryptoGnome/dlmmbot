@@ -1,11 +1,10 @@
 import { config } from "../config.js";
 import type { Candle } from "../scanner/meteora.js";
 import type { RangePlan } from "../types.js";
-import { binIdToPrice, priceToBinId, swing } from "./planner.js";
+import { binArraysSpanned, binIdToPrice, priceToBinId, swing } from "./planner.js";
 
 const BINS_PER_POSITION = 69;
 const BIN_ARRAY_RENT_SOL = 0.075;
-const BINS_PER_ARRAY_EST = 70;
 
 function buildSpotPlan(
   minBinId: number, maxBinId: number, centerPrice: number, binStep: number, decimalsX: number,
@@ -18,7 +17,7 @@ function buildSpotPlan(
     topPricePct: (binIdToPrice(maxBinId, binStep, decimalsX) / centerPrice - 1) * 100,
     shape: "spot",
     fibAnchor: null,
-    estBinRentSol: Math.ceil(binCount / BINS_PER_ARRAY_EST) * BIN_ARRAY_RENT_SOL,
+    estBinRentSol: binArraysSpanned(minBinId, maxBinId) * BIN_ARRAY_RENT_SOL,
   };
 }
 
