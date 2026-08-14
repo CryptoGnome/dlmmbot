@@ -658,8 +658,9 @@ export function buildLiveBookSnapshot(root) {
       `SELECT datetime(ts,'unixepoch') at, mint, substr(features_json,1,400) feat
        FROM decisions
        WHERE failed_gate='open_failed' AND ts > ?
+         AND COALESCE(json_extract(features_json, '$.mode'), 'paper') = ?
        ORDER BY ts DESC LIMIT 20`
-    ).all(fixTs);
+    ).all(fixTs, bookMode);
 
     function parseOpenFail(feat) {
       try {
@@ -744,6 +745,9 @@ export function buildLiveBookSnapshot(root) {
       }
     }
 
+    /** Untagged legacy decisions were paper-era; live only shows stamped live rows. */
+    const DECISION_MODE = `COALESCE(json_extract(d.features_json, '$.mode'), 'paper')`;
+
     const recentPasses = db.prepare(
       `SELECT datetime(d.ts,'unixepoch') at, d.mint, d.pool, ROUND(d.score,1) score,
               COALESCE(NULLIF(t.symbol,''), NULLIF(
@@ -758,9 +762,17 @@ export function buildLiveBookSnapshot(root) {
        FROM decisions d
        LEFT JOIN tokens t ON t.mint = d.mint
        WHERE d.action='entered' AND d.ts > ?
+         AND (
+           ${DECISION_MODE} = ?
+           OR EXISTS (
+             SELECT 1 FROM positions p
+             WHERE p.token_mint = d.mint AND p.mode = ?
+               AND p.entry_ts BETWEEN d.ts - 30 AND d.ts + 600
+           )
+         )
        ORDER BY d.ts DESC
        LIMIT 12`
-    ).all(weekAgo).map((r) => {
+    ).all(weekAgo, bookMode, bookMode).map((r) => {
       const name = r.pool_name ? String(r.pool_name).split("-")[0] : null;
       const size = typeof r.size === "number" ? Math.round(r.size * 1e4) / 1e4 : null;
       const baseScore = typeof r.base_score === "number" ? Math.round(r.base_score * 10) / 10 : null;
@@ -821,13 +833,16 @@ export function buildLiveBookSnapshot(root) {
               ) AS tx_sig
        FROM decisions d LEFT JOIN tokens t ON t.mint=d.mint
        WHERE d.action='entered' AND d.ts > ?
-         AND EXISTS (
-           SELECT 1 FROM positions p
-           WHERE p.token_mint = d.mint AND p.mode = ?
-             AND p.entry_ts BETWEEN d.ts - 30 AND d.ts + 600
+         AND (
+           ${DECISION_MODE} = ?
+           OR EXISTS (
+             SELECT 1 FROM positions p
+             WHERE p.token_mint = d.mint AND p.mode = ?
+               AND p.entry_ts BETWEEN d.ts - 30 AND d.ts + 600
+           )
          )
        ORDER BY d.ts DESC LIMIT 40`
-    ).all(activitySince, bookMode)) {
+    ).all(activitySince, bookMode, bookMode)) {
       const sym = r.symbol || (r.pool_name ? String(r.pool_name).split("-")[0] : null) || (r.mint ? String(r.mint).slice(0, 6) : "?");
       activity.push({
         ts: r.ts, at: r.at, kind: "entry",
@@ -885,12 +900,13 @@ export function buildLiveBookSnapshot(root) {
               ) symbol
        FROM decisions d LEFT JOIN tokens t ON t.mint=d.mint
        WHERE d.action='skipped' AND d.ts > ?
+         AND ${DECISION_MODE} = ?
          AND (
            d.failed_gate IN (${[...INTERESTING_SKIP].map(() => "?").join(",")})
            OR (d.score IS NOT NULL AND d.score >= 85)
          )
        ORDER BY d.ts DESC LIMIT 120`
-    ).all(activitySince, ...INTERESTING_SKIP)) {
+    ).all(activitySince, bookMode, ...INTERESTING_SKIP)) {
       const sym = r.symbol || (r.pool_name ? String(r.pool_name).split("-")[0] : null) || (r.mint ? String(r.mint).slice(0, 6) : "?");
       const isFail = /open_failed/.test(r.gate || "");
       activity.push({
@@ -906,11 +922,12 @@ export function buildLiveBookSnapshot(root) {
       `SELECT e.ts, datetime(e.ts,'unixepoch') at, e.type, e.position_id, e.detail_json, e.tx_sig,
               ROUND(e.sol_delta,4) sol_delta, p.symbol, p.token_mint AS mint, p.pool
        FROM events e
-       LEFT JOIN positions p ON p.id = e.position_id
+       JOIN positions p ON p.id = e.position_id
        WHERE e.ts > ?
+         AND p.mode = ?
          AND e.type IN ('claim','profit_lock','rebalance','rebalance_partial','rent_reclaim','force_close')
        ORDER BY e.ts DESC LIMIT 30`
-    ).all(activitySince)) {
+    ).all(activitySince, bookMode)) {
       let symbol = r.symbol || null;
       let mint = r.mint || null;
       let detailExtra = null;
@@ -1001,8 +1018,9 @@ export function buildLiveBookSnapshot(root) {
         `SELECT failed_gate g, COUNT(*) n
          FROM decisions
          WHERE action='skipped' AND failed_gate IN (${gates}) AND score >= ? AND ts > ?
+           AND COALESCE(json_extract(features_json, '$.mode'), 'paper') = ?
          GROUP BY failed_gate ORDER BY n DESC`
-      ).all(...BIN_RENT_GATES, BIN_RENT_SCORE_MIN, since);
+      ).all(...BIN_RENT_GATES, BIN_RENT_SCORE_MIN, since, bookMode);
       const n = byGate.reduce((s, r) => s + r.n, 0);
       const recent = db.prepare(
         `SELECT datetime(d.ts,'unixepoch') at, d.mint, d.pool, d.failed_gate g, ROUND(d.score,1) score,
@@ -1013,8 +1031,9 @@ export function buildLiveBookSnapshot(root) {
          FROM decisions d
          LEFT JOIN tokens t ON t.mint = d.mint
          WHERE d.action='skipped' AND d.failed_gate IN (${gates}) AND d.score >= ? AND d.ts > ?
+           AND ${DECISION_MODE} = ?
          ORDER BY d.ts DESC LIMIT 8`
-      ).all(...BIN_RENT_GATES, BIN_RENT_SCORE_MIN, since);
+      ).all(...BIN_RENT_GATES, BIN_RENT_SCORE_MIN, since, bookMode);
       const best = db.prepare(
         `SELECT datetime(d.ts,'unixepoch') at, d.mint, d.pool, d.failed_gate g, ROUND(d.score,1) score,
                 COALESCE(NULLIF(t.symbol,''), NULLIF(
@@ -1024,8 +1043,9 @@ export function buildLiveBookSnapshot(root) {
          FROM decisions d
          LEFT JOIN tokens t ON t.mint = d.mint
          WHERE d.action='skipped' AND d.failed_gate IN (${gates}) AND d.score >= ? AND d.ts > ?
+           AND ${DECISION_MODE} = ?
          ORDER BY d.score DESC LIMIT 1`
-      ).get(...BIN_RENT_GATES, BIN_RENT_SCORE_MIN, since);
+      ).get(...BIN_RENT_GATES, BIN_RENT_SCORE_MIN, since, bookMode);
       const mapRow = (r) => {
         if (!r) return null;
         const feat = parseBinRentNearMiss(r.feat);

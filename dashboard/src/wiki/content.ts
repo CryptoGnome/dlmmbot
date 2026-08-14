@@ -501,7 +501,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           { title: "Overview", text: "Money snapshot, open profit with slot occupancy (e.g. 3 of 5 · 2 free), equity chart. Engine ON/OFF + HALT live in the header.", icon: "chart" },
           { title: "Positions", text: "Open positions (slot badge) + recent closes. Range bar: purple ≈ SOL still waiting, blue ≈ already converted to token as price walks the bins.", icon: "book" },
           { title: "Analytics", text: "Why we made/lost SOL — exits, sleeves, skips.", icon: "calc" },
-          { title: "Activity", text: "Live play-by-play. SOL: green in / win, blue deployed (entries), red only for losses. On-chain rows link to Solscan.", icon: "zap" },
+          { title: "Activity", text: "Play-by-play for the current PAPER/LIVE book only (entries, exits, skips). SOL: green in / win, blue deployed (entries), red only for losses. On-chain rows link to Solscan.", icon: "zap" },
           { title: "Errors", text: "Broken stuff with copy/paste for bug reports. Each row has a plain label (Transient / Degraded / Needs attention).", icon: "alert", tone: "danger" },
           { title: "Report", text: "Bug or enhancement — guided GitHub issue with type/area chips, optional screenshots (paste in GitHub), and auto build context.", icon: "alert" },
           { title: "Research", text: "People we studied — not trade signals.", icon: "book" },
@@ -591,7 +591,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
         items: [
           "Per position: wallet SOL out → back + fees + profit-lock withdrawals − costs (REALIZED_PNL). Close rows show Move (deposit/IL) vs Fees separately.",
           "Unknown outcomes stay unknown: force-closed or orphan-repaired rows have no exit value, so they're excluded from realized PnL (and from the breaker/Kelly) instead of counting as fake full losses.",
-          "Paper and live books are fully separate — each mode's positions, sizing history, and brakes only ever see their own rows, even though they share one database.",
+          "Paper and live books are fully separate — each mode's positions, Activity entries/skips, sizing history, and brakes only ever see their own rows, even though they share one database.",
           "Majors rotation often nets ~0 SOL — small fees offset by IL/tx on a flat exit; check the Fees line, not just headline PnL.",
           "decisions table = why we entered, skipped, or exited (your future tuning gold).",
           "USD may show for readability; SOL is the scoreboard.",
