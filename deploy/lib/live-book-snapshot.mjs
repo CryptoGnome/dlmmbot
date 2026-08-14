@@ -732,6 +732,8 @@ export function buildLiveBookSnapshot(root) {
       "age_min", "age_max", "displaced",
     ]);
     const activitySince = now - 24 * 3600;
+    let recentActivity = [];
+    try {
     const activity = [];
     /** Lazily built once if any legacy rent_reclaim needs ATA→ticker resolution. */
     let ataIndex = null;
@@ -758,7 +760,7 @@ export function buildLiveBookSnapshot(root) {
                   AND p.token_mint = d.mint
                   AND e.ts BETWEEN d.ts - 30 AND d.ts + 600
                   AND COALESCE(NULLIF(e.tx_sig,''), json_extract(e.detail_json,'$.sigs[0]')) IS NOT NULL
-                ORDER BY ABS(e.ts - d.ts)
+                ORDER BY e.ts DESC
                 LIMIT 1
               ) AS tx_sig
        FROM decisions d LEFT JOIN tokens t ON t.mint=d.mint
@@ -904,7 +906,12 @@ export function buildLiveBookSnapshot(root) {
       deduped.push(a);
       if (deduped.length >= 80) break;
     }
-    const recentActivity = deduped.map(({ ts: _ts, ...rest }) => rest);
+    const recentActivityBuilt = deduped.map(({ ts: _ts, ...rest }) => rest);
+    recentActivity = recentActivityBuilt;
+    } catch (e) {
+      console.error("[live-book] recent_activity failed:", e?.message ?? e);
+      recentActivity = [];
+    }
 
     function parseBinRentNearMiss(feat) {
       try {

@@ -99,12 +99,12 @@ export function ActivityFeedList({
                     href={txHref}
                     target="_blank"
                     rel="noreferrer"
-                    title="Open on Solscan"
-                    className="inline-flex items-center gap-0.5 text-[10px] tracking-wider text-accent no-underline hover:text-hover"
+                    title="Open transaction on Solscan"
+                    className="inline-flex shrink-0 items-center gap-1 border border-accent/50 px-1.5 py-0.5 text-[10px] tracking-wider text-accent no-underline hover:border-accent hover:bg-accent/10 hover:text-hover"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    tx
-                    <Icon icon={ExternalLink} size={9} className="opacity-70" />
+                    Solscan
+                    <Icon icon={ExternalLink} size={9} />
                   </a>
                 ) : null}
               </div>
@@ -113,16 +113,32 @@ export function ActivityFeedList({
               )}
             </div>
             {sol != null && (
-              <span
-                className={cn(
-                  "mt-0.5 shrink-0 tabular-nums font-medium",
-                  dense ? "text-[11px]" : "text-[12px]",
-                  solClass(sol),
-                )}
-                title="SOL flow (+in / −out) or exit PnL"
-              >
-                {fmtSol(sol, 3)}
-              </span>
+              txHref ? (
+                <a
+                  href={txHref}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={cn(
+                    "mt-0.5 shrink-0 tabular-nums font-medium no-underline hover:underline",
+                    dense ? "text-[11px]" : "text-[12px]",
+                    solClass(sol),
+                  )}
+                  title="Open transaction on Solscan"
+                >
+                  {fmtSol(sol, 3)}
+                </a>
+              ) : (
+                <span
+                  className={cn(
+                    "mt-0.5 shrink-0 tabular-nums font-medium",
+                    dense ? "text-[11px]" : "text-[12px]",
+                    solClass(sol),
+                  )}
+                  title="SOL flow (+in / −out) or exit PnL"
+                >
+                  {fmtSol(sol, 3)}
+                </span>
+              )
             )}
           </li>
         );
