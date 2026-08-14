@@ -3,6 +3,7 @@
 
 const STALE_S = 300;
 const REMIND_S = 3600;
+const CHECK_FAIL_EVERY_N = 5;
 
 function evaluateHeartbeat(hb, nowS, staleS = STALE_S) {
   if (!hb || typeof hb.ts !== "number") {
@@ -28,4 +29,14 @@ function shouldAlert(nowS, lastAlertS, remindS = REMIND_S) {
   return nowS - last >= remindS;
 }
 
-module.exports = { STALE_S, REMIND_S, evaluateHeartbeat, shouldAlert };
+/**
+ * "Could not even check" (sqlite failed to load / DB unreadable) is a state in
+ * which the farmer is certainly not trading, so it must eventually page too —
+ * but not on the first blip. Alert every Nth consecutive failure.
+ */
+function shouldAlertCheckFailure(consecutiveFails, everyN = CHECK_FAIL_EVERY_N) {
+  const n = Number(consecutiveFails) || 0;
+  return n > 0 && n % everyN === 0;
+}
+
+module.exports = { STALE_S, REMIND_S, CHECK_FAIL_EVERY_N, evaluateHeartbeat, shouldAlert, shouldAlertCheckFailure };

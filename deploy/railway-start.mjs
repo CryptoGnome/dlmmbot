@@ -46,7 +46,8 @@ if (!process.env.DASH_TOKEN) {
   try {
     writeFileSync(envPath, existsSync(envPath) ? `${readFileSync(envPath, "utf8").replace(/\s*$/, "")}\n${line}` : line);
   } catch { /* */ }
-  console.log(`[railway] generated DASH_TOKEN=${token}`);
+  // Never print the full token — Railway logs are often shared/screenshotted.
+  console.log(`[railway] generated DASH_TOKEN=${token.slice(0, 8)}… (full value in the DASH_TOKEN env var / ${envPath})`);
   console.log("[railway] open the public URL with ?token=… or paste the token in the login box");
   console.log("[railway] tip: set DASH_TOKEN as a Railway variable to keep the same token forever");
 }
