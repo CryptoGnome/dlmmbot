@@ -164,9 +164,14 @@ export class PaperExecutor implements Executor {
       getDb().prepare(
         `INSERT INTO events (position_id, ts, type, sol_delta, tx_cost_sol) VALUES (?, ?, 'claim', ?, ?)`
       ).run(position.id, now(), claimed, PAPER_TX_COST_SOL);
+      // fees_measured_sol too: paper close always writes close_return_sol, which
+      // routes the row into REALIZED_PNL_SQL's measured branch — and that branch
+      // reads only fees_measured_sol. Without this, every claimed paper fee
+      // vanished from realized PnL, understating exactly the numbers the
+      // paper→live promotion gate compares.
       getDb().prepare(
-        "UPDATE positions SET fees_claimed_sol = fees_claimed_sol + ? WHERE id = ?"
-      ).run(claimed, position.id);
+        "UPDATE positions SET fees_claimed_sol = fees_claimed_sol + ?, fees_measured_sol = fees_measured_sol + ? WHERE id = ?"
+      ).run(claimed, Math.max(0, claimed - PAPER_TX_COST_SOL), position.id);
     }
     return { claimedSol: claimed, txCostSol: PAPER_TX_COST_SOL };
   }
@@ -177,9 +182,12 @@ export class PaperExecutor implements Executor {
     getDb().prepare(
       `INSERT INTO events (position_id, ts, type, sol_delta, tx_cost_sol, detail_json) VALUES (?, ?, 'profit_lock', ?, ?, ?)`
     ).run(position.id, now(), withdrawn, PAPER_TX_COST_SOL, JSON.stringify({ bps }));
+    // withdrawn_sol is the wallet-received side of the lock; REALIZED_PNL_SQL
+    // adds it back at close (open_cost_sol stays full-basis, entry_sol shrinks
+    // only for the P1 mark math).
     getDb().prepare(
-      "UPDATE positions SET entry_sol = entry_sol * (1 - ? / 10000.0), profit_lock_fires = profit_lock_fires + 1 WHERE id = ?"
-    ).run(bps, position.id);
+      "UPDATE positions SET entry_sol = entry_sol * (1 - ? / 10000.0), profit_lock_fires = profit_lock_fires + 1, withdrawn_sol = withdrawn_sol + ? WHERE id = ?"
+    ).run(bps, Math.max(0, withdrawn - PAPER_TX_COST_SOL), position.id);
     return { withdrawnSol: withdrawn, txCostSol: PAPER_TX_COST_SOL };
   }
 

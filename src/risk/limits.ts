@@ -1,4 +1,4 @@
-import { config } from "../config.js";
+import { config, currentMode } from "../config.js";
 import { getDb, now, REALIZED_PNL_SQL } from "../db/db.js";
 import { sleeveAtEntry } from "./sleeve.js";
 
@@ -21,8 +21,8 @@ export function computeBankroll(walletSol: number): Bankroll {
   ).get() as { b: number }).b;
 
   const deployed = (db.prepare(
-    "SELECT COALESCE(SUM(entry_sol), 0) AS d FROM positions WHERE state IN ('pending','open','closing')"
-  ).get() as { d: number }).d;
+    "SELECT COALESCE(SUM(entry_sol), 0) AS d FROM positions WHERE state IN ('pending','open','closing') AND mode = ?"
+  ).get(currentMode()) as { d: number }).d;
 
   const reserve = s.reserve_sol + walletSol * (s.reserve_pct / 100);
   const deployable = Math.max(0, walletSol - reserve - banked - deployed);
@@ -57,12 +57,18 @@ export function kellyStats(): KellyStats {
   // follow_chain_id IS NULL: follow-mode legs keep their own ledger (the
   // follow_chains table) — a different entry distribution polluting this
   // estimator was the same mistake STRATEGY §10 forbids for majors mode.
+  // mode filter: paper fills must never drive live sizing (or vice versa) —
+  // the shared promotion-flow DB makes cross-mode samples a real hazard.
+  // REALIZED_PNL IS NOT NULL: unknown-exit rows (force-close, orphans) would
+  // otherwise reach JS as ret=null, and `null <= 0` is true — a zero-loss
+  // sample fabricated from a row whose PnL we explicitly don't know.
   const raw = getDb().prepare(
     `SELECT token_mint, pool, entry_ts, (${REALIZED_PNL_SQL}) / entry_sol AS ret
      FROM positions
      WHERE exit_ts IS NOT NULL AND entry_sol > 0 AND follow_chain_id IS NULL
+       AND mode = ? AND (${REALIZED_PNL_SQL}) IS NOT NULL
      ORDER BY exit_ts DESC LIMIT ?`
-  ).all(s.kelly_lookback * 3) as Array<{ token_mint: string; pool: string; entry_ts: number; ret: number }>;
+  ).all(currentMode(), s.kelly_lookback * 3) as Array<{ token_mint: string; pool: string; entry_ts: number; ret: number }>;
   const rows = raw.filter((r) =>
     sleeveAtEntry({ tokenMint: r.token_mint, poolAddress: r.pool, entryTs: r.entry_ts }) !== "majors"
   ).slice(0, s.kelly_lookback);
@@ -130,14 +136,14 @@ export function positionSize(bankroll: Bankroll, score: number): number {
 
 export function openPositionCount(): number {
   return (getDb().prepare(
-    "SELECT COUNT(*) AS c FROM positions WHERE state IN ('pending','open','closing')"
-  ).get() as { c: number }).c;
+    "SELECT COUNT(*) AS c FROM positions WHERE state IN ('pending','open','closing') AND mode = ?"
+  ).get(currentMode()) as { c: number }).c;
 }
 
 export function tokenExposureSol(mint: string): number {
   return (getDb().prepare(
-    "SELECT COALESCE(SUM(entry_sol),0) AS s FROM positions WHERE token_mint = ? AND state IN ('pending','open','closing')"
-  ).get(mint) as { s: number }).s;
+    "SELECT COALESCE(SUM(entry_sol),0) AS s FROM positions WHERE token_mint = ? AND state IN ('pending','open','closing') AND mode = ?"
+  ).get(mint, currentMode()) as { s: number }).s;
 }
 
 /** Circuit breaker: realized loss over rolling 24h vs bankroll (§5). */
@@ -150,8 +156,8 @@ export function circuitBreakerTripped(walletSol: number): boolean {
   // against. Rows predating the measured columns fall back to the old formula.
   const realized = (getDb().prepare(
     `SELECT COALESCE(SUM(${REALIZED_PNL_SQL}), 0) AS pnl
-     FROM positions WHERE exit_ts IS NOT NULL AND exit_ts > ?`
-  ).get(dayAgo) as { pnl: number }).pnl;
+     FROM positions WHERE exit_ts IS NOT NULL AND exit_ts > ? AND mode = ?`
+  ).get(dayAgo, currentMode()) as { pnl: number }).pnl;
   return realized < 0 && Math.abs(realized) > walletSol * (s.circuit_daily_loss_pct / 100);
 }
 
@@ -180,10 +186,10 @@ export function clusterBrakeTripped(): { count: number; remainingMin: number } |
   const rows = getDb().prepare(
     `SELECT exit_ts FROM positions
      WHERE exit_reason IN ('P0_safety','P1_stop') AND exit_ts IS NOT NULL AND exit_ts > ?
-       AND entry_sol > 0
+       AND entry_sol > 0 AND mode = ?
        AND (${REALIZED_PNL_SQL}) / entry_sol <= ?
      ORDER BY exit_ts DESC`
-  ).all(since, -lossFrac) as Array<{ exit_ts: number }>;
+  ).all(since, currentMode(), -lossFrac) as Array<{ exit_ts: number }>;
   if (rows.length < s.cluster_brake_exits) return null;
   // Pause measured from the Nth-most-recent hard exit (the one that tripped).
   const tripTs = rows[s.cluster_brake_exits - 1]!.exit_ts;

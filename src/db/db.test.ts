@@ -2,10 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { getDb, REALIZED_PNL_SQL, logError, upsertTokenMeta } from "./db.js";
 import { useMemoryDb, resetTestDb, insertClosedPosition } from "../test/db.js";
 
-function pnlFor(id: number): number {
+function pnlFor(id: number): number | null {
   return (getDb().prepare(
     `SELECT (${REALIZED_PNL_SQL}) AS pnl FROM positions WHERE id = ?`
-  ).get(id) as { pnl: number }).pnl;
+  ).get(id) as { pnl: number | null }).pnl;
 }
 
 describe("REALIZED_PNL_SQL", () => {
@@ -35,7 +35,7 @@ describe("REALIZED_PNL_SQL", () => {
     expect(pnlFor(id)).toBeCloseTo(0.35 - 0.3 + 0.02, 8);
   });
 
-  it("returns 0 for adopted rows (entry_sol = 0)", () => {
+  it("returns NULL for adopted rows with no basis (entry_sol = 0)", () => {
     const id = insertClosedPosition({
       entrySol: 0,
       exitSol: 0.5,
@@ -43,7 +43,52 @@ describe("REALIZED_PNL_SQL", () => {
       openCostSol: null,
       closeReturnSol: null,
     });
-    expect(pnlFor(id)).toBe(0);
+    expect(pnlFor(id)).toBeNull();
+  });
+
+  it("returns NULL for a no-basis adopted row even when close_return exists", () => {
+    // The old expression subtracted COALESCE(open_cost, 0+0) here — full close
+    // proceeds reported as pure profit, masking real same-day losses from the
+    // circuit breaker.
+    const id = insertClosedPosition({
+      entrySol: 0,
+      exitSol: null,
+      openCostSol: null,
+      closeReturnSol: 0.5,
+      feesMeasuredSol: 0.01,
+    });
+    expect(pnlFor(id)).toBeNull();
+  });
+
+  it("returns NULL for unknown-exit rows (force-close / reconcile orphan)", () => {
+    // exit_sol AND close_return_sol both NULL: outcome unknown. The old
+    // expression fabricated a full −entry_sol loss — a crash mid-close could
+    // trip the circuit breaker on a position that lost nothing.
+    const id = insertClosedPosition({
+      entrySol: 0.5,
+      exitSol: null,
+      exitReason: "manual",
+      openCostSol: null,
+      closeReturnSol: null,
+    });
+    expect(pnlFor(id)).toBeNull();
+    const sum = (getDb().prepare(
+      `SELECT COALESCE(SUM(${REALIZED_PNL_SQL}), 0) AS s FROM positions`
+    ).get() as { s: number }).s;
+    expect(sum).toBe(0); // SUM skips the NULL
+  });
+
+  it("counts profit-lock withdrawals in the measured branch", () => {
+    // 1.0 in, locked 0.4 to the wallet mid-position, closed at 0.7:
+    // true PnL is +0.1, not −0.3.
+    const id = insertClosedPosition({
+      entrySol: 0.6, // shrunk by the lock; must NOT be the basis
+      exitSol: 0.7,
+      openCostSol: 1.0,
+      closeReturnSol: 0.7,
+      withdrawnSol: 0.4,
+    });
+    expect(pnlFor(id)).toBeCloseTo(0.1, 8);
   });
 
   it("uses close_return when open_cost is missing (partial wallet columns)", () => {

@@ -585,9 +585,13 @@ export class LiveExecutor implements Executor {
       position.id, now(), sigs[0] ?? null, feesSol, 0.0005 * txs.length,
       JSON.stringify({ sigs, markedSol: feesSol, measuredSol: measured, feeXRaw: feeXRaw.toString(), bins: claimBins })
     );
+    // measured ?? feesSol, not ?? 0: a null walletDelta means the measurement
+    // failed, not that the claim was worth nothing — recording 0 permanently
+    // erased that claim's income from realized PnL. The marked value runs hot
+    // vs measured (~23% book-wide) but is far closer to truth than zero.
     db.prepare(
       "UPDATE positions SET fees_claimed_sol = fees_claimed_sol + ?, fees_measured_sol = fees_measured_sol + ? WHERE id = ?"
-    ).run(feesSol, measured ?? 0, position.id);
+    ).run(feesSol, measured ?? feesSol, position.id);
     return { claimedSol: feesSol, txCostSol: 0.0005 * txs.length };
   }
 
@@ -623,8 +627,11 @@ export class LiveExecutor implements Executor {
     const db = getDb();
     db.prepare("INSERT INTO events (position_id, ts, type, sol_delta, tx_cost_sol, detail_json) VALUES (?, ?, 'profit_lock', ?, ?, ?)")
       .run(position.id, now(), withdrawn, 0.001, JSON.stringify({ bps, xToSwapRaw: xToSwap.toString(), measuredSol: measured, sigs }));
-    db.prepare("UPDATE positions SET entry_sol = entry_sol * (1 - ? / 10000.0), profit_lock_fires = profit_lock_fires + 1 WHERE id = ?")
-      .run(bps, position.id);
+    // withdrawn_sol: the locked SOL is realized PnL the moment it lands in the
+    // wallet; REALIZED_PNL_SQL adds it back at close against the unshrunk
+    // open_cost_sol basis. Without it a locked winner read as a loss.
+    db.prepare("UPDATE positions SET entry_sol = entry_sol * (1 - ? / 10000.0), profit_lock_fires = profit_lock_fires + 1, withdrawn_sol = withdrawn_sol + ? WHERE id = ?")
+      .run(bps, Math.max(0, measured ?? withdrawn), position.id);
     return { withdrawnSol: measured ?? withdrawn, txCostSol: 0.001 };
   }
 
