@@ -151,11 +151,22 @@ a row contributes 0 to realized PnL rather than a fabricated number.
 
 ## Site analytics (Umami)
 
-Marketing + setup docs load Umami via `docs/assets/umami.js` (and
-`docs-site/docs/public/umami.js`, kept in sync). Team/home/VPS public egress
-IPs go in the `BLOCKED` array there so our visits are not tracked. After an ISP
-change, add the new address and push — Cloudflare’s `/cdn-cgi/trace` supplies
-the visitor IP on dlmmbot.com.
+Marketing + setup docs load Umami via `docs/assets/umami.js` (copied to
+`/setup/umami.js` for VitePress). Do **not** put operator IPs in those files
+or anywhere else in git.
+
+Exclusions live in a Cloudflare Pages **secret** and an edge Function:
+
+1. Pages → **dlmmbot** → Settings → Environment variables
+2. Add `UMAMI_BLOCKED_IPS` as a **secret** (production + preview)
+3. Value: comma-separated IPv4 addresses or CIDRs (no quotes)
+4. Redeploy so the Function picks it up
+
+`functions/[[path]].js` checks `CF-Connecting-IP` against that secret and
+serves an empty script for matches (`Cache-Control: private, no-store` so the
+empty response is never cached for other visitors). Real visitors get the
+normal loader. After an ISP change, edit the secret in the dashboard — do not
+commit the new address.
 
 ## Site deployment (dlmmbot.com)
 

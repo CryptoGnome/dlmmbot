@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "include": ["/assets/umami.js", "/setup/umami.js"],
+  "exclude": []
+}
