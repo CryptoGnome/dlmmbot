@@ -37,7 +37,7 @@ import { applyRuntimeEnv } from "./lib/runtime-paths.mjs";
 import {
   approveDeploy, readDeployPrefs, writeDeployPrefs,
 } from "./lib/deploy-prefs.mjs";
-import { insertError, dismissErrors } from "./lib/error-log.mjs";
+import { insertError, dismissErrors, clearErrorLog } from "./lib/error-log.mjs";
 import {
   listProfiles, listCommunityProfiles, saveLocalProfile, deleteLocalProfile,
   resolveProfileUpdates, previewProfileDiff, applyProfileUpdates, githubProposeUrl, slugify,
@@ -721,6 +721,23 @@ const server = createServer(async (req, res) => {
       const dismissed = dismissErrors(root, all ? { all: true } : { ids });
       watchCache = { at: 0, data: null, building: null };
       sendJson(res, 200, { ok: true, dismissed });
+    } catch (e) {
+      sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/errors/clear" && req.method === "POST") {
+    try {
+      if (!token) {
+        sendJson(res, 401, { error: "dash token required" });
+        return;
+      }
+      const body = await readBody(req, res);
+      const dismissedOnly = body?.dismissed_only === true;
+      const cleared = clearErrorLog(root, dismissedOnly ? { dismissedOnly: true } : { all: true });
+      watchCache = { at: 0, data: null, building: null };
+      sendJson(res, 200, { ok: true, cleared, dismissed_only: dismissedOnly });
     } catch (e) {
       sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
     }
