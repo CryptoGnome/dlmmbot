@@ -55,6 +55,10 @@ Open positions (slot badge) and recent closes. Range bar: **purple ≈ SOL still
 
 Entries, exits, claims, skips, follow-chain events. Green = inflows/wins, blue = capital deployed, red = losses. On-chain rows link to Solscan.
 
+### Smart flow
+
+GMGN smart-money and KOL activity in the farmer’s rolling window (default 30m). Ranked tokens + recent tape, streamed on the live watch feed when `GMGN_API_KEY` is set. Polls ~every 2 minutes — not tick-level.
+
 ### Analytics
 
 Exits by reason (P0–P5), performance by sleeve, skip stats. Check whether a knob change did anything before touching the next one.

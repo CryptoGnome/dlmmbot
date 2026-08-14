@@ -187,6 +187,52 @@ export interface LiveWatch {
     name: string | null;
     icon_url: string | null;
   }>;
+  /** GMGN smart-money / KOL rolling window (farmer → data/smartflow.json). */
+  smartflow?: SmartflowSnap | null;
+}
+
+export interface SmartflowTokenRow {
+  mint: string;
+  symbol?: string | null;
+  name?: string | null;
+  icon_url?: string | null;
+  smart_wallets: number;
+  new_joiners: number;
+  net_usd: number;
+  buy_usd: number;
+  sell_usd: number;
+  kol_names: string[];
+  trade_count: number;
+}
+
+export interface SmartflowTradeRow {
+  hash: string;
+  mint: string;
+  maker: string;
+  side: "buy" | "sell";
+  usd: number;
+  ts: number;
+  at: string;
+  kol: string | null;
+  feed: "smartmoney" | "kol";
+  symbol?: string | null;
+  name?: string | null;
+  icon_url?: string | null;
+}
+
+export interface SmartflowSnap {
+  at: string | null;
+  ts: number | null;
+  last_poll_at: string | null;
+  last_poll_ms: number;
+  stale: boolean;
+  running: boolean;
+  enabled: boolean;
+  window_min: number;
+  next_feed: "smartmoney" | "kol";
+  trade_count: number;
+  tokens: SmartflowTokenRow[];
+  recent: SmartflowTradeRow[];
 }
 
 export interface ErrorLogEntry {
