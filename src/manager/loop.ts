@@ -36,6 +36,23 @@ import { vetToken } from "../vetting/vet.js";
 const HALT_FILE = resolve(process.cwd(), "HALT");
 const PAUSE_FILE = resolve(process.cwd(), "PAUSE");
 const LOCK_FILE = resolve(process.cwd(), "data", "farmer.lock");
+const BUSY_FILE = resolve(process.cwd(), "data", "busy.flag");
+
+// Busy flag around executor-critical sections (multi-tx opens/closes). The
+// auto-deploy watcher waits up to 120s for this file to vanish before
+// `pm2 restart`, and our own SIGTERM handler drains it — a restart landing
+// between a zap swap and the add-liquidity leg stranded capital on chain.
+let busyDepth = 0;
+async function withBusy<T>(fn: () => Promise<T>): Promise<T> {
+  busyDepth++;
+  if (busyDepth === 1) { try { writeFileSync(BUSY_FILE, String(process.pid)); } catch { /* best effort */ } }
+  try {
+    return await fn();
+  } finally {
+    busyDepth--;
+    if (busyDepth === 0) { try { rmSync(BUSY_FILE, { force: true }); } catch { /* best effort */ } }
+  }
+}
 
 // Residual sweep: retry-sell tokens stranded by failed zap-out swaps.
 const RESIDUAL_SWEEP_INTERVAL_MS = 10 * 60 * 1000;
@@ -128,7 +145,7 @@ async function closeAndReport(
   kind: AlertKind,
   headline: string,
 ): Promise<{ exitSol: number; txCostSol: number }> {
-  const res = await exec.close(pos, reason, slippageBps);
+  const res = await withBusy(() => exec.close(pos, reason, slippageBps));
   // Re-read fees and actual wallet deltas: the close itself may claim
   // outstanding fees, and open_cost/close_return carry the real rent+tx costs.
   const row = getDb().prepare(
@@ -367,14 +384,19 @@ export function pauseRequested(): boolean {
  */
 function acquireInstanceLock(): void {
   mkdirSync(resolve(process.cwd(), "data"), { recursive: true });
-  if (existsSync(LOCK_FILE)) {
+  const claim = () => writeFileSync(LOCK_FILE, String(process.pid), { flag: "wx" });
+  try {
+    claim(); // wx = atomic create-or-fail; the old exists→read→write window let two simultaneous starters both pass
+  } catch {
     const oldPid = Number(readFileSync(LOCK_FILE, "utf8").trim());
     let alive = false;
     try {
       process.kill(oldPid, 0); // signal 0 = existence check
       alive = true;
-    } catch {
-      alive = false;
+    } catch (err) {
+      // EPERM = the pid exists but belongs to another user — that is an ALIVE
+      // instance, not a stale lock to steal.
+      alive = (err as NodeJS.ErrnoException).code === "EPERM";
     }
     if (alive && oldPid !== process.pid) {
       throw new Error(
@@ -383,12 +405,30 @@ function acquireInstanceLock(): void {
       );
     }
     console.log(`[farmer] reclaiming stale lock from dead pid ${oldPid}`);
+    rmSync(LOCK_FILE, { force: true });
+    claim(); // throws if a concurrent starter won the race — correct outcome
   }
-  writeFileSync(LOCK_FILE, String(process.pid));
-  const release = () => { try { rmSync(LOCK_FILE, { force: true }); } catch { /* best effort */ } };
+  const release = () => {
+    try { rmSync(LOCK_FILE, { force: true }); } catch { /* best effort */ }
+    try { rmSync(BUSY_FILE, { force: true }); } catch { /* best effort */ }
+  };
   process.on("exit", release);
-  process.on("SIGINT", () => { release(); process.exit(130); });
-  process.on("SIGTERM", () => { release(); process.exit(143); });
+  const drainThenExit = (code: number) => {
+    // Never die mid-executor-call: a SIGTERM between a zap swap and the
+    // add-liquidity leg (auto-deploy restarts, PM2 stop) strands capital.
+    if (busyDepth === 0) { release(); process.exit(code); }
+    console.log(`[farmer] shutdown signal — waiting for in-flight executor call to settle (busy depth ${busyDepth})`);
+    const started = Date.now();
+    const t = setInterval(() => {
+      if (busyDepth === 0 || Date.now() - started > 90_000) {
+        clearInterval(t);
+        release();
+        process.exit(code);
+      }
+    }, 250);
+  };
+  process.on("SIGINT", () => drainThenExit(130));
+  process.on("SIGTERM", () => drainThenExit(143));
 }
 
 function loadOpenPositions(): Position[] {
@@ -488,8 +528,12 @@ export async function managePositions(exec: Executor): Promise<void> {
         ? await holderCheck(pos.id, pos.tokenMint) : null;
       if (mark.valueSol === 0 || crashed || tvlDrained || rugFlip || holderTrig) {
         const trigger = mark.valueSol === 0 ? "pool_dead" : crashed ? "price_crash" : tvlDrained ? "tvl_drain" : rugFlip ? "rugcheck_flip" : `${holderTrig!.kind} (${holderTrig!.detail})`;
-        clearRangeTimers(pos.id);
+        // Timers clear AFTER the close succeeds (here and in P1–P5 below): a
+        // throwing close leaves the position open, and pre-clearing restarted
+        // the full sustain/grace window per failure — a P5 cut retried only
+        // every (grace + failure) minutes while the token kept bleeding.
         await closeAndReport(exec, pos, "P0_safety", config().exec.safety_exit_slippage_bps, "safety_exit", `P0 safety (${trigger})`);
+        clearRangeTimers(pos.id);
         // Don't permanent-blacklist majors allowlist tokens on soft P0 signals.
         if (sleeve !== "majors" || trigger === "pool_dead" || trigger === "price_crash" || trigger === "tvl_drain") {
           blacklist(pos.tokenMint, "token", `P0 safety exit (${trigger})`);
@@ -500,8 +544,8 @@ export async function managePositions(exec: Executor): Promise<void> {
 
       // --- P1 STOP LOSS ---
       if (valueFrac < pm.stop_loss_frac) {
-        clearRangeTimers(pos.id);
         await closeAndReport(exec, pos, "P1_stop", config().exec.exit_slippage_bps, "stop_loss", `stop loss at ${(valueFrac * 100 - 100).toFixed(1)}%`);
+        clearRangeTimers(pos.id);
         blacklist(pos.tokenMint, "token", "stop loss cooldown", m.loss_reentry_cooldown_h);
         recordDecision(pos.tokenMint, pos.poolAddress, "exited", "P1_stop", null, { valueFrac, mark });
         continue;
@@ -509,8 +553,8 @@ export async function managePositions(exec: Executor): Promise<void> {
 
       // --- P2 ROTATION: age limit + consecutive fee/volume decay ---
       if (ageH > pm.max_age_h) {
-        clearRangeTimers(pos.id);
         await closeAndReport(exec, pos, "P2_rotation", config().exec.exit_slippage_bps, "close", `rotation: max age ${pm.max_age_h}h reached`);
+        clearRangeTimers(pos.id);
         recordDecision(pos.tokenMint, pos.poolAddress, "exited", "P2_rotation_age", null, { ageH, sleeve });
         continue;
       }
@@ -519,8 +563,8 @@ export async function managePositions(exec: Executor): Promise<void> {
       const streak = decayed ? (decayStreak.get(pos.id) ?? 0) + 1 : 0;
       decayStreak.set(pos.id, streak);
       if (streak >= pm.rotation_polls) {
-        clearRangeTimers(pos.id);
         const { exitSol } = await closeAndReport(exec, pos, "P2_rotation", config().exec.exit_slippage_bps, "close", `rotation: fee/volume decay (fee ${feeDaily.toFixed(3)}%/d, vol30m $${mark.vol30mUsd.toFixed(0)})`);
+        clearRangeTimers(pos.id);
         bankProfit(pos, exitSol, "P2 rotation");
         recordDecision(pos.tokenMint, pos.poolAddress, "exited", "P2_rotation_decay", null, { feeDaily, vol30m: mark.vol30mUsd, streak });
         console.log(`[manager] pos#${pos.id} ${pos.symbol}: rotated out (fee ${feeDaily.toFixed(3)}%/d, vol30m $${mark.vol30mUsd.toFixed(0)})`);
@@ -538,11 +582,11 @@ export async function managePositions(exec: Executor): Promise<void> {
           aboveRangeSince.set(pos.id, now());
         } else if (now() - since >= sustainMin * 60) {
           const classification = traveled ? "win" : "missed";
-          clearRangeTimers(pos.id);
           const { exitSol } = await closeAndReport(
             exec, pos, "P3_above", config().exec.exit_slippage_bps, "close",
             classification === "win" ? "take-profit (price traveled through range)" : "missed (price jumped over range)"
           );
+          clearRangeTimers(pos.id);
           if (classification === "missed")
             getDb().prepare("UPDATE positions SET state='closed_missed' WHERE id=?").run(pos.id);
           else bankProfit(pos, exitSol, "P3 take-profit");
@@ -561,15 +605,15 @@ export async function managePositions(exec: Executor): Promise<void> {
           console.log(`[manager] pos#${pos.id} ${pos.symbol} below range — grace timer started (${pm.below_range_grace_min}m)`);
           if (mark.unclaimedFeesSol >= m.grace_claim_min_sol) {
             try {
-              const { claimedSol } = await exec.claimFees(pos);
+              const { claimedSol } = await withBusy(() => exec.claimFees(pos));
               await alert("claim", `${pos.symbol} pos#${pos.id}: grace-start claim — banked ${claimedSol.toFixed(4)} SOL before below-range wait`);
             } catch (e) {
               console.error(`[manager] pos#${pos.id} grace-start claim failed:`, (e as Error).message);
             }
           }
         } else if (now() - since >= pm.below_range_grace_min * 60) {
-          clearRangeTimers(pos.id);
           await closeAndReport(exec, pos, "P5_below", config().exec.exit_slippage_bps, "below_cut", `below-range cut after ${pm.below_range_grace_min}m grace`);
+          clearRangeTimers(pos.id);
           blacklist(pos.tokenMint, "token", "below range cut", m.loss_reentry_cooldown_h);
           recordDecision(pos.tokenMint, pos.poolAddress, "exited", "P5_below", null, { mark, graceS: now() - since });
         }
@@ -635,7 +679,7 @@ export async function managePositions(exec: Executor): Promise<void> {
           ).run(pos.id, now(), mark.unclaimedFeesSol, JSON.stringify({ kind: "majors_compound" }));
           console.log(`[majors] pos#${pos.id} ${pos.symbol}: compounded ${mark.unclaimedFeesSol.toFixed(4)} SOL fees`);
         } else {
-          const { claimedSol } = await exec.claimFees(pos);
+          const { claimedSol } = await withBusy(() => exec.claimFees(pos));
           await alert("claim", `${pos.symbol} pos#${pos.id}: claimed ${claimedSol.toFixed(4)} SOL in fees`);
         }
       }
@@ -644,7 +688,7 @@ export async function managePositions(exec: Executor): Promise<void> {
         pos.profitLockFires < m.profit_lock_max_fires &&
         valueFrac >= m.profit_lock_at_frac
       ) {
-        const { withdrawnSol } = await exec.withdraw(pos, m.profit_lock_withdraw_pct * 100);
+        const { withdrawnSol } = await withBusy(() => exec.withdraw(pos, m.profit_lock_withdraw_pct * 100));
         await alert("profit_lock", `${pos.symbol} pos#${pos.id}: profit lock at +${((valueFrac - 1) * 100).toFixed(0)}% — withdrew ${withdrawnSol.toFixed(4)} SOL`);
       }
     } catch (e) {
@@ -687,6 +731,10 @@ async function rpcProbe(exec: Executor): Promise<void> {
     if (probeFailures > 0) console.log(`[watchdog] RPC recovered after ${probeFailures} failed probes`);
     probeFailures = 0;
     lastHealthyTick = Date.now();
+    // Reset the alert ladder too: without this, a 50-min outage that escalated
+    // nextAlertAtMin to ~110 made the NEXT outage's first alert wait ~110
+    // blind minutes instead of rpc_blind_after_min.
+    nextAlertAtMin = 0;
     if (watchdogAlerted) {
       watchdogAlerted = false;
       await alert("watchdog", `RPC recovered — resuming normal operation`).catch(() => {});
@@ -854,7 +902,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     return;
   }
 
-  const bankroll = computeBankroll(walletSol);
+  let bankroll = computeBankroll(walletSol);
   const rot = config().rotation;
   const normalCap = Math.max(0, bankroll.effectiveSlots - rot.alpha_slots);
 
@@ -893,7 +941,20 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
 
     // Pool createdAt is a fallback only — vet prefers RugCheck mint detectedAt.
     const poolCreatedAtMs = cand.pool.createdAt ? Date.parse(cand.pool.createdAt) : null;
-    const vet = await vetToken(cand.tokenMint, poolCreatedAtMs);
+    // A throwing vet (e.g. a partial RugCheck report) used to escape the
+    // candidate loop and kill entries for every LATER candidate that tick.
+    let vet: Awaited<ReturnType<typeof vetToken>>;
+    try {
+      vet = await vetToken(cand.tokenMint, poolCreatedAtMs);
+    } catch (e) {
+      logError({
+        source: "enter", code: "vet_error",
+        message: `${cand.symbol} vet threw: ${(e as Error).message}`,
+        err: e, mint: cand.tokenMint, symbol: cand.symbol, dedupeSec: 30,
+      });
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "vet_error", cand.score, { error: (e as Error).message });
+      continue;
+    }
     if (vet.verdict !== "pass") {
       recordDecision(cand.tokenMint, cand.pool.address, "skipped", vet.hardFailures[0]?.gate ?? "vet", cand.score, { vet, cand });
       continue;
@@ -946,10 +1007,15 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     // Slot admission (§5): normal slots for everyone, alpha slots only for
     // exceptional FUNDAMENTALS; full book -> displacement attempt for alpha only.
     const isAlpha = baseScore >= rot.alpha_score_min;
-    let admitted = opened < normalCap || (isAlpha && opened < bankroll.effectiveSlots);
-    if (!admitted && isAlpha) admitted = await tryDisplacement(exec, score, cand.tokenMint);
-    if (!admitted) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", isAlpha ? "displacement_declined" : "alpha_reserved", score, { opened, normalCap });
+    const admitted = opened < normalCap || (isAlpha && opened < bankroll.effectiveSlots);
+    // Displacement is only PLANNED here — the victim is closed immediately
+    // before the open, after every remaining gate has passed. We used to
+    // liquidate a healthy earning position first and then skip the candidate
+    // on bin_rent/pool_share/open_failed: a close for nothing that still
+    // counted against displacement_max_per_6h.
+    const needsDisplacement = !admitted && isAlpha;
+    if (!admitted && !isAlpha) {
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "alpha_reserved", score, { opened, normalCap });
       continue;
     }
 
@@ -1059,20 +1125,28 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     }
     const range = rent.range;
 
+    if (needsDisplacement) {
+      const displaced = await tryDisplacement(exec, score, cand.tokenMint);
+      if (!displaced) {
+        recordDecision(cand.tokenMint, cand.pool.address, "skipped", "displacement_declined", score, { opened, normalCap });
+        continue;
+      }
+    }
+
     // A failed open used to throw straight past recordDecision to the tick
     // handler, so 121 bounced entries left no row at all and the funnel could
     // not tell "nothing qualified" from "the transaction did not land". It also
     // abandoned the rest of the candidate list and that tick's residual sweep.
     let pos;
     try {
-      pos = await exec.open({
+      pos = await withBusy(() => exec.open({
         poolAddress: cand.pool.address,
         tokenMint: cand.tokenMint,
         symbol: cand.symbol,
         sizeSol: size,
         range,
         entryPrice: cand.pool.price,
-      });
+      }));
     } catch (e) {
       const err = e as Error & { code?: string; logs?: string[] };
       const msg = (err.message ?? String(e)).split("\n")[0]!.slice(0, 400);
@@ -1101,6 +1175,12 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       });
       continue;
     }
+    // Re-price the bankroll after the fill: the DB now carries the new row, so
+    // computeBankroll's deployed sum shrinks deployable for the NEXT candidate.
+    // A single pre-sweep snapshot let several entries in one sweep collectively
+    // overshoot deployable (paper silently; live via failed sends).
+    bankroll = computeBankroll(walletSol);
+
     // Live-experiment cohort tags (2026-08-07): fee-gate path, mcap band, and
     // bonus composition — evaluated against outcomes after ~5 closes each.
     const feePath = cand.pool.feeTvl24hPct >= g.fee_tvl_24h_min_pct ? "24h" : "recent_hot";
@@ -1143,7 +1223,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
           });
           if (tRent.ok) {
             try {
-              const tPos = await exec.open({
+              const tPos = await withBusy(() => exec.open({
                 poolAddress: cand.pool.address,
                 tokenMint: cand.tokenMint,
                 symbol: cand.symbol,
@@ -1151,7 +1231,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
                 range: tRent.range,
                 entryPrice: cand.pool.price,
                 trancheOf: pos.id,
-              });
+              }));
               recordDecision(cand.tokenMint, cand.pool.address, "entered", null, score, {
                 tranche: true, primaryId: pos.id, size: tSize, range: tRent.range,
               });
@@ -1232,6 +1312,7 @@ export async function runLoop(): Promise<void> {
   let lastScan = 0;
   let lastSweep = 0;
   let haltCloseDone = false;
+  let haltCloseAttempts = 0;
   let pauseLogged = false;
 
   for (;;) {
@@ -1241,13 +1322,39 @@ export async function runLoop(): Promise<void> {
       // Idle (don't exit) so PM2/Railway don't restart-loop while HALT is set.
       if (!haltCloseDone) {
         console.log("[farmer] HALT — closing open positions, then idling until HALT is cleared");
+        // Per-position try/catch, and this whole branch sits outside the tick
+        // try: one throwing close (likely, since operators HALT during RPC
+        // trouble) used to escape runLoop → process.exit(1) → PM2 restart →
+        // same position throws again — a silent crash-loop that never even
+        // attempted the positions after the poison one. Now we close what we
+        // can and retry the rest every idle cycle until the book is empty.
+        haltCloseAttempts++;
+        let failed = 0;
         for (const pos of loadOpenPositions()) {
-          await closeAndReport(exec, pos, "manual", config().exec.exit_slippage_bps, "close", "manual HALT");
+          try {
+            await closeAndReport(exec, pos, "manual", config().exec.exit_slippage_bps, "close", "manual HALT");
+          } catch (e) {
+            failed++;
+            logError({
+              source: "manager", code: "halt_close",
+              message: `HALT close failed for pos#${pos.id} ${pos.symbol}: ${(e as Error).message}`,
+              err: e, dedupeSec: 60,
+            });
+          }
         }
-        haltCloseDone = true;
-        await alert("watchdog", "HALT active — positions closed; bot idle until Resume").catch(() => {});
+        if (failed === 0) {
+          haltCloseDone = true;
+          haltCloseAttempts = 0;
+          await alert("watchdog", "HALT active — positions closed; bot idle until Resume").catch(() => {});
+        } else if (haltCloseAttempts === 1 || haltCloseAttempts % 12 === 0) {
+          await alert("watchdog",
+            `HALT: ${failed} position close(s) failing (attempt ${haltCloseAttempts}) — retrying every cycle until clear`
+          ).catch(() => {});
+        }
       }
-      await writeHeartbeat(exec, 0);
+      // Real book count, not 0: HALT can still have open positions while
+      // closes fail, and the dashboard/heartbeat checker read this.
+      await writeHeartbeat(exec, loadOpenPositions().length);
       await new Promise((r) => setTimeout(r, Math.min(pollMs, 5_000)));
       continue;
     }
@@ -1260,7 +1367,8 @@ export async function runLoop(): Promise<void> {
         console.log("[farmer] PAUSE — trading engine off; positions left open until ON");
         pauseLogged = true;
       }
-      await writeHeartbeat(exec, 0);
+      // PAUSE explicitly leaves the book open — report the real count.
+      await writeHeartbeat(exec, loadOpenPositions().length);
       await new Promise((r) => setTimeout(r, Math.min(pollMs, 5_000)));
       continue;
     }

@@ -6,7 +6,7 @@ import { txErrorDetail } from "../executor/live.js";
 import { sol24hChangePct } from "../market.js";
 import { planFollowRange } from "../ranges/planner.js";
 import { fetchPool } from "../scanner/meteora.js";
-import { circuitBreakerTripped, computeBankroll, openPositionCount, regimeFactor } from "../risk/limits.js";
+import { circuitBreakerTripped, clusterBrakeTripped, computeBankroll, openPositionCount, regimeFactor } from "../risk/limits.js";
 import type { Position } from "../types.js";
 import { vetToken } from "../vetting/vet.js";
 
@@ -204,6 +204,13 @@ async function openFollowLeg(
   // Portfolio-level brakes all still apply — follow legs are real capital.
   const walletSol = await exec.walletSol();
   if (circuitBreakerTripped(walletSol)) return;
+  // Cluster brake too: it exists for market-wide dumps, and an armed chain
+  // seeing its 15% retrace mid-dump is exactly the entry it should stop.
+  const brake = clusterBrakeTripped();
+  if (brake) {
+    console.log(`[follow] cluster brake active (${brake.count} hard exits, ${brake.remainingMin}m left) — leg skipped`);
+    return;
+  }
   const solChange = await sol24hChangePct();
   const regime = solChange === null ? 1 : regimeFactor(solChange);
   if (regime === 0) return;
