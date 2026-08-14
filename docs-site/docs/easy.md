@@ -33,9 +33,31 @@ Set a strong dash token **before** you open the site (do not use a short passwor
 
 If you skip this, the bot still generates a token onto the volume (logs only show the first 8 characters on purpose — deploy logs get screenshotted). You would then need shell access to `/app/data/.env` to read it. Setting the Railway variable is the safe path.
 
-### 2. Volume at `/app/data`
+### 2. Volume at `/app/data` (required)
 
-Service → **Volumes** → Add → mount `/app/data`. Keeps SQLite, Settings, and the wallet across redeploys. Redeploy once after attaching.
+Without this, every redeploy wipes SQLite, Settings, and the wallet. You’ll also see this in deploy logs:
+
+`[railway] no volume detected — attach a volume at /app/data…`
+
+There is **no** “Volumes” tab on the service by itself in the current Railway UI. Add the volume from the **project canvas**:
+
+1. Open your Railway **project** (the canvas with your `dlmmbot` service card).
+2. Click the **`+` Create** button (top right / canvas), **or** right‑click empty canvas space, **or** `⌘K` / `Ctrl+K` → search **Volume**.
+3. Choose **Volume**.
+4. When prompted, **attach it to your bot service** (the GitHub deploy card — not a new empty service).
+5. Set **Mount path** exactly to:
+   ```
+   /app/data
+   ```
+   (Must be `/app/data` — not `/data` and not `data`. Railway runs the app under `/app`.)
+6. Save. Railway will **redeploy** the service so the mount is active.
+
+Confirm in the next deploy logs:
+
+- Good: `[railway] volume mount=/app/data …`
+- Bad (still missing): `[railway] no volume detected …`
+
+Official reference: [Railway Volumes](https://docs.railway.com/volumes).
 
 ### 3. Public domain
 
@@ -120,5 +142,5 @@ Hobby (~$5) plus usage after trial credits — a volume needs a paid tier. Own h
 | --- | --- |
 | Native module build fail | Node 20; check `better-sqlite3` logs |
 | Dash unauthorized | Confirm Railway `DASH_TOKEN` matches what you paste / `?token=` |
-| History / Settings wiped | Volume at `/app/data`, then redeploy |
+| History / Settings wiped | Project canvas → `+` → **Volume** → attach to service → mount **`/app/data`**, then redeploy (logs must show `volume mount=`) |
 | Healthcheck failing | Wait for first build; path is `/health` |

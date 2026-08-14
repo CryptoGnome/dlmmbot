@@ -59,7 +59,8 @@ if (!process.env.DASH_TOKEN) {
 
 const volume = process.env.RAILWAY_VOLUME_MOUNT_PATH;
 if (!volume) {
-  console.warn("[railway] no volume detected — attach a volume at /app/data so SQLite & Settings survive redeploys");
+  console.warn("[railway] no volume detected — SQLite & Settings will wipe on every redeploy");
+  console.warn("[railway] fix: Railway project canvas → + Create → Volume → attach to this service → Mount path = /app/data → redeploy");
 } else {
   console.log(`[railway] volume mount=${volume} db=${dbPath}`);
 }
