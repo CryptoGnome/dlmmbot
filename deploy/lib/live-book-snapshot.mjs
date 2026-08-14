@@ -8,6 +8,7 @@ import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
 import { hostname } from "node:os";
 import { runtimePaths } from "./runtime-paths.mjs";
+import { resolveBotMode } from "./bot-mode.mjs";
 import { readDeployPrefs, shouldAutoDeploy } from "./deploy-prefs.mjs";
 import { listRecentErrors, errorStats } from "./error-log.mjs";
 import {
@@ -351,6 +352,7 @@ export function buildLiveBookSnapshot(root) {
     const now = Math.floor(Date.now() / 1000);
     const dayAgo = now - 86_400;
     const weekAgo = now - 7 * 86_400;
+    const bookMode = resolveBotMode(root);
 
     const fixSha = git(root, ["rev-parse", "--verify", "1b1514b"]) ? "1b1514b" : null;
     const fixTs = fixSha
@@ -363,6 +365,8 @@ export function buildLiveBookSnapshot(root) {
     const heartbeat = db.prepare("SELECT value FROM meta WHERE key='heartbeat'").get()?.value;
     let hb = null;
     try { hb = heartbeat ? JSON.parse(heartbeat) : null; } catch { /* */ }
+    const hbMode = String(hb?.mode ?? "").toLowerCase();
+    const hbMatchesBook = !hbMode || hbMode === bookMode;
 
     const featStmt = db.prepare(
       `SELECT features_json FROM decisions
@@ -418,9 +422,9 @@ export function buildLiveBookSnapshot(root) {
        LEFT JOIN position_marks m ON m.id = (
          SELECT id FROM position_marks WHERE position_id = p.id ORDER BY ts DESC LIMIT 1
        )
-       WHERE p.state IN ('open','pending','closing')
+       WHERE p.state IN ('open','pending','closing') AND p.mode = ?
        ORDER BY p.id`
-    ).all().map((r) => {
+    ).all(bookMode).map((r) => {
       let value = r.value_sol != null ? Number(r.value_sol) : null;
       const entry = Number(r.entry_sol) || 0;
       let unclaimed = r.unclaimed_fees_sol != null ? Number(r.unclaimed_fees_sol) : null;
@@ -555,9 +559,9 @@ export function buildLiveBookSnapshot(root) {
                 ROUND(AVG(${REALIZED_PNL}), 6) avg_pnl,
                 ROUND(SUM(entry_sol), 6) entry_sol
          FROM positions
-         WHERE mode='live' AND exit_ts IS NOT NULL AND exit_ts > ?
+         WHERE mode = ? AND exit_ts IS NOT NULL AND exit_ts > ?
          GROUP BY exit_reason ORDER BY n DESC`
-      ).all(since);
+      ).all(bookMode, since);
       return byReason.map((r) => ({
         ...r,
         pct: r.entry_sol > 0 ? Math.round((r.pnl / r.entry_sol) * 1e6) / 1e6 : null,
@@ -566,8 +570,8 @@ export function buildLiveBookSnapshot(root) {
 
     const allLiveRow = db.prepare(
       `SELECT COUNT(*) n, ROUND(SUM(${REALIZED_PNL}), 6) pnl, ROUND(SUM(entry_sol), 6) entry_sol
-       FROM positions WHERE mode='live' AND exit_ts IS NOT NULL`
-    ).get();
+       FROM positions WHERE mode = ? AND exit_ts IS NOT NULL`
+    ).get(bookMode);
     const allLive = {
       ...allLiveRow,
       pct: allLiveRow.entry_sol > 0
@@ -578,9 +582,9 @@ export function buildLiveBookSnapshot(root) {
     const kellyRows = db.prepare(
       `SELECT (${REALIZED_PNL}) / entry_sol AS ret
        FROM positions
-       WHERE exit_ts IS NOT NULL AND entry_sol > 0 AND follow_chain_id IS NULL
+       WHERE mode = ? AND exit_ts IS NOT NULL AND entry_sol > 0 AND follow_chain_id IS NULL
        ORDER BY exit_ts DESC LIMIT 50`
-    ).all();
+    ).all(bookMode);
 
     function kellyFrom(rows) {
       const n = rows.length;
@@ -628,12 +632,12 @@ export function buildLiveBookSnapshot(root) {
     const hard = db.prepare(
       `SELECT exit_ts, exit_reason, symbol
        FROM positions
-       WHERE exit_reason IN ('P0_safety','P1_stop') AND exit_ts IS NOT NULL
+       WHERE mode = ? AND exit_reason IN ('P0_safety','P1_stop') AND exit_ts IS NOT NULL
          AND exit_ts > ?
          AND entry_sol > 0
          AND (${REALIZED_PNL}) / entry_sol <= ?
        ORDER BY exit_ts DESC`
-    ).all(clusterSince, -(clusterLossPct / 100));
+    ).all(bookMode, clusterSince, -(clusterLossPct / 100));
 
     let cluster = { tripped: false, count: hard.length, remainingMin: 0, recent: hard.slice(0, 5) };
     if (hard.length >= clusterExits) {
@@ -702,8 +706,8 @@ export function buildLiveBookSnapshot(root) {
 
     const follow = db.prepare(
       `SELECT state, COUNT(*) n, ROUND(SUM(chain_pnl_sol),4) pnl
-       FROM follow_chains WHERE started_ts > ? GROUP BY state`
-    ).all(fixTs);
+       FROM follow_chains WHERE mode = ? AND started_ts > ? GROUP BY state`
+    ).all(bookMode, fixTs);
 
     const p3Missed = db.prepare(
       `SELECT id, symbol, token_mint AS mint, datetime(exit_ts,'unixepoch') at,
@@ -711,9 +715,9 @@ export function buildLiveBookSnapshot(root) {
               ROUND(entry_sol, 4) entry_sol,
               ROUND((exit_ts - entry_ts)/60.0,1) hold_min
        FROM positions
-       WHERE mode='live' AND exit_reason='P3_above' AND state='closed_missed' AND exit_ts > ?
+       WHERE mode = ? AND exit_reason='P3_above' AND state='closed_missed' AND exit_ts > ?
        ORDER BY exit_ts DESC LIMIT 10`
-    ).all(fixTs).map((r) => ({
+    ).all(bookMode, fixTs).map((r) => ({
       ...r,
       pct: r.entry_sol > 0 ? Math.round((r.pnl / r.entry_sol) * 1e6) / 1e6 : null,
     }));
@@ -817,8 +821,13 @@ export function buildLiveBookSnapshot(root) {
               ) AS tx_sig
        FROM decisions d LEFT JOIN tokens t ON t.mint=d.mint
        WHERE d.action='entered' AND d.ts > ?
+         AND EXISTS (
+           SELECT 1 FROM positions p
+           WHERE p.token_mint = d.mint AND p.mode = ?
+             AND p.entry_ts BETWEEN d.ts - 30 AND d.ts + 600
+         )
        ORDER BY d.ts DESC LIMIT 40`
-    ).all(activitySince)) {
+    ).all(activitySince, bookMode)) {
       const sym = r.symbol || (r.pool_name ? String(r.pool_name).split("-")[0] : null) || (r.mint ? String(r.mint).slice(0, 6) : "?");
       activity.push({
         ts: r.ts, at: r.at, kind: "entry",
@@ -844,9 +853,9 @@ export function buildLiveBookSnapshot(root) {
                 ORDER BY e.ts DESC LIMIT 1
               ) AS tx_sig
        FROM positions
-       WHERE mode='live' AND exit_ts IS NOT NULL AND exit_ts > ?
+       WHERE mode = ? AND exit_ts IS NOT NULL AND exit_ts > ?
        ORDER BY exit_ts DESC LIMIT 40`
-    ).all(activitySince)) {
+    ).all(bookMode, activitySince)) {
       activity.push({
         ts: r.ts, at: r.at, kind: "exit",
         symbol: r.symbol || "?", mint: r.mint || null, pool: r.pool || null,
@@ -1053,10 +1062,15 @@ export function buildLiveBookSnapshot(root) {
       const mark = p.mark?.value_sol;
       return s + (typeof mark === "number" && Number.isFinite(mark) ? mark : (p.entry_sol ?? 0));
     }, 0);
-    const walletSol = typeof hb?.walletSol === "number" ? hb.walletSol : null;
+    // Ignore stale heartbeat wallet from the other mode during paper↔live flip.
+    const walletSol = (typeof hb?.walletSol === "number" && hbMatchesBook)
+      ? hb.walletSol
+      : null;
     const solUsdRow = db.prepare(
-      `SELECT sol_usd FROM pnl_daily WHERE mode='live' AND sol_usd > 0 ORDER BY day DESC LIMIT 1`
-    ).get();
+      `SELECT sol_usd FROM pnl_daily
+       WHERE sol_usd > 0
+       ORDER BY (mode = ?) DESC, day DESC LIMIT 1`
+    ).get(bookMode);
     const solUsd = solUsdRow?.sol_usd ?? null;
     const totalSol = walletSol != null ? walletSol + deployedSol : null;
     const balance = {
@@ -1075,7 +1089,8 @@ export function buildLiveBookSnapshot(root) {
     const walletPubkey = resolveWalletPubkey();
     // Meteora Data API — LP deposit/withdraw/fee PnL (what app.meteora.ag/portfolio shows).
     // Distinct from our wallet-measured book (includes rent + post-exit swap slippage).
-    const meteora = fetchMeteoraPortfolio(walletPubkey);
+    // Paper mode must not surface on-chain wallet LP as if it were the sim book.
+    const meteora = bookMode === "live" ? fetchMeteoraPortfolio(walletPubkey) : null;
 
     const recentErrors = listRecentErrors(db, 80);
     const metaMints = [
@@ -1100,6 +1115,8 @@ export function buildLiveBookSnapshot(root) {
       at: new Date(now * 1000).toISOString(),
       host: (() => { try { return hostname() || "local"; } catch { return "local"; } })(),
       wallet_pubkey: walletPubkey,
+      /** Operating book — paper and live share one DB; all position/PnL slices use this. */
+      book_mode: bookMode,
       ops: {
         paused: pause.paused,
         pause_at: pause.pause_at,
