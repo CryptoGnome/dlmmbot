@@ -279,8 +279,8 @@ function BlockView({ block }: { block: WikiBlock }) {
   switch (block.type) {
     case "tldr":
       return (
-        <div className="border border-accent/40 bg-accent/5 px-3 py-3">
-          <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold tracking-[0.14em] text-accent uppercase">
+        <div className="border border-grid bg-bg/40 px-3 py-3">
+          <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold tracking-[0.14em] text-dim uppercase">
             <Icon icon={Sparkles} size={11} />
             In plain English
           </div>
