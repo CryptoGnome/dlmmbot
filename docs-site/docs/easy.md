@@ -18,7 +18,7 @@ Memecoin LP can wipe a wallet. Not financial advice. **Burner only.**
 :::
 
 ::: tip Settings profiles
-In **Settings → Profiles**: apply Conservative / Balanced / Aggressive, save your own pack, or copy a community profile from GitHub. Share with Export → Propose on GitHub (`profiles/community`).
+In **Settings → Profiles**: apply Conservative / Balanced / Aggressive, save your own pack, or browse the GitHub community gallery. **Share to GitHub** is browser-only (fork when asked) — works on Railway with no git on the host. Details in the dashboard Wiki → Settings profiles.
 :::
 
 ## What’s automated

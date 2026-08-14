@@ -87,6 +87,8 @@ function slugify(name) {
     .slice(0, 48) || "profile";
 }
 
+export { slugify };
+
 /**
  * @param {unknown} raw
  * @returns {{ ok: true, profile: object } | { ok: false, error: string }}
@@ -163,8 +165,12 @@ export function shareMeta() {
   return {
     repo,
     ref,
+    /** Opens GitHub “create file”; non-collaborators are prompted to fork (browser-only — fine on Railway). */
     new_file_base: `https://github.com/${repo}/new/${ref}?filename=profiles/community/`,
+    edit_index_url: `https://github.com/${repo}/edit/${ref}/profiles/community/index.json`,
     community_readme: `https://github.com/${repo}/blob/${ref}/profiles/community/README.md`,
+    fork_hint:
+      "You do not need git on your bot host. Use github.com in the browser. If you are not a collaborator, GitHub asks you to Fork first — that is expected.",
   };
 }
 

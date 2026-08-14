@@ -383,7 +383,9 @@ export type ProfileShareMeta = {
   repo: string;
   ref: string;
   new_file_base: string;
+  edit_index_url?: string;
   community_readme: string;
+  fork_hint?: string;
 };
 
 export async function fetchProfiles(): Promise<{
@@ -506,18 +508,32 @@ export async function applyProfileApi(body: {
   return { applied: data.applied ?? [], config: data.config ?? {} };
 }
 
-export async function fetchProfileSnapshot(): Promise<{
+export async function fetchProfileSnapshot(name?: string): Promise<{
   updates: Record<string, unknown>;
   share_url: string;
+  share: ProfileShareMeta;
+  slug: string;
 }> {
   const t = tokenFromUrl();
-  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const params = new URLSearchParams();
+  if (t) params.set("token", t);
+  if (name?.trim()) params.set("name", name.trim());
+  const q = params.toString() ? `?${params}` : "";
   const res = await fetch(`/api/profiles/snapshot${q}`, { headers: authHeaders() });
   const data = await res.json() as {
-    updates?: Record<string, unknown>; share_url?: string; error?: string;
+    updates?: Record<string, unknown>;
+    share_url?: string;
+    share?: ProfileShareMeta;
+    slug?: string;
+    error?: string;
   };
   if (!res.ok) throw new Error(data.error ?? `snapshot ${res.status}`);
-  return { updates: data.updates ?? {}, share_url: data.share_url ?? "" };
+  return {
+    updates: data.updates ?? {},
+    share_url: data.share_url ?? "",
+    share: data.share ?? { repo: "CryptoGnome/dlmmbot", ref: "master", new_file_base: "", community_readme: "" },
+    slug: data.slug ?? "my-profile",
+  };
 }
 
 export type LiveStatus = "connecting" | "open" | "closed";

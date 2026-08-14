@@ -31,10 +31,11 @@ JSON packs of allowlisted Bot settings knobs (same dotted paths as the dashboard
 - `exec.mode` is never applied from a profile (cannot flip paper/live).
 - Secrets, wallet, RPC, and the GNME usage fee are never part of a profile.
 
-## Share a profile
+## Share a profile (Railway / browser)
 
-1. In the dashboard: Settings → Profiles → **Share** / Export JSON.
-2. Open **Propose on GitHub** (or add `profiles/community/<slug>.json` via PR).
-3. Add a row to [`community/index.json`](community/index.json) in the same PR.
+1. Dashboard: **Settings → Profiles → Share to GitHub**.
+2. Follow the modal (copy JSON + index row → create file → edit `index.json`).
+3. GitHub will ask you to **fork** if you cannot push to this repo — that is expected.
+4. You never need `git` on the bot host (Railway included); use github.com only.
 
-See [`community/README.md`](community/README.md).
+Details: [`community/README.md`](community/README.md).

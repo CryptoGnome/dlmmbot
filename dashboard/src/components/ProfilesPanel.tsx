@@ -14,8 +14,9 @@ import {
 import { Badge, Panel } from "@/components/ui";
 import { Icon } from "@/lib/icons";
 import { toast } from "@/lib/toast";
+import { copyText } from "@/lib/errorReport";
 import {
-  Check, Download, ExternalLink, Layers, Trash2, Upload,
+  Check, Copy, Download, ExternalLink, Layers, Trash2, Upload,
 } from "lucide-react";
 
 type PreviewState = {
@@ -24,6 +25,15 @@ type PreviewState = {
   name: string;
   changes: Array<{ path: string; from: unknown; to: unknown }>;
   updates: Record<string, unknown>;
+};
+
+type ShareState = {
+  json: string;
+  indexRow: string;
+  slug: string;
+  name: string;
+  share: ProfileShareMeta;
+  createUrl: string;
 };
 
 function fmtVal(v: unknown): string {
@@ -98,6 +108,7 @@ export function ProfilesPanel({
   const [communityErr, setCommunityErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<PreviewState | null>(null);
+  const [shareGuide, setShareGuide] = useState<ShareState | null>(null);
   const [saveName, setSaveName] = useState("");
   const [q, setQ] = useState("");
 
@@ -178,38 +189,63 @@ export function ProfilesPanel({
     }
   }
 
-  async function shareCurrent() {
+  async function openShareGuide() {
     setBusy(true);
     try {
-      const snap = await fetchProfileSnapshot();
+      const name = saveName.trim() || "My profile";
+      const snap = await fetchProfileSnapshot(name);
+      const meta = snap.share ?? share;
       const blob = {
         schema: 1,
-        id: "my-profile",
-        name: saveName.trim() || "My profile",
-        description: "Exported from DLMM Bot Settings.",
+        id: snap.slug,
+        name,
+        description: "Exported from DLMM Bot Settings. Edit before opening a PR.",
         author: "operator",
         tags: ["community"],
         updated: new Date().toISOString().slice(0, 10),
         updates: snap.updates,
       };
-      const text = JSON.stringify(blob, null, 2) + "\n";
-      try {
-        await navigator.clipboard.writeText(text);
-        toast({ title: "Profile JSON copied", tone: "ok", kind: "event" });
-      } catch {
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(new Blob([text], { type: "application/json" }));
-        a.download = "dlmmbot-profile.json";
-        a.click();
-        toast({ title: "Profile downloaded", tone: "ok", kind: "event" });
-      }
-      const url = snap.share_url || share?.new_file_base;
-      if (url) window.open(url, "_blank", "noopener,noreferrer");
+      const json = `${JSON.stringify(blob, null, 2)}\n`;
+      const indexRow = JSON.stringify({
+        id: snap.slug,
+        name,
+        author: "operator",
+        description: blob.description,
+        tags: ["community"],
+        file: `${snap.slug}.json`,
+        updated: blob.updated,
+      }, null, 2);
+      setShareGuide({
+        json,
+        indexRow,
+        slug: snap.slug,
+        name,
+        share: meta ?? {
+          repo: "CryptoGnome/dlmmbot",
+          ref: "master",
+          new_file_base: "",
+          community_readme: "",
+        },
+        createUrl: snap.share_url || `${meta?.new_file_base ?? ""}${snap.slug}.json`,
+      });
     } catch (e) {
       toast({ title: "Share failed", detail: (e as Error).message, tone: "danger", kind: "fail" });
     } finally {
       setBusy(false);
     }
+  }
+
+  async function copyBlob(text: string, label: string) {
+    const ok = await copyText(text);
+    if (ok) {
+      toast({ title: `${label} copied`, tone: "ok", kind: "event" });
+      return;
+    }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+    a.download = label.includes("index") ? "index-row.json" : "dlmmbot-profile.json";
+    a.click();
+    toast({ title: `${label} downloaded`, detail: "Clipboard blocked — file saved instead", tone: "ok", kind: "event" });
   }
 
   const filteredCommunity = community.filter((p) => {
@@ -226,7 +262,7 @@ export function ProfilesPanel({
       >
         <p className="mb-3 text-[11px] text-dim">
           Official packs, your saved snapshots, and community profiles from GitHub.
-          Applying never changes paper/live mode or secrets.
+          Applying never changes paper/live mode or secrets. Sharing is browser-only — works from Railway.
         </p>
 
         <div className="mb-4">
@@ -266,12 +302,11 @@ export function ProfilesPanel({
               type="button"
               disabled={busy}
               className="inline-flex items-center gap-1 border border-accent/40 px-2 py-1 text-[10px] tracking-wider text-accent uppercase hover:text-hover disabled:opacity-40"
-              onClick={() => void shareCurrent()}
-              title="Copy JSON and open GitHub new-file for community PR"
+              onClick={() => void openShareGuide()}
+              title="Guided share → GitHub PR (fork in browser if needed)"
             >
               <Icon icon={Download} size={10} />
-              Share
-              <Icon icon={ExternalLink} size={9} className="opacity-60" />
+              Share to GitHub
             </button>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -310,14 +345,22 @@ export function ProfilesPanel({
               placeholder="Search…"
               className="min-w-[8rem] border border-grid bg-transparent px-2 py-1 text-[11px] text-fg outline-none focus:border-accent"
             />
+            <button
+              type="button"
+              disabled={busy}
+              className="inline-flex items-center gap-1 text-[10px] tracking-wider text-accent uppercase hover:text-hover disabled:opacity-40"
+              onClick={() => void openShareGuide()}
+            >
+              How to contribute
+            </button>
             {share?.community_readme && (
               <a
                 href={share.community_readme}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 text-[10px] tracking-wider text-accent no-underline uppercase hover:text-hover"
+                className="inline-flex items-center gap-1 text-[10px] tracking-wider text-muted no-underline uppercase hover:text-hover"
               >
-                How to PR
+                README
                 <Icon icon={ExternalLink} size={9} />
               </a>
             )}
@@ -336,7 +379,7 @@ export function ProfilesPanel({
             ))}
             {!filteredCommunity.length && (
               <div className="text-[11px] text-dim">
-                {community.length ? "No matches." : "No community profiles yet — be the first to Share."}
+                {community.length ? "No matches." : "No community profiles yet — use Share to GitHub."}
               </div>
             )}
           </div>
@@ -393,6 +436,121 @@ export function ProfilesPanel({
               >
                 <Icon icon={Check} size={12} />
                 {busy ? "Applying…" : "Apply"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {shareGuide && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-3 sm:items-center">
+          <div className="max-h-[90dvh] w-full max-w-xl overflow-auto border border-grid bg-panel p-4 shadow-xl">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h2 className="font-display text-base font-semibold text-fg">Share “{shareGuide.name}”</h2>
+                <p className="mt-1 text-[11px] leading-snug text-dim">
+                  {shareGuide.share.fork_hint
+                    ?? "Use github.com in the browser. Fork if GitHub asks — no git needed on Railway."}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="text-[11px] text-dim hover:text-fg"
+                onClick={() => setShareGuide(null)}
+              >
+                Close
+              </button>
+            </div>
+
+            <ol className="mt-3 space-y-3 text-[12px] text-fg">
+              <li className="border border-grid p-2.5">
+                <div className="mb-1 text-[10px] tracking-wider text-dim uppercase">1 · Copy profile JSON</div>
+                <p className="mb-2 text-[11px] text-muted">
+                  File will be <span className="font-mono text-fg">profiles/community/{shareGuide.slug}.json</span>
+                </p>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 border border-accent/50 px-2 py-1 text-[10px] tracking-wider text-accent uppercase hover:text-hover"
+                  onClick={() => void copyBlob(shareGuide.json, "Profile JSON")}
+                >
+                  <Icon icon={Copy} size={10} />
+                  Copy JSON
+                </button>
+              </li>
+              <li className="border border-grid p-2.5">
+                <div className="mb-1 text-[10px] tracking-wider text-dim uppercase">2 · Copy index row</div>
+                <p className="mb-2 text-[11px] text-muted">
+                  Paste this object into the <span className="font-mono text-fg">profiles</span> array in{" "}
+                  <span className="font-mono text-fg">index.json</span> (same PR).
+                </p>
+                <pre className="mb-2 max-h-28 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px] text-dim">
+                  {shareGuide.indexRow}
+                </pre>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 border border-accent/50 px-2 py-1 text-[10px] tracking-wider text-accent uppercase hover:text-hover"
+                  onClick={() => void copyBlob(shareGuide.indexRow, "Index row")}
+                >
+                  <Icon icon={Copy} size={10} />
+                  Copy index row
+                </button>
+              </li>
+              <li className="border border-grid p-2.5">
+                <div className="mb-1 text-[10px] tracking-wider text-dim uppercase">3 · Open GitHub (fork if asked)</div>
+                <p className="mb-2 text-[11px] text-muted">
+                  Logged into GitHub? Click create file. If you cannot push to{" "}
+                  <span className="font-mono text-fg">{shareGuide.share.repo}</span>, choose{" "}
+                  <span className="text-fg">Fork this repository</span>, then commit on your fork and open a PR.
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  <a
+                    href={shareGuide.createUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 border border-ok/50 px-2 py-1 text-[10px] tracking-wider text-ok no-underline uppercase hover:text-hover"
+                  >
+                    Create {shareGuide.slug}.json
+                    <Icon icon={ExternalLink} size={9} />
+                  </a>
+                  {shareGuide.share.edit_index_url && (
+                    <a
+                      href={shareGuide.share.edit_index_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 border border-grid px-2 py-1 text-[10px] tracking-wider text-muted no-underline uppercase hover:text-hover"
+                    >
+                      Edit index.json
+                      <Icon icon={ExternalLink} size={9} />
+                    </a>
+                  )}
+                  {shareGuide.share.community_readme && (
+                    <a
+                      href={shareGuide.share.community_readme}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 border border-grid px-2 py-1 text-[10px] tracking-wider text-muted no-underline uppercase hover:text-hover"
+                    >
+                      Full README
+                      <Icon icon={ExternalLink} size={9} />
+                    </a>
+                  )}
+                </div>
+              </li>
+              <li className="border border-grid p-2.5 text-[11px] text-muted">
+                <span className="text-[10px] tracking-wider text-dim uppercase">4 · Open the PR</span>
+                <p className="mt-1">
+                  After both files are on your fork branch, GitHub’s “Contribute → Open pull request” sends it to the bot repo. Maintainers merge → gallery updates (community cache ~10 min).
+                </p>
+              </li>
+            </ol>
+
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                className="border border-grid px-3 py-1.5 text-[11px] tracking-wider text-muted uppercase hover:text-fg"
+                onClick={() => setShareGuide(null)}
+              >
+                Done
               </button>
             </div>
           </div>

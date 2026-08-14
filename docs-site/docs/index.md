@@ -27,5 +27,5 @@ On each **live** winning close, **1% of measured net profit** buys and burns **G
 :::
 
 ::: tip Settings profiles
-Dashboard **Settings → Profiles**: official Conservative / Balanced / Aggressive packs, save your own on the volume, and browse community packs from GitHub (`profiles/community`). Share via Export → Propose on GitHub. Profiles never change paper/live mode or secrets.
+Dashboard **Settings → Profiles**: official packs, local saves on the volume, and a GitHub community gallery. **Share to GitHub** walks you through copy → fork (if needed) → PR in the browser — no git on Railway. Profiles never change paper/live mode or secrets.
 :::

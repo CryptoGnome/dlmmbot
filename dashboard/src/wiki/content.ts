@@ -488,7 +488,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           { title: "Research", text: "People we studied — not trade signals.", icon: "book", tone: "fg" },
           { title: "Wiki", text: "This guided tour.", icon: "bot", tone: "ok" },
           { title: "Changes", text: "Pending Git updates + Approve if auto-update is off.", icon: "refresh", tone: "warn" },
-          { title: "Settings", text: "Knobs + profiles (official / local / GitHub community) + wallet vault + auto-update.", icon: "lock", tone: "fg" },
+          { title: "Settings", text: "Knobs + Profiles (official / local / community) + wallet vault + auto-update. See Wiki → Settings profiles.", icon: "lock", tone: "fg" },
         ],
       },
       {
@@ -610,6 +610,87 @@ export const WIKI_SECTIONS: WikiSection[] = [
     ],
   },
   {
+    id: "profiles",
+    title: "Settings profiles",
+    icon: "layers",
+    simple: "Presets for Bot settings. Share to the community gallery from the browser — Railway is fine; you do not need git on the host.",
+    summary: "Official / local / community packs, and how to open a GitHub PR without cloning.",
+    blocks: [
+      {
+        type: "tldr",
+        text: "Settings → Profiles: apply a pack (with a diff preview), save your own on the volume, or share via Share to GitHub. Sharing is copy-paste + github.com — fork when GitHub asks.",
+      },
+      {
+        type: "cards",
+        items: [
+          {
+            title: "Official",
+            text: "Conservative / Balanced / Aggressive shipped in the repo. Preview shows what will change before Apply.",
+            icon: "check",
+            tone: "ok",
+          },
+          {
+            title: "My profiles",
+            text: "Saved on your data volume (Railway disk / local data/). Private to your bot until you share.",
+            icon: "lock",
+            tone: "fg",
+          },
+          {
+            title: "Community",
+            text: "Gallery loaded from GitHub profiles/community. Apply like any other pack. Gallery cache ~10 minutes.",
+            icon: "book",
+            tone: "accent",
+          },
+        ],
+      },
+      {
+        type: "callout",
+        tone: "accent",
+        title: "Safety",
+        text: "Profiles never flip paper/live, never touch RPC/wallet secrets, and never change the GNME usage fee. Only allowlisted Bot settings knobs.",
+      },
+      {
+        type: "h3",
+        text: "Share to GitHub (Railway / browser)",
+      },
+      {
+        type: "p",
+        text: "You do not clone the bot to a PC and you do not run git on Railway. Stay logged into github.com in the browser.",
+      },
+      {
+        type: "steps",
+        items: [
+          {
+            title: "Open Share to GitHub",
+            text: "Settings → Profiles. Optional: type a name first so the file slug matches. The modal walks you through the rest.",
+            icon: "layers",
+          },
+          {
+            title: "Copy JSON + index row",
+            text: "Step 1 copies the profile file. Step 2 copies the object to paste into profiles/community/index.json (same PR).",
+            icon: "check",
+          },
+          {
+            title: "Create file — fork if asked",
+            text: "Create <slug>.json opens GitHub. If you cannot push to CryptoGnome/dlmmbot, choose Fork this repository — that is normal. You edit your fork, then open a PR upstream.",
+            icon: "lock",
+          },
+          {
+            title: "Edit index.json + open PR",
+            text: "Add your row to the profiles array on the same fork branch, then Contribute → Open pull request. After merge, the gallery picks it up (cache ~10 min).",
+            icon: "refresh",
+          },
+        ],
+      },
+      {
+        type: "callout",
+        tone: "warn",
+        title: "Fork = expected",
+        text: "Most operators are not collaborators. GitHub’s fork prompt is the path — not a bug. Full write-up: profiles/community/README.md in the repo.",
+      },
+    ],
+  },
+  {
     id: "glossary",
     title: "Word list",
     icon: "book",
@@ -627,7 +708,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           ["Escape hatch", "Deep dip, then recovery → reshape the range instead of dying slowly."],
           ["Profit lock", "Bank a slice of a big winner while the rest keeps earning."],
           ["Usage fee", "Fixed 1% of measured close profit → buy+burn GNME (not Settings-tunable)."],
-          ["Profile", "Pack of Bot settings — official / local / GitHub community gallery."],
+          ["Profile", "Pack of Bot settings — official / local / GitHub community. See Wiki → Settings profiles."],
           ["Follow", "Careful re-entries after an up-and-out close."],
           ["Cluster brake", "Too many hard stops close together → pause new entries."],
           ["HALT", "Emergency stop file/flag — close book, idle."],

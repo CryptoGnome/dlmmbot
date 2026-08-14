@@ -24,8 +24,8 @@ import {
 import { insertError, dismissErrors } from "./lib/error-log.mjs";
 import {
   listProfiles, listCommunityProfiles, saveLocalProfile, deleteLocalProfile,
-  resolveProfileUpdates, previewProfileDiff, applyProfileUpdates, githubProposeUrl,
-  snapshotAllowlistedConfig,
+  resolveProfileUpdates, previewProfileDiff, applyProfileUpdates, githubProposeUrl, slugify,
+  snapshotAllowlistedConfig, shareMeta,
 } from "./lib/profiles.mjs";
 import { requestHalt, clearHalt, readHaltState } from "./lib/halt.mjs";
 import { requestPause, clearPause, readPauseState } from "./lib/pause.mjs";
@@ -217,8 +217,15 @@ const server = createServer(async (req, res) => {
 
   if (url.pathname === "/api/profiles/snapshot" && req.method === "GET") {
     try {
+      const name = String(url.searchParams.get("name") || "my-profile");
       const updates = snapshotAllowlistedConfig(root);
-      sendJson(res, 200, { updates, share_url: githubProposeUrl("my-profile") });
+      const slug = slugify(name);
+      sendJson(res, 200, {
+        updates,
+        share_url: githubProposeUrl(slug),
+        share: shareMeta(),
+        slug,
+      });
     } catch (e) {
       sendJson(res, 500, { error: e.message ?? String(e) });
     }
