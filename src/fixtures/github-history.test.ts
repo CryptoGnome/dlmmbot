@@ -1,3 +1,4 @@
+// @ts-nocheck — imports deploy/*.mjs (no TS declarations)
 import { describe, expect, it } from "vitest";
 import {
   normalizeGithubCommit,
