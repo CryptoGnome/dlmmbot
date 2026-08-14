@@ -4,11 +4,12 @@ import { Badge, Panel } from "@/components/ui";
 import { Icon } from "@/lib/icons";
 import { shortTime, timeAgo } from "@/lib/utils";
 import { toast } from "@/lib/toast";
+import { dismissErrors } from "@/lib/api";
 import {
   copyText, errorIssueUrl, formatErrorDump, formatErrorLogDump,
 } from "@/lib/errorReport";
 import {
-  Bug, Check, ChevronDown, ChevronRight, Copy, ExternalLink, OctagonX,
+  Bug, Check, ChevronDown, ChevronRight, Copy, ExternalLink, OctagonX, X,
 } from "lucide-react";
 import { TokenSymbol } from "@/components/TokenSymbol";
 
@@ -22,12 +23,14 @@ function levelTone(level: string): "danger" | "warn" | "accent" | "fg" {
 }
 
 function ErrorRow({
-  e, watch, expanded, onToggle,
+  e, watch, expanded, onToggle, onDismiss, busy,
 }: {
   e: ErrorLogEntry;
   watch: LiveWatch | null;
   expanded: boolean;
   onToggle: () => void;
+  onDismiss: () => void;
+  busy: boolean;
 }) {
   const dump = formatErrorDump(e, watch);
   const issueHref = errorIssueUrl(e, watch);
@@ -95,6 +98,16 @@ function ErrorRow({
               GitHub issue
               <Icon icon={ExternalLink} size={9} className="opacity-60" />
             </a>
+            <button
+              type="button"
+              disabled={busy}
+              className="inline-flex items-center gap-1 border border-grid px-2 py-1 text-[10px] tracking-wider text-muted uppercase hover:border-ok/60 hover:text-ok disabled:opacity-40"
+              onClick={onDismiss}
+              title="Hide this error from the live log"
+            >
+              <Icon icon={X} size={10} />
+              Dismiss
+            </button>
           </div>
         </div>
       </div>
@@ -159,12 +172,50 @@ function ErrorRow({
 export function ErrorsPage({ watch }: { watch: LiveWatch | null }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [openId, setOpenId] = useState<number | null>(null);
-  const all = watch?.recent_errors ?? [];
+  const [busy, setBusy] = useState(false);
+  const [hidden, setHidden] = useState<Set<number>>(() => new Set());
+  const allRaw = watch?.recent_errors ?? [];
+  const all = useMemo(
+    () => allRaw.filter((e) => !hidden.has(e.id)),
+    [allRaw, hidden],
+  );
   const stats = watch?.error_stats;
   const items = useMemo(
     () => (filter === "all" ? all : all.filter((e) => e.level === filter)),
     [all, filter],
   );
+
+  async function runDismiss(opts: { ids?: number[]; all?: boolean }) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await dismissErrors(opts);
+      if (opts.all) {
+        setHidden(new Set(allRaw.map((e) => e.id)));
+      } else if (opts.ids?.length) {
+        setHidden((prev) => {
+          const next = new Set(prev);
+          for (const id of opts.ids!) next.add(id);
+          return next;
+        });
+      }
+      toast({
+        title: opts.all ? "Dismissed all errors" : "Dismissed",
+        detail: `${res.dismissed} hidden`,
+        tone: "ok",
+        kind: "event",
+      });
+    } catch (e) {
+      toast({
+        title: "Dismiss failed",
+        detail: (e as Error).message,
+        tone: "danger",
+        kind: "event",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="space-y-3">
@@ -175,14 +226,14 @@ export function ErrorsPage({ watch }: { watch: LiveWatch | null }) {
             Errors
           </h1>
           <p className="text-[11px] text-dim">
-            Live runtime log over WebSocket — stacks, context, copy, or open a GitHub issue.
+            Live runtime log — copy, open a GitHub issue, or dismiss after you review.
           </p>
         </div>
         <div className="flex flex-wrap gap-1.5">
           <button
             type="button"
             className="inline-flex items-center gap-1 border border-grid px-2.5 py-1.5 text-[10px] tracking-wider text-muted uppercase hover:text-hover"
-            disabled={!items.length}
+            disabled={!items.length || busy}
             onClick={() => {
               void (async () => {
                 const ok = await copyText(formatErrorLogDump(items, watch));
@@ -197,6 +248,16 @@ export function ErrorsPage({ watch }: { watch: LiveWatch | null }) {
           >
             <Icon icon={Copy} size={11} />
             Copy all
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 border border-grid px-2.5 py-1.5 text-[10px] tracking-wider text-muted uppercase hover:border-ok/60 hover:text-ok disabled:opacity-40"
+            disabled={!all.length || busy}
+            onClick={() => void runDismiss({ all: true })}
+            title="Hide every undismissed error from the live log"
+          >
+            <Icon icon={X} size={11} />
+            Dismiss all
           </button>
         </div>
       </div>
@@ -239,6 +300,8 @@ export function ErrorsPage({ watch }: { watch: LiveWatch | null }) {
                 watch={watch}
                 expanded={openId === e.id}
                 onToggle={() => setOpenId((id) => (id === e.id ? null : e.id))}
+                busy={busy}
+                onDismiss={() => void runDismiss({ ids: [e.id] })}
               />
             ))}
           </ul>

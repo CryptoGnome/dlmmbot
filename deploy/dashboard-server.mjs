@@ -21,7 +21,7 @@ import { applyRuntimeEnv } from "./lib/runtime-paths.mjs";
 import {
   approveDeploy, readDeployPrefs, writeDeployPrefs,
 } from "./lib/deploy-prefs.mjs";
-import { insertError } from "./lib/error-log.mjs";
+import { insertError, dismissErrors } from "./lib/error-log.mjs";
 import { requestHalt, clearHalt, readHaltState } from "./lib/halt.mjs";
 import { requestPause, clearPause, readPauseState } from "./lib/pause.mjs";
 import { execSync } from "node:child_process";
@@ -445,6 +445,30 @@ const server = createServer(async (req, res) => {
       const pause = action === "off" ? requestPause(root) : clearPause(root);
       watchCache = { at: 0, data: null, building: null };
       sendJson(res, 200, { ok: true, ...pause, ...readHaltState(root) });
+    } catch (e) {
+      sendJson(res, 400, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/errors/dismiss" && req.method === "POST") {
+    try {
+      if (!token) {
+        sendJson(res, 401, { error: "dash token required" });
+        return;
+      }
+      const body = await readBody(req);
+      const all = body?.all === true;
+      const ids = Array.isArray(body?.ids)
+        ? body.ids.map((x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0)
+        : [];
+      if (!all && !ids.length) {
+        sendJson(res, 400, { error: "pass { all: true } or { ids: number[] }" });
+        return;
+      }
+      const dismissed = dismissErrors(root, all ? { all: true } : { ids });
+      watchCache = { at: 0, data: null, building: null };
+      sendJson(res, 200, { ok: true, dismissed });
     } catch (e) {
       sendJson(res, 400, { error: e.message ?? String(e) });
     }

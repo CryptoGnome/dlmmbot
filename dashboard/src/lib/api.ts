@@ -349,6 +349,23 @@ export async function postEngine(action: "on" | "off"): Promise<{
   };
 }
 
+/** Soft-dismiss error_log rows (hide from Errors tab / badge; kept in DB). */
+export async function dismissErrors(opts: { ids?: number[]; all?: boolean }): Promise<{
+  ok: boolean;
+  dismissed: number;
+}> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/errors/dismiss${q}`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(opts.all ? { all: true } : { ids: opts.ids ?? [] }),
+  });
+  const data = await res.json() as { ok?: boolean; dismissed?: number; error?: string };
+  if (!res.ok) throw new Error(data.error ?? `dismiss ${res.status}`);
+  return { ok: !!data.ok, dismissed: Number(data.dismissed) || 0 };
+}
+
 export type LiveStatus = "connecting" | "open" | "closed";
 
 type LiveHandlers = {

@@ -538,7 +538,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           },
           {
             title: "Errors",
-            text: "Structured failures stream live — copy dump or open a GitHub issue.",
+            text: "Structured failures stream live — copy, open a GitHub issue, or dismiss one / all after review.",
             icon: "alert",
           },
         ],

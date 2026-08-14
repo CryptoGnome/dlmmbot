@@ -196,9 +196,11 @@ CREATE TABLE IF NOT EXISTS error_log (
   pool TEXT,
   build TEXT,
   host TEXT,
-  pid INTEGER
+  pid INTEGER,
+  dismissed INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_error_log_ts ON error_log(ts DESC);
+CREATE INDEX IF NOT EXISTS idx_error_log_active ON error_log(dismissed, ts DESC);
 `;
 
 let db: Database.Database | null = null;
@@ -251,10 +253,18 @@ CREATE TABLE IF NOT EXISTS error_log (
   pool TEXT,
   build TEXT,
   host TEXT,
-  pid INTEGER
+  pid INTEGER,
+  dismissed INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_error_log_ts ON error_log(ts DESC);
+CREATE INDEX IF NOT EXISTS idx_error_log_active ON error_log(dismissed, ts DESC);
 `);
+  try {
+    database.exec("ALTER TABLE error_log ADD COLUMN dismissed INTEGER NOT NULL DEFAULT 0");
+  } catch { /* column already exists */ }
+  try {
+    database.exec("CREATE INDEX IF NOT EXISTS idx_error_log_active ON error_log(dismissed, ts DESC)");
+  } catch { /* */ }
 
   const cols = new Set(
     (database.prepare("PRAGMA table_info(positions)").all() as Array<{ name: string }>).map((c) => c.name)

@@ -24,9 +24,11 @@ CREATE TABLE IF NOT EXISTS error_log (
   pool TEXT,
   build TEXT,
   host TEXT,
-  pid INTEGER
+  pid INTEGER,
+  dismissed INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_error_log_ts ON error_log(ts DESC);
+CREATE INDEX IF NOT EXISTS idx_error_log_active ON error_log(dismissed, ts DESC);
 `;
 
 let cachedBuild;
@@ -44,13 +46,16 @@ function openWritable(root) {
   const require = createRequire(resolve(root, "package.json"));
   const Database = require("better-sqlite3");
   const db = new Database(runtimePaths(root).dbPath);
-  db.exec(SCHEMA);
+  ensureErrorLog(db);
   return db;
 }
 
 /** @param {import("better-sqlite3").Database} db */
 export function ensureErrorLog(db) {
-  try { db.exec(SCHEMA); } catch { /* readonly or missing */ }
+  try {
+    db.exec(SCHEMA);
+    try { db.exec("ALTER TABLE error_log ADD COLUMN dismissed INTEGER NOT NULL DEFAULT 0"); } catch { /* */ }
+  } catch { /* readonly or missing */ }
 }
 
 /**
@@ -63,7 +68,9 @@ export function listRecentErrors(db, limit = 100) {
     const rows = db.prepare(
       `SELECT id, ts, level, source, code, message, stack, detail_json,
               position_id, symbol, mint, pool, build, host, pid
-       FROM error_log ORDER BY id DESC LIMIT ?`,
+       FROM error_log
+       WHERE COALESCE(dismissed, 0) = 0
+       ORDER BY id DESC LIMIT ?`,
     ).all(limit);
     return rows.map((r) => {
       let detail = null;
@@ -98,12 +105,16 @@ export function errorStats(db, nowTs = Math.floor(Date.now() / 1000)) {
   try {
     ensureErrorLog(db);
     const hour = db.prepare(
-      `SELECT COUNT(*) AS n FROM error_log WHERE ts >= ? AND level != 'warn'`,
+      `SELECT COUNT(*) AS n FROM error_log
+       WHERE ts >= ? AND level != 'warn' AND COALESCE(dismissed, 0) = 0`,
     ).get(nowTs - 3600);
     const day = db.prepare(
-      `SELECT COUNT(*) AS n FROM error_log WHERE ts >= ? AND level != 'warn'`,
+      `SELECT COUNT(*) AS n FROM error_log
+       WHERE ts >= ? AND level != 'warn' AND COALESCE(dismissed, 0) = 0`,
     ).get(nowTs - 86_400);
-    const last = db.prepare(`SELECT id, ts FROM error_log ORDER BY id DESC LIMIT 1`).get();
+    const last = db.prepare(
+      `SELECT id, ts FROM error_log WHERE COALESCE(dismissed, 0) = 0 ORDER BY id DESC LIMIT 1`,
+    ).get();
     return {
       count_1h: Number(hour?.n) || 0,
       count_24h: Number(day?.n) || 0,
@@ -112,6 +123,35 @@ export function errorStats(db, nowTs = Math.floor(Date.now() / 1000)) {
     };
   } catch {
     return { count_1h: 0, count_24h: 0, last_id: null, last_ts: null };
+  }
+}
+
+/**
+ * Soft-dismiss errors so they leave the Errors tab / badge (rows kept in DB).
+ * @param {string} root
+ * @param {{ all?: boolean, ids?: number[] }} opts
+ */
+export function dismissErrors(root, opts = {}) {
+  const db = openWritable(root);
+  try {
+    if (opts.all) {
+      return db.prepare(
+        `UPDATE error_log SET dismissed = 1 WHERE COALESCE(dismissed, 0) = 0`,
+      ).run().changes;
+    }
+    const ids = (opts.ids ?? []).map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0);
+    if (!ids.length) return 0;
+    const stmt = db.prepare(
+      `UPDATE error_log SET dismissed = 1 WHERE id = ? AND COALESCE(dismissed, 0) = 0`,
+    );
+    let n = 0;
+    const tx = db.transaction((list) => {
+      for (const id of list) n += stmt.run(id).changes;
+    });
+    tx(ids);
+    return n;
+  } finally {
+    db.close();
   }
 }
 
@@ -126,15 +166,16 @@ export function insertError(root, input) {
       const now = Math.floor(Date.now() / 1000);
       const recent = db.prepare(
         `SELECT id FROM error_log
-         WHERE source = ? AND IFNULL(code,'') = IFNULL(?, '') AND message = ? AND ts >= ?
+         WHERE source = ? AND IFNULL(code,'') = IFNULL(?, '') AND message = ?
+           AND ts >= ? AND COALESCE(dismissed, 0) = 0
          LIMIT 1`,
       ).get(input.source, code, message, now - dedupeSec);
       if (recent) return 0;
     }
     const info = db.prepare(
       `INSERT INTO error_log
-        (ts, level, source, code, message, stack, detail_json, position_id, symbol, mint, pool, build, host, pid)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (ts, level, source, code, message, stack, detail_json, position_id, symbol, mint, pool, build, host, pid, dismissed)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
     ).run(
       Math.floor(Date.now() / 1000),
       level,
