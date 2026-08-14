@@ -205,7 +205,7 @@ export function ChangelogPage({ watch }: { watch: LiveWatch | null }) {
         )}
         <CommitList
           items={recent}
-          empty="No commit history in the live snapshot yet."
+          empty="No commit history yet — on Railway this loads from GitHub within a few seconds. If it stays empty, set GITHUB_TOKEN (private repos) or check the deploy can reach api.github.com."
           repoUrl={b?.repo_url}
         />
       </Panel>

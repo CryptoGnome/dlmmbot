@@ -27,6 +27,10 @@ import {
   shortSha,
   syncFromShas,
 } from "./git-source.mjs";
+import {
+  readGithubHistoryCache,
+  scheduleGithubHistory,
+} from "./github-history.mjs";
 
 // Re-export for tests / external callers
 export { envCommitSha, safeBranch, shortSha, shasMatch, syncFromShas } from "./git-source.mjs";
@@ -148,54 +152,10 @@ function gitOk(root, args) {
   }
 }
 
-function parseGithubRepo(repoUrl) {
-  const m = /github\.com[/:]([^/]+)\/([^/#?\s]+)/i.exec(repoUrl || "");
-  if (!m) return null;
-  return { owner: m[1], repo: m[2].replace(/\.git$/i, "") };
-}
-
 /** Throttle GitHub fetches so the 3s watch loop does not hammer origin. */
 let lastOriginFetchAt = 0;
 let lastOriginFetchOk = false;
 const ORIGIN_FETCH_MS = Number(process.env.DASH_GIT_POLL_MS || 30_000);
-
-/** Stale-while-revalidate tip of origin/$branch via GitHub API (no local git). */
-let githubTip = { at: 0, branch: null, sha: null, message: null, pending: null };
-
-function scheduleGithubTip(repoUrl, branch) {
-  const now = Date.now();
-  if (githubTip.pending) return;
-  if (githubTip.branch === branch && now - githubTip.at < ORIGIN_FETCH_MS) return;
-  const parsed = parseGithubRepo(repoUrl);
-  if (!parsed) return;
-  githubTip.pending = (async () => {
-    try {
-      const res = await fetch(
-        `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/commits/${encodeURIComponent(branch)}`,
-        {
-          headers: {
-            accept: "application/vnd.github+json",
-            "user-agent": "dlmmbot-dashboard",
-          },
-          signal: AbortSignal.timeout(5_000),
-        },
-      );
-      if (!res.ok) throw new Error(`github ${res.status}`);
-      const j = await res.json();
-      const sha = typeof j.sha === "string" ? j.sha : null;
-      const message = typeof j.commit?.message === "string"
-        ? j.commit.message.split("\n")[0].slice(0, 120)
-        : null;
-      githubTip = { at: Date.now(), branch, sha, message, pending: null };
-      lastOriginFetchOk = !!sha;
-      lastOriginFetchAt = githubTip.at;
-    } catch {
-      githubTip = { ...githubTip, at: Date.now(), pending: null };
-      lastOriginFetchOk = false;
-      lastOriginFetchAt = Date.now();
-    }
-  })();
-}
 
 /**
  * Local checkout vs origin/$BRANCH (after a throttled fetch).
@@ -245,15 +205,21 @@ function buildGitInfo(root) {
     }
   } catch { /* */ }
 
-  // No local origin ref (PaaS / no git) — poll GitHub for the branch tip.
-  if (!originFull) {
-    scheduleGithubTip(repoUrl, branch);
-    if (githubTip.branch === branch && githubTip.sha) {
-      originFull = githubTip.sha;
+  // No local origin ref (PaaS / no git) — poll GitHub for tip + commit lists.
+  let gh = { tipSha: null, tipMessage: null, recent: [], pending: [], behindCount: 0, fetchedAt: null, ok: false };
+  if (!originFull || !trustLocalGit) {
+    scheduleGithubHistory({ repoUrl, branch, headFull });
+    gh = readGithubHistoryCache();
+    if (gh.fetchedAt) {
+      lastOriginFetchAt = gh.fetchedAt;
+      lastOriginFetchOk = gh.ok;
+    }
+    if (!originFull && gh.tipSha) {
+      originFull = gh.tipSha;
       origin = shortSha(originFull);
-      if (!message && githubTip.message && shasMatch(headFull, originFull)) {
-        message = githubTip.message;
-      }
+    }
+    if (!message && gh.tipMessage && originFull && shasMatch(headFull, originFull)) {
+      message = gh.tipMessage;
     }
   }
 
@@ -307,15 +273,18 @@ function buildGitInfo(root) {
     return order.filter((t) => tags.has(t));
   }
 
-  const recent = trustLocalGit
+  let recent = trustLocalGit
     ? parseLog(git(root, ["log", "-20", "--pretty=format:%h%x09%ct%x09%s"]))
-    : [];
+    : (gh.recent || []);
   let pending = [];
   let behindCount = 0;
   if (sync === "behind" && originFull && trustLocalGit) {
     behindCount = Number(git(root, ["rev-list", "--count", `HEAD..${originFull}`])) || 0;
     pending = parseLog(git(root, ["log", `HEAD..${originFull}`, "-20", "--pretty=format:%h%x09%ct%x09%s"]))
       .map((c) => ({ ...c, risk: riskTagsForSha(c.sha) }));
+  } else if (sync === "behind" && !trustLocalGit) {
+    pending = gh.pending || [];
+    behindCount = gh.behindCount || pending.length || 0;
   }
 
   const prefs = readDeployPrefs(root);

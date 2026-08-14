@@ -159,7 +159,7 @@ pm2 save
 
 Auto-update is **on by default**. To review first: flip **Auto on/off** next to the GitHub build pill. When GitHub is ahead, **Changes → Approve**. Don’t SCP a dirty tree and expect CURRENT — push + pull.
 
-**Build pill:** auto-detects where you’re hosted. **PM2 / VPS** — local `git` checkout vs `origin/$DEPLOY_BRANCH`. **Railway / Vercel / Render / etc.** — platform deploy SHA (`RAILWAY_GIT_COMMIT_SHA`, `VERCEL_GIT_COMMIT_SHA`, …) vs GitHub branch tip (no local git needed). Hover the pill for the SHA source. `GIT?` means no SHA resolved yet (redeploy or wait for GitHub tip). Auto on/off is next to the pill; when GitHub is ahead, use **Changes → Approve**. Don’t SCP a dirty tree and expect CURRENT — push + pull.
+**Build pill:** auto-detects where you’re hosted. **PM2 / VPS** — local `git` checkout vs `origin/$DEPLOY_BRANCH`. **Railway / Vercel / Render / etc.** — platform deploy SHA (`RAILWAY_GIT_COMMIT_SHA`, `VERCEL_GIT_COMMIT_SHA`, …) vs GitHub branch tip (no local git needed). Hover the pill for the SHA source. `GIT?` means no SHA resolved yet (redeploy or wait for GitHub tip). **Changes** on PaaS loads commit lists from the GitHub API (set optional `GITHUB_TOKEN` / `GH_TOKEN` if the repo is private). Auto on/off is next to the pill; when GitHub is ahead, use **Changes → Approve**. Don’t SCP a dirty tree and expect CURRENT — push + pull.
 
 ## Dashboard from outside
 
