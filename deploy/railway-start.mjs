@@ -51,7 +51,7 @@ if (!process.env.DASH_TOKEN) {
   } catch { /* */ }
   console.log(`[railway] generated DASH_TOKEN=${token.slice(0, 8)}… (full value only in ${envPath} on the volume)`);
   console.log("[railway] set DASH_TOKEN as a Railway variable (same value) so login works and the token never rotates");
-  console.log("[railway] generate offline: node -e \"console.log(require('crypto').randomBytes(24).toString('hex'))\"");
+  console.log("[railway] generate in the browser: https://dlmmbot.com/setup/easy (Generate / Copy)");
 } else if (process.env.DASH_TOKEN.length < 24) {
   console.error(`[railway] FATAL: DASH_TOKEN is too short (${process.env.DASH_TOKEN.length} chars; need ≥24)`);
   process.exit(1);

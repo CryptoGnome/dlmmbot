@@ -848,7 +848,7 @@ if (!token) {
 if (token.length < MIN_DASH_TOKEN_LEN) {
   console.error(
     `[dash] FATAL: DASH_TOKEN is too short (${token.length} chars; need ≥${MIN_DASH_TOKEN_LEN}). `
-    + "Generate one with: node -e \"console.log(require('crypto').randomBytes(24).toString('hex'))\"",
+    + "Generate one at https://dlmmbot.com/setup/easy (Generate / Copy), or any password manager (32+ chars).",
   );
   process.exit(1);
 }

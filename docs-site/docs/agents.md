@@ -62,7 +62,7 @@ Canonical steps: [Easy setup](./easy). Summary:
 2. **Railway** — [railway.com?referralCode=SCj9lN](https://railway.com?referralCode=SCj9lN) → New Project → Deploy from GitHub → **their fork**. One service. Build/start come from `railway.toml`.
 3. **Volume (required)** — on the Railway **project canvas**: `+` Create → **Volume** → attach to the bot service → **Mount path** = `/app/data` (not `/data`). Redeploy. Logs must show `volume mount=/app/data`, not `no volume detected`.
 4. **Domain** — open the **service** → Settings → Networking → Generate domain.
-5. **Dash token** — set a strong `DASH_TOKEN` Railway variable (≥24 random chars; `node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"`). Open `https://<domain>/?token=…`. Do not copy tokens from deploy logs (only a prefix is printed).
+5. **Dash token** — set Railway variable `DASH_TOKEN` to a long random secret (≥24 chars). Easiest: open [Easy setup](./easy) and use the **Generate / Copy** buttons (browser-side), or a password-manager generator. Open `https://<domain>/?token=…`. Do not copy tokens from deploy logs (only a prefix is printed).
 6. **Wizard** — human accepts Terms; only paste RPC/Jupiter/GMGN if not already set as Railway variables (wizard detects env and skips those). Create/import an encrypted **burner**, stay on **paper**. Finish leaves **Engine OFF** — human flips ON in the header when ready.
 
 ### Secrets the human must create
