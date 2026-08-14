@@ -85,7 +85,7 @@ Settings also exposes encrypted wallet create / import / unlock on the Wallet & 
 
 ## Usage fee
 
-See https://dlmmbot.com/setup/fees — 1% GNME buy-and-burn on live winning closes only (hardcoded, not Settings-tunable).
+See https://dlmmbot.com/setup/fees — 1% of live wins buys/burns GNME (Nome Chrome Project). Hardcoded product fee, not Settings-tunable.
 
 ## Safety model
 

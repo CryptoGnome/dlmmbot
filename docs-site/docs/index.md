@@ -44,7 +44,7 @@ Same bot, same paper/live gates — only the host changes.
   <a href="./terms">Terms &amp; waiver <span>as-is · no liability for losses</span></a>
   <a href="./agents">For AI agents <span>install playbook + llms.txt</span></a>
   <a href="./cli">CLI <span>scan, status, halt, pause</span></a>
-  <a href="./fees">Fees <span>1% GNME burn on live wins</span></a>
+  <a href="./fees">Fees <span>1% Nome / GNME on live wins</span></a>
   <a href="./faq">FAQ <span>can you lose money? yes</span></a>
 </div>
 
