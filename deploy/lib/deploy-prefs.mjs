@@ -27,7 +27,9 @@ export function readDeployPrefs(root = process.cwd()) {
       approvedAt: typeof j.approvedAt === "string" ? j.approvedAt : null,
     };
   } catch {
-    return { autoUpdate: true, approveSha: null, approvedAt: null };
+    // Fail closed: a corrupt prefs file must not silently override an operator
+    // who turned auto-update OFF — hold deploys until a human looks.
+    return { autoUpdate: false, approveSha: null, approvedAt: null };
   }
 }
 

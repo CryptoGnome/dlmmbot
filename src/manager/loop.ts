@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { config, currentMode, isLive } from "../config.js";
 import { reconcileLive } from "./reconcile.js";
 import { alert, type AlertKind } from "../alerts.js";
-import { blacklist, getDb, now, recordDecision, REALIZED_PNL_SQL, logError, installProcessErrorHooks } from "../db/db.js";
+import { blacklist, getDb, now, recordCreatorRug, recordDecision, REALIZED_PNL_SQL, logError, installProcessErrorHooks } from "../db/db.js";
 import type { Executor } from "../executor/executor.js";
 import { LiveExecutor } from "../executor/live.js";
 import { executeProfitBurn, profitBurnSpendSol, accrueProfitBurn, readProfitBurnAccrued, writeProfitBurnAccrued, PROFIT_BURN } from "../executor/profitBurn.js";
@@ -537,6 +537,14 @@ export async function managePositions(exec: Executor): Promise<void> {
         // Don't permanent-blacklist majors allowlist tokens on soft P0 signals.
         if (sleeve !== "majors" || trigger === "pool_dead" || trigger === "price_crash" || trigger === "tvl_drain") {
           blacklist(pos.tokenMint, "token", `P0 safety exit (${trigger})`);
+          // STRATEGY §4 P0: token + CREATOR. One strike = permanent — the
+          // vetting side (creator blacklist + rug_count) has always read this;
+          // nothing wrote it until now, so a rugger's next mint sailed through.
+          if (sleeve !== "majors") {
+            const creator = (getDb().prepare("SELECT creator FROM tokens WHERE mint = ?")
+              .get(pos.tokenMint) as { creator: string | null } | undefined)?.creator;
+            if (creator) recordCreatorRug(creator, `P0 safety exit (${trigger}) on ${pos.symbol}`);
+          }
         }
         recordDecision(pos.tokenMint, pos.poolAddress, "exited", `P0_safety_${trigger}`, null, { mark, pos, sleeve });
         continue;
