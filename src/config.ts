@@ -107,6 +107,10 @@ export interface Config {
     kelly_enabled: boolean; kelly_fraction: number; kelly_lookback: number;
     kelly_min_samples: number; kelly_cold_start_frac: number;
     kelly_max_position_frac: number; kelly_block_negative: boolean;
+    kelly_core_unit: "kelly" | "sol" | "pct"; kelly_core_sol: number; kelly_core_pct: number; kelly_core_mult: number;
+    kelly_micro_unit: "kelly" | "sol" | "pct"; kelly_micro_sol: number; kelly_micro_pct: number; kelly_micro_mult: number;
+    kelly_majors_unit: "kelly" | "sol" | "pct"; kelly_majors_sol: number; kelly_majors_pct: number; kelly_majors_mult: number;
+    kelly_follow_unit: "kelly" | "sol" | "pct"; kelly_follow_sol: number; kelly_follow_pct: number; kelly_follow_mult: number;
     fixed_core_unit: "sol" | "pct"; fixed_core_sol: number; fixed_core_pct: number;
     fixed_micro_unit: "sol" | "pct"; fixed_micro_sol: number; fixed_micro_pct: number;
     fixed_majors_unit: "sol" | "pct"; fixed_majors_sol: number; fixed_majors_pct: number;

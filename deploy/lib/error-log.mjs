@@ -7,6 +7,7 @@ import { hostname } from "node:os";
 import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { runtimePaths } from "./runtime-paths.mjs";
+import { detectDeployContext, envCommitSha, usesPlatformHead } from "./git-source.mjs";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS error_log (
@@ -32,13 +33,9 @@ CREATE INDEX IF NOT EXISTS idx_error_log_ts ON error_log(ts DESC);
 let cachedBuild;
 function buildLabel(root) {
   if (cachedBuild !== undefined) return cachedBuild;
-  const envSha = (
-    process.env.RAILWAY_GIT_COMMIT_SHA
-    || process.env.SOURCE_COMMIT
-    || process.env.COMMIT_SHA
-    || ""
-  ).trim();
-  if (envSha) {
+  const ctx = detectDeployContext();
+  const envSha = envCommitSha();
+  if (usesPlatformHead(ctx) && envSha) {
     cachedBuild = envSha.length > 12 ? envSha.slice(0, 12) : envSha;
     return cachedBuild;
   }
@@ -50,6 +47,11 @@ function buildLabel(root) {
     }).trim() || null;
   } catch {
     cachedBuild = null;
+  }
+  if (cachedBuild) return cachedBuild;
+  if (envSha) {
+    cachedBuild = envSha.length > 12 ? envSha.slice(0, 12) : envSha;
+    return cachedBuild;
   }
   return cachedBuild;
 }

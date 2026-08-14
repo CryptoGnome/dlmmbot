@@ -169,10 +169,14 @@ Thresholds:
 | `kelly_cold_start_frac` | `0.03` | Cold start: flat 3% of wallet per position |
 | `kelly_max_position_frac` | `0.10` | Hard cap: no position exceeds 10% of wallet (Kelly and Fixed) |
 | `kelly_block_negative` | `false` | Off: negative edge clamps to the min-size floor instead of a permanent stop |
+| `kelly_core_unit` / `_sol` / `_pct` / `_mult` | `kelly` / `0.5` / `5` / `1.0` | Core meme base when `mode=kelly` |
+| `kelly_micro_unit` / `_sol` / `_pct` / `_mult` | `kelly` / `0.3` / `3` / `1.0` | Micro sleeve when `mode=kelly` |
+| `kelly_majors_unit` / `_sol` / `_pct` / `_mult` | `sol` / `0.75` / `10` / `1.0` | Majors when `mode=kelly` |
+| `kelly_follow_unit` / `_sol` / `_pct` / `_mult` | `sol` / `0.25` / `2` / `1.0` | Follow legs when `mode=kelly` |
 | `fixed_core_unit` / `_sol` / `_pct` | `sol` / `0.5` / `5` | Core meme size when `mode=fixed` |
 | `fixed_micro_unit` / `_sol` / `_pct` | `sol` / `0.3` / `3` | Micro sleeve when `mode=fixed` |
-| `fixed_majors_unit` / `_sol` / `_pct` | `sol` / `0.75` / `10` | Majors when `mode=fixed` (else `majors.size_sol`) |
-| `fixed_follow_unit` / `_sol` / `_pct` | `sol` / `0.25` / `2` | Follow legs when `mode=fixed` (else `follow.leg_size_sol`) |
+| `fixed_majors_unit` / `_sol` / `_pct` | `sol` / `0.75` / `10` | Majors when `mode=fixed` |
+| `fixed_follow_unit` / `_sol` / `_pct` | `sol` / `0.25` / `2` | Follow legs when `mode=fixed` |
 | `reserve_sol` | `1.0` | Operational reserve, never deployed |
 | `reserve_pct` | `10` | Plus this % of bankroll held back for rent/fees |
 | `per_token_max_pct` | `40` | Max % of deployable in one token incl. tranche |
@@ -279,7 +283,7 @@ Thresholds:
 | `bonus_sustained` / `bonus_emerging` / `bonus_fading` | `8` / `4` / `3` | Score bonus: trending in both windows / 5m only / 1h only |
 | `require_renounced` | `true` | Trending entry says mint/freeze not renounced → pre-vet skip |
 
-GMGN calls are optional enrichment. The bot serializes `gmgn-cli` (one in flight), paces ~1 req/s with route weights, and parks on HTTP 429 until the documented reset — see [API keys → GMGN](./api-keys#gmgn-api-key-gmgn_api_key-optional).
+GMGN calls are optional enrichment. The bot serializes `gmgn-cli` (one in flight), paces ~1 req/s with route weights, and parks ~5 minutes on HTTP 429 (or until `reset_at`) — see [API keys → GMGN](./api-keys#gmgn-api-key-gmgn_api_key-optional).
 
 ## `[apis]`
 

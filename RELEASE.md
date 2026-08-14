@@ -54,11 +54,7 @@ Current version lives in root **`package.json`** (`version` field). Tags are **`
 
 Open a PR **`develop` → `main`**. CI must be green. Merge (squash or merge commit — your choice; tags always point at explicit release commits on `main`).
 
-### 2. Run the Release workflow
-
-GitHub → **Actions** → **Release** → **Run workflow** on branch **`main`**.
-
-Choose bump:
+### 2. Cut semver on `main` (protected branch)
 
 | Bump | When |
 |------|------|
@@ -66,15 +62,33 @@ Choose bump:
 | **minor** | New features, new dashboard tabs, new config keys (backward compatible) |
 | **major** | Breaking changes — config renames, exit-rule semantics, DB migrations operators must act on |
 
-The workflow will:
+`main` is protected — do **not** rely on the Actions **Release** workflow alone (it tries to push directly to `main` and will fail). Use a short-lived release branch + PR:
 
-1. Run tests on `main`
-2. Bump `package.json` version
-3. Commit `Release vX.Y.Z` on `main`
-4. Create git tag `vX.Y.Z`
-5. Publish a [GitHub Release](https://github.com/CryptoGnome/dlmmbot/releases) with generated notes
+```bash
+git fetch origin
+git checkout -B release/vX.Y.Z origin/main
+npm version patch   # or minor / major — updates package.json + lockfile root only
+git commit -am "Release vX.Y.Z"
+git push -u origin release/vX.Y.Z
+gh pr create --base main --head release/vX.Y.Z --title "Release vX.Y.Z" --body "Semver bump only."
+# CI green → merge and delete the branch:
+gh pr merge <n> --merge --delete-branch
+git tag -a vX.Y.Z <merge-sha> -m "DLMM Bot vX.Y.Z"
+git push origin vX.Y.Z
+gh release create vX.Y.Z --title "DLMM Bot vX.Y.Z" --generate-notes --latest
+```
+
+**Delete release branches after merge.** Only `develop` and `main` are long-lived. A merged `release/vX.Y.Z` (or feature branch) left on GitHub is clutter — always merge with `--delete-branch`, or run:
+
+```bash
+git push origin --delete release/vX.Y.Z
+```
 
 Production auto-deploy (if `DEPLOY_BRANCH=main`) picks up the release commit within ~30s.
+
+### Optional: Actions Release workflow
+
+GitHub → **Actions** → **Release** only works if `main` allows the bot to push. With branch protection, prefer the PR flow above.
 
 ### 3. Sync `develop`
 
@@ -90,6 +104,8 @@ The dashboard build pill reads **`package.json` version**, the deploy **branch**
 
 - **`main`**: require PR, require CI (`CI` workflow), no force-push
 - **`develop`**: require CI on PRs; direct push OK if you are solo
+
+**Settings → General → Pull Requests**: enable **Automatically delete head branches** after merge (backup if `--delete-branch` is forgotten).
 
 **Settings → General → Releases**: enable “Generate release notes” (workflow uses this).
 

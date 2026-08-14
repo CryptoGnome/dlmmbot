@@ -1,24 +1,24 @@
 import { execFileSync } from "node:child_process";
+import { detectDeployContext, envCommitSha, usesPlatformHead } from "./gitSource.js";
 
 /**
  * Build / commit label for heartbeat + error rows.
- * Prefer platform-injected SHA (Railway has no git binary at runtime), then local git.
+ * Platform deploy SHA on PaaS; local git on PM2/dev VPS.
  */
 export function resolveBuildLabel(cwd = process.cwd()): string {
-  const envSha = (
-    process.env.RAILWAY_GIT_COMMIT_SHA
-    || process.env.SOURCE_COMMIT
-    || process.env.COMMIT_SHA
-    || ""
-  ).trim();
-  if (envSha) return envSha.length > 12 ? envSha.slice(0, 12) : envSha;
+  const ctx = detectDeployContext();
+  const envSha = envCommitSha();
+  if (usesPlatformHead(ctx) && envSha) {
+    return envSha.length > 12 ? envSha.slice(0, 12) : envSha;
+  }
   try {
-    return execFileSync("git", ["describe", "--always", "--dirty"], {
+    const local = execFileSync("git", ["describe", "--always", "--dirty"], {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
-    }).trim() || "unknown";
-  } catch {
-    return "unknown";
-  }
+    }).trim();
+    if (local) return local;
+  } catch { /* no git */ }
+  if (envSha) return envSha.length > 12 ? envSha.slice(0, 12) : envSha;
+  return "unknown";
 }

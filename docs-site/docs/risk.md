@@ -32,7 +32,7 @@ Position size is a fraction of the wallet, learned from **your own rolling close
 
 **Negative edge:** if the ledger says f\* ≤ 0, the shipped behavior (`kelly_block_negative = false`) clamps sizing to the minimum floor — small size while the sample rebuilds. The alternative hard block (`true`) stops new entries entirely until the strategy re-earns its sizing; it's off by default because blocked entries produce no new closes, so f\* could never recover on its own.
 
-In Kelly mode, majors still use `majors.size_sol` and follow legs use `follow.leg_size_sol`.
+**Per-sleeve tweak (Kelly mode):** Settings → **Kelly per-sleeve** — each sleeve (core, micro, majors, follow) picks **Kelly** (adaptive × mult), fixed **SOL**, or **% deployable**. Example: core Kelly × `1.5` runs bigger meme positions while the ledger still adapts. Majors/follow default to fixed SOL (`0.75` / `0.25`); score tilt still applies when unit=Kelly.
 
 ### Fixed
 
