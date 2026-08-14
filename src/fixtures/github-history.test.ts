@@ -42,4 +42,15 @@ describe("github-history", () => {
     });
     expect(c.subject).toBe("Release v0.3.12 — SIGTERM exit 0");
   });
+
+  it("githubJson soft-fails instead of throwing", async () => {
+    const { githubJson } = await import("../../deploy/lib/github-history.mjs");
+    const orig = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: false, status: 403, json: async () => ({}) });
+    try {
+      await expect(githubJson("https://api.github.com/repos/x/y")).resolves.toBeNull();
+    } finally {
+      globalThis.fetch = orig;
+    }
+  });
 });

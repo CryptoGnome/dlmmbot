@@ -2,6 +2,8 @@
  * GitHub commit + release history for PaaS hosts (Railway, etc.) where local
  * `.git` is missing or not trustworthy. Also used on VPS for release notes
  * shown on the Changes tab.
+ *
+ * Failures (403 rate-limit, network) must never crash the dashboard process.
  */
 import { shortSha, shasMatch } from "./git-source.mjs";
 import {
@@ -11,6 +13,8 @@ import {
 } from "./release-labels.mjs";
 
 const GH_TTL_MS = Number(process.env.DASH_GIT_POLL_MS || 30_000);
+/** Back off longer after hard failures so we don't hammer a 403 rate-limit. */
+const GH_ERR_TTL_MS = Math.max(GH_TTL_MS, 120_000);
 
 /** @type {{
  *   at: number,
@@ -22,6 +26,7 @@ const GH_TTL_MS = Number(process.env.DASH_GIT_POLL_MS || 30_000);
  *   releases: object[],
  *   behindCount: number,
  *   inflight: Promise<void> | null,
+ *   errAt: number,
  * }} */
 let cache = {
   at: 0,
@@ -33,6 +38,7 @@ let cache = {
   releases: [],
   behindCount: 0,
   inflight: null,
+  errAt: 0,
 };
 
 export function clearGithubHistoryCacheForTests() {
@@ -46,6 +52,7 @@ export function clearGithubHistoryCacheForTests() {
     releases: [],
     behindCount: 0,
     inflight: null,
+    errAt: 0,
   };
 }
 
@@ -59,13 +66,18 @@ function githubHeaders() {
   return headers;
 }
 
-async function githubJson(url) {
-  const res = await fetch(url, {
-    headers: githubHeaders(),
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!res.ok) throw new Error(`github ${res.status}`);
-  return res.json();
+/** Soft-fail: never throw — 403/network must not become unhandled rejections. */
+export async function githubJson(url) {
+  try {
+    const res = await fetch(url, {
+      headers: githubHeaders(),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
 }
 
 /** Same risk buckets as local `riskTagsForSha` in live-book-snapshot. */
@@ -118,6 +130,16 @@ function parseGithubUrl(repoUrl) {
   return { owner: m[1], repo: m[2].replace(/\.git$/i, "") };
 }
 
+function markFail(key) {
+  cache = {
+    ...cache,
+    at: Date.now(),
+    errAt: Date.now(),
+    key,
+    inflight: null,
+  };
+}
+
 /**
  * Stale-while-revalidate cache of tip + commits + releases for Changes.
  * @param {{ repoUrl: string, branch: string, headFull: string | null, releasesOnly?: boolean }} opts
@@ -128,7 +150,8 @@ export function scheduleGithubHistory({ repoUrl, branch, headFull, releasesOnly 
   if (!parsed || !branch) return;
   const key = `${parsed.owner}/${parsed.repo}@${branch}|${headFull || ""}|${releasesOnly ? "r" : "f"}`;
   const now = Date.now();
-  if (cache.key === key && now - cache.at < GH_TTL_MS) return;
+  const ttl = cache.errAt && now - cache.errAt < GH_ERR_TTL_MS ? GH_ERR_TTL_MS : GH_TTL_MS;
+  if (cache.key === key && now - cache.at < ttl) return;
   if (cache.inflight) return;
 
   cache.inflight = (async () => {
@@ -136,14 +159,22 @@ export function scheduleGithubHistory({ repoUrl, branch, headFull, releasesOnly 
       const { owner, repo } = parsed;
       const base = `https://api.github.com/repos/${owner}/${repo}`;
 
-      const tipP = githubJson(`${base}/commits/${encodeURIComponent(branch)}`);
-      const relP = githubJson(`${base}/releases?per_page=12`);
+      // Await together so a failed sibling cannot become an unhandled rejection.
+      const [tip, relRaw] = await Promise.all([
+        githubJson(`${base}/commits/${encodeURIComponent(branch)}`),
+        githubJson(`${base}/releases?per_page=12`),
+      ]);
 
-      const tip = await tipP;
+      if (!tip && !Array.isArray(relRaw)) {
+        markFail(key);
+        return;
+      }
+
       const tipSha = typeof tip?.sha === "string" ? tip.sha : null;
-      const tipMessage = subjectFromCommitMessage(String(tip?.commit?.message ?? ""));
+      const tipMessage = tip
+        ? subjectFromCommitMessage(String(tip?.commit?.message ?? ""))
+        : null;
 
-      const relRaw = await relP;
       const releases = Array.isArray(relRaw)
         ? relRaw.map(normalizeGithubRelease).filter(Boolean)
         : [];
@@ -173,11 +204,11 @@ export function scheduleGithubHistory({ repoUrl, branch, headFull, releasesOnly 
           for (let i = 0; i < Math.min(commits.length, 20); i++) {
             const c = commits[i];
             if (i < 5 && c?.sha) {
-              try {
-                const detail = await githubJson(`${base}/commits/${c.sha}`);
+              const detail = await githubJson(`${base}/commits/${c.sha}`);
+              if (detail) {
                 enriched.push(normalizeGithubCommit(detail));
                 continue;
-              } catch { /* fall through */ }
+              }
             }
             enriched.push(normalizeGithubCommit(c));
           }
@@ -191,18 +222,21 @@ export function scheduleGithubHistory({ repoUrl, branch, headFull, releasesOnly 
       cache = {
         at: Date.now(),
         key,
-        tipSha,
-        tipMessage,
+        tipSha: tipSha ?? cache.tipSha,
+        tipMessage: tipMessage ?? cache.tipMessage,
         recent,
         pending,
-        releases,
+        releases: releases.length ? releases : cache.releases,
         behindCount,
         inflight: null,
+        errAt: 0,
       };
     } catch {
-      cache = { ...cache, at: Date.now(), key, inflight: null };
+      markFail(key);
     }
-  })();
+  })().catch(() => {
+    markFail(key);
+  });
 }
 
 /** Snapshot of last successful GitHub history fetch (may be empty on first hit). */
