@@ -9,7 +9,7 @@ import { copyText } from "@/lib/errorReport";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
-export type TabId = "overview" | "positions" | "analytics" | "activity" | "errors" | "report" | "research" | "wiki" | "changes" | "settings";
+export type TabId = "overview" | "positions" | "analytics" | "activity" | "smartflow" | "errors" | "report" | "research" | "wiki" | "changes" | "settings";
 
 const DOCS_URL = "https://dlmmbot.com/setup/";
 
@@ -18,6 +18,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "positions", label: "Positions" },
   { id: "analytics", label: "Analytics" },
   { id: "activity", label: "Activity" },
+  { id: "smartflow", label: "Smart flow" },
   { id: "errors", label: "Errors" },
   { id: "report", label: "Report" },
   { id: "research", label: "Research" },

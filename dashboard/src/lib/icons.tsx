@@ -25,6 +25,7 @@ import {
   TrendingUp,
   Unplug,
   Wallet,
+  Waves,
   Zap,
 } from "lucide-react";
 import type { FeedKind } from "@/lib/activityFeed";
@@ -37,6 +38,7 @@ export const tabIcon: Record<TabId, LucideIcon> = {
   positions: BookOpen,
   analytics: LineChart,
   activity: Activity,
+  smartflow: Waves,
   errors: OctagonX,
   report: Bug,
   research: Microscope,

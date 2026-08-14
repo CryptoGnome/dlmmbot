@@ -31,6 +31,7 @@ import {
   readGithubHistoryCache,
   scheduleGithubHistory,
 } from "./github-history.mjs";
+import { readSmartflowSnapshot } from "./smartflow-snapshot.mjs";
 
 // Re-export for tests / external callers
 export { envCommitSha, safeBranch, shortSha, shasMatch, syncFromShas } from "./git-source.mjs";
@@ -1162,12 +1163,15 @@ export function buildLiveBookSnapshot(root) {
     const meteora = bookMode === "live" ? fetchMeteoraPortfolio(walletPubkey) : null;
 
     const recentErrors = listRecentErrors(db, 80);
+    const smartflow = readSmartflowSnapshot(root);
     const metaMints = [
       ...open.map((r) => r.mint),
       ...recentActivity.map((r) => r.mint),
       ...recentPasses.map((r) => r.mint),
       ...p3Missed.map((r) => r.mint),
       ...recentErrors.map((r) => r.mint),
+      ...(smartflow?.tokens ?? []).map((r) => r.mint),
+      ...(smartflow?.recent ?? []).map((r) => r.mint),
     ].filter(Boolean);
     const tokenMeta = loadTokenMetaMap(db, metaMints);
     decorateWithMeta(open, tokenMeta);
@@ -1175,6 +1179,8 @@ export function buildLiveBookSnapshot(root) {
     decorateWithMeta(recentPasses, tokenMeta);
     decorateWithMeta(p3Missed, tokenMeta);
     decorateWithMeta(recentErrors, tokenMeta);
+    if (smartflow?.tokens?.length) decorateWithMeta(smartflow.tokens, tokenMeta);
+    if (smartflow?.recent?.length) decorateWithMeta(smartflow.recent, tokenMeta);
     scheduleTokenMetaBackfill(root, metaMints);
     const halt = readHaltState(root);
     const pause = readPauseState(root);
@@ -1279,6 +1285,7 @@ export function buildLiveBookSnapshot(root) {
       recent_errors: recentErrors,
       error_stats: errorStats(db, now),
       token_meta: tokenMeta,
+      smartflow,
     };
   } finally {
     db.close();

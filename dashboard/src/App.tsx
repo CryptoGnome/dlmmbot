@@ -12,6 +12,7 @@ import { OverviewPage } from "@/pages/Overview";
 import { BookPage } from "@/pages/Book";
 import { AnalyticsPage } from "@/pages/Analytics";
 import { ActivityPage } from "@/pages/Activity";
+import { SmartFlowPage } from "@/pages/SmartFlow";
 import { ErrorsPage } from "@/pages/Errors";
 import { ReportBugPage } from "@/pages/ReportBug";
 import { ResearchPage } from "@/pages/Research";
@@ -183,6 +184,7 @@ export default function App() {
           <AnalyticsPage watch={watch} hist={hist} range={range} onRange={setRange} />
         )}
         {tab === "activity" && <ActivityPage watch={watch} />}
+        {tab === "smartflow" && <SmartFlowPage watch={watch} />}
         {tab === "errors" && <ErrorsPage watch={watch} />}
         {tab === "report" && <ReportBugPage watch={watch} live={live} />}
         {tab === "research" && <ResearchPage />}

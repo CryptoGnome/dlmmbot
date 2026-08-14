@@ -71,6 +71,7 @@ Settings also exposes encrypted wallet create / import / unlock on the Wallet & 
 
 - Live watch over WebSocket: positions, heartbeat, cluster brake, build/sync pill
 - Activity feed with signed SOL coloring (inflows/wins green, capital deployed blue, losses red)
+- Smart flow tab: GMGN smart-money / KOL rolling window streamed on the live watch feed
 - Toasts for new entries/exits/fails/cluster/events and link/heartbeat edges (max two visible; pressure shortens TTL)
 - Changes tab + toasts when GitHub is ahead, a deploy lands, or the farmer restarts on a new build
 - Host updates: auto-update on by default (PM2 `meteora-deploy`); header Auto on/off next to the build pill requires Approve on Changes when off
