@@ -18,7 +18,7 @@ export function BookPage({
   return (
     <div className="space-y-3">
       <div>
-        <h1 className="font-display text-lg font-semibold tracking-wide">Book</h1>
+        <h1 className="font-display text-lg font-semibold tracking-wide">Positions</h1>
         <p className="text-[11px] text-dim">{slots.label}. Recent closes below.</p>
       </div>
 

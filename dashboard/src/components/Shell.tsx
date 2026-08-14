@@ -8,13 +8,13 @@ import { copyText } from "@/lib/errorReport";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
-export type TabId = "overview" | "book" | "analytics" | "activity" | "errors" | "research" | "wiki" | "changes" | "settings";
+export type TabId = "overview" | "positions" | "analytics" | "activity" | "errors" | "research" | "wiki" | "changes" | "settings";
 
 const DOCS_URL = "https://dlmmbot.com/setup/";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "overview", label: "Overview" },
-  { id: "book", label: "Book" },
+  { id: "positions", label: "Positions" },
   { id: "analytics", label: "Analytics" },
   { id: "activity", label: "Activity" },
   { id: "errors", label: "Errors" },
@@ -26,6 +26,7 @@ const TABS: { id: TabId; label: string }[] = [
 
 export function parseTab(hash: string): TabId {
   const id = hash.replace(/^#\/?/, "").split("?")[0] || "overview";
+  if (id === "book") return "positions";
   return TABS.some((t) => t.id === id) ? (id as TabId) : "overview";
 }
 

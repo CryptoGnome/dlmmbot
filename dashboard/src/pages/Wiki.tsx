@@ -66,6 +66,33 @@ const ICONS: Record<WikiIconKey, LucideIcon> = {
   x: X,
 };
 
+/** Default icon color when no semantic tone is set — keeps tiles neutral, icons vivid. */
+function iconKeyTone(name?: WikiIconKey): WikiTone {
+  switch (name) {
+    case "shield":
+    case "check":
+    case "play":
+      return "ok";
+    case "ban":
+    case "alert":
+    case "x":
+      return "danger";
+    case "lock":
+    case "pause":
+    case "zap":
+      return "warn";
+    default:
+      return "accent";
+  }
+}
+
+/** Cards/flows: explicit tone wins; "fg" = stay neutral; else color the icon from its glyph. */
+function resolveIconTone(tone: WikiTone | undefined, icon?: WikiIconKey): WikiTone | undefined {
+  if (tone === "fg") return undefined;
+  if (tone) return tone;
+  return iconKeyTone(icon);
+}
+
 /** Full chip/callout color — only when the tone carries meaning (halt, ban, caution). */
 function toneChip(tone: WikiTone | undefined): string {
   switch (tone) {
@@ -77,14 +104,14 @@ function toneChip(tone: WikiTone | undefined): string {
   }
 }
 
-/** Icon-only accent — keeps cards/flows readable without painting whole tiles. */
+/** Icon chip — border + tint + glyph color. */
 function toneIcon(tone: WikiTone | undefined): string {
   switch (tone) {
-    case "ok": return "border-ok/40 text-ok";
-    case "warn": return "border-warn/40 text-warn";
-    case "accent": return "border-accent/40 text-accent";
-    case "danger": return "border-danger/40 text-danger";
-    default: return "border-grid text-dim";
+    case "ok": return "border-ok/40 bg-ok/10 text-ok";
+    case "warn": return "border-warn/40 bg-warn/10 text-warn";
+    case "accent": return "border-accent/40 bg-accent/10 text-accent";
+    case "danger": return "border-danger/40 bg-danger/10 text-danger";
+    default: return "border-grid bg-bg/40 text-dim";
   }
 }
 
@@ -142,7 +169,7 @@ function FlowBlock({
           <div key={`${s.label}-${i}`} className="contents md:flex md:min-w-0 md:flex-1 md:basis-[8.5rem] md:items-stretch md:gap-2">
             <div className="flex min-w-0 flex-col gap-1.5 border border-grid bg-panel px-2.5 py-2.5 md:flex-1">
               <div className="flex items-center gap-2">
-                <span className={cn("inline-flex h-6 w-6 items-center justify-center border", toneIcon(s.tone))}>
+                <span className={cn("inline-flex h-6 w-6 items-center justify-center border", toneIcon(resolveIconTone(s.tone, s.icon)))}>
                   <WikiGlyph name={s.icon} size={13} />
                 </span>
                 <span className="text-[10px] tracking-wider text-dim tabular-nums">
@@ -181,7 +208,7 @@ function StepsBlock({
           key={item.title}
           className="flex gap-3 border-t border-grid px-3 py-3 first:border-0"
         >
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center border border-accent/50 bg-accent/10 text-accent">
+          <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center border", toneIcon(iconKeyTone(item.icon)))}>
             <WikiGlyph name={item.icon} size={14} />
           </div>
           <div className="min-w-0">
@@ -208,7 +235,7 @@ function CardsBlock({
     <div className="grid gap-2 sm:grid-cols-2">
       {items.map((c) => (
         <div key={c.title} className="flex gap-2.5 border border-grid bg-panel px-3 py-2.5">
-          <span className={cn("mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center border", toneIcon(c.tone))}>
+          <span className={cn("mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center border", toneIcon(resolveIconTone(c.tone, c.icon)))}>
             <WikiGlyph name={c.icon} size={13} />
           </span>
           <div className="min-w-0 space-y-1">
@@ -281,7 +308,7 @@ function BlockView({ block }: { block: WikiBlock }) {
       return (
         <div className="border border-grid bg-bg/40 px-3 py-3">
           <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold tracking-[0.14em] text-dim uppercase">
-            <Icon icon={Sparkles} size={11} />
+            <Icon icon={Sparkles} size={11} className="text-accent" />
             In plain English
           </div>
           <p className="text-[13px] leading-relaxed text-fg">{block.text}</p>
@@ -456,7 +483,9 @@ export function WikiPage() {
                     <span
                       className={cn(
                         "mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center border",
-                        active ? "border-accent/60 text-accent" : "border-grid text-dim",
+                        active
+                          ? "border-accent/60 bg-accent/10 text-accent"
+                          : toneIcon(iconKeyTone(s.icon)),
                       )}
                     >
                       <WikiGlyph name={s.icon} size={12} />
@@ -483,7 +512,7 @@ export function WikiPage() {
           title={section.title}
           right={
             <span className="inline-flex items-center gap-1.5">
-              <span className="inline-flex h-6 w-6 items-center justify-center border border-accent/50 text-accent">
+              <span className={cn("inline-flex h-6 w-6 items-center justify-center border", toneIcon(iconKeyTone(section.icon)))}>
                 <WikiGlyph name={section.icon} size={12} />
               </span>
               <Badge tone="accent">{section.id}</Badge>

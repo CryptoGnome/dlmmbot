@@ -33,7 +33,7 @@ import { cn } from "@/lib/utils";
 
 export const tabIcon: Record<TabId, LucideIcon> = {
   overview: LayoutDashboard,
-  book: BookOpen,
+  positions: BookOpen,
   analytics: LineChart,
   activity: Activity,
   errors: OctagonX,

@@ -21,6 +21,7 @@ type Field =
   | { path: string; label: string; help?: string; kind: "int"; min: number; max: number; step?: number; suffix?: string }
   | { path: string; label: string; help?: string; kind: "sol"; min: number; max: number; step: number }
   | { path: string; label: string; help?: string; kind: "usd"; min: number; max: number; step: number }
+  | { path: string; label: string; help?: string; kind: "dec"; min: number; max: number; step: number }
   | {
       path: string; label: string; help?: string; kind: "pct";
       min: number; max: number; step: number;
@@ -47,6 +48,58 @@ const GROUPS: Group[] = [
     fields: [
       { path: "sizing.max_positions", label: "Max open positions", kind: "int", min: 1, max: 10 },
       { path: "sizing.min_position_sol", label: "Minimum size", kind: "sol", min: 0.1, max: 2, step: 0.1 },
+      { path: "sizing.reserve_sol", label: "Wallet reserve", kind: "sol", min: 0.5, max: 5, step: 0.5, help: "Left alone for rent & fees." },
+    ],
+  },
+  {
+    title: "Kelly sizing",
+    blurb: "Adaptive size from your closed-trade ledger. Cold-start % applies until enough samples; score tilt scales the result.",
+    cols: 3,
+    fields: [
+      {
+        path: "sizing.kelly_enabled",
+        label: "Kelly sizing",
+        kind: "bool",
+        help: "Learn position size from realized PnL on closed positions (not paper marks).",
+      },
+      {
+        path: "sizing.kelly_fraction",
+        label: "Kelly fraction",
+        kind: "pct",
+        scale: "frac",
+        min: 10,
+        max: 100,
+        step: 5,
+        help: "Fraction of full Kelly f* to bet. 25% = quarter-Kelly (conservative). Higher = bigger swings.",
+      },
+      {
+        path: "sizing.kelly_lookback",
+        label: "Lookback closes",
+        kind: "int",
+        min: 20,
+        max: 100,
+        step: 5,
+        help: "How many recent closed positions feed win rate and avg win/loss.",
+      },
+      {
+        path: "sizing.kelly_min_samples",
+        label: "Min samples",
+        kind: "int",
+        min: 10,
+        max: 100,
+        step: 5,
+        help: "Need this many closes before full Kelly replaces cold-start sizing.",
+      },
+      {
+        path: "sizing.kelly_cold_start_frac",
+        label: "Cold-start size",
+        kind: "pct",
+        scale: "frac",
+        min: 1,
+        max: 10,
+        step: 1,
+        help: "Wallet % per position while the sample is still building.",
+      },
       {
         path: "sizing.kelly_max_position_frac",
         label: "Max share of wallet",
@@ -55,9 +108,41 @@ const GROUPS: Group[] = [
         min: 3,
         max: 25,
         step: 1,
-        help: "Hard cap for any single position.",
+        help: "Hard cap on any single position — Kelly output never exceeds this.",
       },
-      { path: "sizing.reserve_sol", label: "Wallet reserve", kind: "sol", min: 0.5, max: 5, step: 0.5, help: "Left alone for rent & fees." },
+      {
+        path: "sizing.kelly_block_negative",
+        label: "Block negative edge",
+        kind: "bool",
+        help: "Stop new entries when Kelly f* ≤ 0. Can stall recovery (no new closes to rebuild the sample) — usually leave off.",
+      },
+      {
+        path: "sizing.score_mult_low",
+        label: "Score tilt 60–70",
+        kind: "dec",
+        min: 0.25,
+        max: 1.5,
+        step: 0.1,
+        help: "Multiplier on Kelly size for middling scan scores.",
+      },
+      {
+        path: "sizing.score_mult_mid",
+        label: "Score tilt 70–85",
+        kind: "dec",
+        min: 0.25,
+        max: 1.5,
+        step: 0.1,
+        help: "Multiplier for good scores.",
+      },
+      {
+        path: "sizing.score_mult_high",
+        label: "Score tilt 85+",
+        kind: "dec",
+        min: 0.25,
+        max: 1.5,
+        step: 0.1,
+        help: "Multiplier for top-tier scores.",
+      },
     ],
   },
   {
@@ -401,7 +486,7 @@ function wireStr(v: unknown): string {
 
 function toUi(f: Field, wire: string): number {
   const n = Number(wire);
-  if (!Number.isFinite(n)) return f.kind === "pct" || f.kind === "int" || f.kind === "sol" || f.kind === "usd" ? f.min : 0;
+  if (!Number.isFinite(n)) return f.kind === "pct" || f.kind === "int" || f.kind === "sol" || f.kind === "usd" || f.kind === "dec" ? f.min : 0;
   if (f.kind === "pct" && f.scale === "frac") return Math.round(n * 100);
   return n;
 }
@@ -411,7 +496,7 @@ function fromUi(f: Field, ui: number): string {
     return wireStr(Math.round(ui) / 100);
   }
   if (f.kind === "int") return String(Math.round(ui));
-  if (f.kind === "sol" || f.kind === "usd" || f.kind === "pct") {
+  if (f.kind === "sol" || f.kind === "usd" || f.kind === "pct" || f.kind === "dec") {
     const step = "step" in f ? f.step : 1;
     const rounded = Math.round(ui / step) * step;
     return wireStr(Number(rounded.toFixed(6)));
@@ -721,6 +806,8 @@ export function SettingsPage() {
       display = fmtUsd(ui);
     } else if (f.kind === "int") {
       display = f.suffix ? `${Math.round(ui)} ${f.suffix}` : String(Math.round(ui));
+    } else if (f.kind === "dec") {
+      display = `${Math.round(ui * 10) / 10}×`;
     }
 
     return (

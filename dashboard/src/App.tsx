@@ -45,7 +45,16 @@ export default function App() {
   };
 
   useEffect(() => {
-    const onHash = () => setTab(parseTab(window.location.hash));
+    const onHash = () => {
+      const raw = window.location.hash.replace(/^#\/?/, "").split("?")[0];
+      if (raw === "book") {
+        window.history.replaceState(null, "", "#/positions");
+        setTab("positions");
+        return;
+      }
+      setTab(parseTab(window.location.hash));
+    };
+    onHash();
     window.addEventListener("hashchange", onHash);
     if (!window.location.hash) window.history.replaceState(null, "", "#/overview");
     return () => window.removeEventListener("hashchange", onHash);
@@ -147,7 +156,7 @@ export default function App() {
             onOpenActivity={() => goTab("activity")}
           />
         )}
-        {tab === "book" && (
+        {tab === "positions" && (
           <BookPage watch={watch} hist={hist} range={range} onRange={setRange} />
         )}
         {tab === "analytics" && (

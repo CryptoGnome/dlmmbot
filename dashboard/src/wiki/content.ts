@@ -381,11 +381,22 @@ export const WIKI_SECTIONS: WikiSection[] = [
         text: "Wallet stays partly in reserve. Each new position is a measured bite. If the book is bleeding, new entries pause — open ones still get managed.",
       },
       {
+        type: "flow",
+        title: "Kelly sizing (Settings → Kelly sizing)",
+        steps: [
+          { label: "Cold start", detail: "Until min samples, each position uses cold-start % of wallet." },
+          { label: "Estimate f*", detail: "Rolling closed trades → win rate + avg win/loss → full Kelly fraction." },
+          { label: "Apply fraction", detail: "Bet kelly_fraction × f*, capped at max share of wallet." },
+          { label: "Score tilt", detail: "Scan score picks low/mid/high multiplier on the result." },
+          { label: "Floors", detail: "Never below min position size; negative edge can block or clamp to floor." },
+        ],
+      },
+      {
         type: "cards",
         items: [
           {
             title: "Kelly (with caps)",
-            text: "Learns from your closed trades, then clamps with min size, max % of wallet, and score tilt.",
+            text: "Learns from your closed trades, then clamps with min size, max % of wallet, and score tilt. All knobs live under Settings → Kelly sizing.",
             icon: "scale",
           },
           {
@@ -462,13 +473,13 @@ export const WIKI_SECTIONS: WikiSection[] = [
     blocks: [
       {
         type: "tldr",
-        text: "You don’t need every tab every day. Overview for “am I ok?”, Book for positions, Activity when something weird happens, Wiki when you forget a rule.",
+        text: "You don’t need every tab every day. Overview for “am I ok?”, Positions for open trades, Activity when something weird happens, Wiki when you forget a rule.",
       },
       {
         type: "cards",
         items: [
           { title: "Overview", text: "Money snapshot, open profit with slot occupancy (e.g. 3 of 5 · 2 free), equity chart. Engine ON/OFF + HALT live in the header.", icon: "chart" },
-          { title: "Book", text: "Open positions (slot badge) + recent closes. Range bar: purple ≈ SOL still waiting, blue ≈ already converted to token as price walks the bins.", icon: "book" },
+          { title: "Positions", text: "Open positions (slot badge) + recent closes. Range bar: purple ≈ SOL still waiting, blue ≈ already converted to token as price walks the bins.", icon: "book" },
           { title: "Analytics", text: "Why we made/lost SOL — exits, sleeves, skips.", icon: "calc" },
           { title: "Activity", text: "Live play-by-play. SOL: green in / win, blue deployed (entries), red only for losses. On-chain rows link to Solscan.", icon: "zap" },
           { title: "Errors", text: "Broken stuff with copy/paste for bug reports. Each row has a plain label (Transient / Degraded / Needs attention).", icon: "alert", tone: "danger" },
