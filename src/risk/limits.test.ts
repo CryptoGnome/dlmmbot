@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   regimeFactor, clusterBrakeTripped, circuitBreakerTripped, kellyStats, positionSize, computeBankroll,
+  fixedSleeveSize, sizingMode,
 } from "./limits.js";
 import { installConfig, restoreConfig } from "../test/config.js";
 import { useMemoryDb, resetTestDb, insertClosedPosition } from "../test/db.js";
 import { getDb, now } from "../db/db.js";
+import { majorsPositionSize } from "./majors.js";
 
 describe("regimeFactor", () => {
   beforeEach(() => installConfig((c) => {
@@ -172,6 +174,7 @@ describe("kellyStats + positionSize", () => {
   beforeEach(() => {
     useMemoryDb();
     installConfig((c) => {
+      c.sizing.mode = "kelly";
       c.sizing.kelly_enabled = true;
       c.sizing.kelly_min_samples = 5;
       c.sizing.kelly_lookback = 50;
@@ -230,5 +233,75 @@ describe("kellyStats + positionSize", () => {
     const br = computeBankroll(20);
     expect(positionSize(br, 50)).toBe(0); // below score floor
     expect(positionSize(br, 75)).toBeGreaterThan(0);
+  });
+});
+
+describe("fixed sizing mode", () => {
+  beforeEach(() => {
+    useMemoryDb();
+    installConfig((c) => {
+      c.sizing.mode = "fixed";
+      c.sizing.kelly_enabled = false;
+      c.sizing.min_position_sol = 0.3;
+      c.sizing.max_positions = 5;
+      c.sizing.kelly_max_position_frac = 0.5;
+      c.sizing.reserve_sol = 0;
+      c.sizing.reserve_pct = 0;
+      c.sizing.fixed_core_unit = "sol";
+      c.sizing.fixed_core_sol = 0.5;
+      c.sizing.fixed_core_pct = 10;
+      c.sizing.fixed_micro_unit = "pct";
+      c.sizing.fixed_micro_sol = 0.3;
+      c.sizing.fixed_micro_pct = 5;
+      c.sizing.fixed_majors_unit = "sol";
+      c.sizing.fixed_majors_sol = 2;
+      c.sizing.fixed_majors_pct = 10;
+      c.sizing.score_mult_low = 0.5;
+      c.sizing.score_mult_mid = 1;
+      c.sizing.score_mult_high = 1.5;
+      c.majors.size_sol = 0.75;
+      c.majors.max_position_sol = 3;
+    });
+  });
+  afterEach(() => {
+    resetTestDb();
+    restoreConfig();
+  });
+
+  it("reports fixed mode", () => {
+    expect(sizingMode()).toBe("fixed");
+  });
+
+  it("uses exact SOL for core without score tilt", () => {
+    const br = computeBankroll(20);
+    expect(positionSize(br, 50)).toBe(0);
+    expect(positionSize(br, 75)).toBeCloseTo(0.5);
+    expect(positionSize(br, 90)).toBeCloseTo(0.5);
+  });
+
+  it("uses % of deployable for micro sleeve", () => {
+    const br = computeBankroll(20);
+    // deployable ≈ 20 with reserve 0
+    expect(fixedSleeveSize("micro", br.deployableSol, br.walletSol)).toBeCloseTo(1);
+    expect(positionSize(br, 80, "micro")).toBeCloseTo(1);
+  });
+
+  it("skips when fixed SOL is below min_position_sol", () => {
+    installConfig((c) => {
+      c.sizing.mode = "fixed";
+      c.sizing.min_position_sol = 0.3;
+      c.sizing.fixed_core_unit = "sol";
+      c.sizing.fixed_core_sol = 0.1;
+      c.sizing.kelly_max_position_frac = 0.5;
+      c.sizing.reserve_sol = 0;
+      c.sizing.reserve_pct = 0;
+    });
+    const br = computeBankroll(20);
+    expect(positionSize(br, 80)).toBe(0);
+  });
+
+  it("majors uses fixed sleeve size over majors.size_sol", () => {
+    const br = computeBankroll(20);
+    expect(majorsPositionSize(br.deployableSol, br.walletSol)).toBeCloseTo(2);
   });
 });

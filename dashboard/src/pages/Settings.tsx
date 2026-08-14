@@ -37,6 +37,8 @@ type Group = {
   cols?: 2 | 3 | 4;
   /** Pair each toggle with following sliders as clear rows (Token safety). */
   layout?: "grid" | "gates";
+  /** Show only when sizing.mode matches (Kelly vs Fixed panels). */
+  whenMode?: "kelly" | "fixed";
   fields: Field[];
 };
 
@@ -46,6 +48,16 @@ const GROUPS: Group[] = [
     blurb: "How many positions and how big they can get.",
     cols: 4,
     fields: [
+      {
+        path: "sizing.mode",
+        label: "Sizing mode",
+        kind: "select",
+        options: [
+          { value: "kelly", label: "Kelly (adaptive)" },
+          { value: "fixed", label: "Fixed (per sleeve)" },
+        ],
+        help: "Kelly learns from your ledger. Fixed uses exact SOL or % of deployable per sleeve.",
+      },
       { path: "sizing.max_positions", label: "Max open positions", kind: "int", min: 1, max: 10 },
       { path: "sizing.min_position_sol", label: "Minimum size", kind: "sol", min: 0.1, max: 2, step: 0.1 },
       { path: "sizing.reserve_sol", label: "Wallet reserve", kind: "sol", min: 0.5, max: 5, step: 0.5, help: "Left alone for rent & fees." },
@@ -54,14 +66,9 @@ const GROUPS: Group[] = [
   {
     title: "Kelly sizing",
     blurb: "Adaptive size from your closed-trade ledger. Cold-start % applies until enough samples; score tilt scales the result.",
+    whenMode: "kelly",
     cols: 3,
     fields: [
-      {
-        path: "sizing.kelly_enabled",
-        label: "Kelly sizing",
-        kind: "bool",
-        help: "Learn position size from realized PnL on closed positions (not paper marks).",
-      },
       {
         path: "sizing.kelly_fraction",
         label: "Kelly fraction",
@@ -108,7 +115,7 @@ const GROUPS: Group[] = [
         min: 3,
         max: 25,
         step: 1,
-        help: "Hard cap on any single position — Kelly output never exceeds this.",
+        help: "Hard cap on any single position — Kelly and Fixed both respect this.",
       },
       {
         path: "sizing.kelly_block_negative",
@@ -142,6 +149,107 @@ const GROUPS: Group[] = [
         max: 1.5,
         step: 0.1,
         help: "Multiplier for top-tier scores.",
+      },
+    ],
+  },
+  {
+    title: "Fixed sizing",
+    blurb: "Exact SOL or % of deployable bankroll per sleeve. No Kelly, no score size tilt. Below minimum size → skip entry.",
+    whenMode: "fixed",
+    cols: 3,
+    fields: [
+      {
+        path: "sizing.fixed_core_unit",
+        label: "Core unit",
+        kind: "select",
+        options: [
+          { value: "sol", label: "SOL" },
+          { value: "pct", label: "% of deployable" },
+        ],
+        help: "Meme BidAsk sleeve.",
+      },
+      { path: "sizing.fixed_core_sol", label: "Core SOL", kind: "sol", min: 0.1, max: 5, step: 0.05 },
+      {
+        path: "sizing.fixed_core_pct",
+        label: "Core %",
+        kind: "pct",
+        scale: "pct",
+        min: 1,
+        max: 25,
+        step: 1,
+        hint: (ui) => `${ui}% of deployable`,
+      },
+      {
+        path: "sizing.fixed_micro_unit",
+        label: "Micro unit",
+        kind: "select",
+        options: [
+          { value: "sol", label: "SOL" },
+          { value: "pct", label: "% of deployable" },
+        ],
+        help: "100–200k mcap sleeve.",
+      },
+      { path: "sizing.fixed_micro_sol", label: "Micro SOL", kind: "sol", min: 0.1, max: 2, step: 0.05 },
+      {
+        path: "sizing.fixed_micro_pct",
+        label: "Micro %",
+        kind: "pct",
+        scale: "pct",
+        min: 1,
+        max: 15,
+        step: 1,
+        hint: (ui) => `${ui}% of deployable`,
+      },
+      {
+        path: "sizing.fixed_majors_unit",
+        label: "Majors unit",
+        kind: "select",
+        options: [
+          { value: "sol", label: "SOL" },
+          { value: "pct", label: "% of deployable" },
+        ],
+      },
+      { path: "sizing.fixed_majors_sol", label: "Majors SOL", kind: "sol", min: 0.25, max: 5, step: 0.25 },
+      {
+        path: "sizing.fixed_majors_pct",
+        label: "Majors %",
+        kind: "pct",
+        scale: "pct",
+        min: 1,
+        max: 40,
+        step: 1,
+        hint: (ui) => `${ui}% of deployable`,
+      },
+      {
+        path: "sizing.fixed_follow_unit",
+        label: "Follow unit",
+        kind: "select",
+        options: [
+          { value: "sol", label: "SOL" },
+          { value: "pct", label: "% of deployable" },
+        ],
+        help: "Follow re-entry legs.",
+      },
+      { path: "sizing.fixed_follow_sol", label: "Follow SOL", kind: "sol", min: 0.1, max: 2, step: 0.05 },
+      {
+        path: "sizing.fixed_follow_pct",
+        label: "Follow %",
+        kind: "pct",
+        scale: "pct",
+        min: 1,
+        max: 15,
+        step: 1,
+        hint: (ui) => `${ui}% of deployable`,
+      },
+      {
+        path: "sizing.kelly_max_position_frac",
+        label: "Max share of wallet",
+        kind: "pct",
+        scale: "frac",
+        min: 3,
+        max: 25,
+        step: 1,
+        help: "Safety cap still applies in Fixed mode.",
       },
     ],
   },
@@ -366,11 +474,11 @@ const GROUPS: Group[] = [
   },
   {
     title: "Majors parking",
-    blurb: "Separate sleeve for SOL-quoted majors (ANSEM, PUMP, …).",
+    blurb: "Separate sleeve for SOL-quoted majors (ANSEM, PUMP, …). Position size here applies in Kelly mode; Fixed mode uses Fixed sizing → Majors.",
     cols: 3,
     fields: [
       { path: "majors.enabled", label: "Enabled", kind: "bool" },
-      { path: "majors.size_sol", label: "Position size", kind: "sol", min: 0.25, max: 3, step: 0.25 },
+      { path: "majors.size_sol", label: "Position size (Kelly mode)", kind: "sol", min: 0.25, max: 3, step: 0.25 },
       { path: "majors.max_slots", label: "Max majors slots", kind: "int", min: 0, max: 3 },
       { path: "majors.symbol_allowlist", label: "Allowlist", kind: "text", help: "Comma-separated, e.g. PUMP, ANSEM, JUP." },
     ],
@@ -631,6 +739,18 @@ export function SettingsPage() {
 
   const safeEnv = useMemo(() => env.filter((r) => !r.secret), [env]);
   const secretEnv = useMemo(() => env.filter((r) => r.editable), [env]);
+
+  const sizingModeDraft = (draft["sizing.mode"] ?? wireStr(config?.["sizing.mode"] ?? "kelly")) as string;
+  const visibleGroups = useMemo(() => {
+    const mode = sizingModeDraft === "fixed" ? "fixed" : "kelly";
+    return GROUPS.filter((g) => !g.whenMode || g.whenMode === mode).map((g) => {
+      if (g.title !== "Majors parking" || mode !== "fixed") return g;
+      return {
+        ...g,
+        fields: g.fields.filter((f) => f.path !== "majors.size_sol"),
+      };
+    });
+  }, [sizingModeDraft]);
 
   const dirtyCount = useMemo(() => {
     if (!config) return 0;
@@ -913,7 +1033,7 @@ export function SettingsPage() {
         />
       )}
 
-      {ready && pageTab === "bot" && GROUPS.map((g) => (
+      {ready && pageTab === "bot" && visibleGroups.map((g) => (
         <Panel key={g.title} title={g.title} right={<Badge tone="accent">{g.fields.filter((f) => f.path in (config ?? {})).length}</Badge>}>
           {g.blurb && <p className="mb-3 text-[11px] text-dim">{g.blurb}</p>}
           {g.layout === "gates" ? (

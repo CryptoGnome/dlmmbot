@@ -16,7 +16,11 @@ The bankroll is whatever the dedicated burner wallet holds. Before anything depl
 - **Operational reserve:** 1.0 SOL + 10% of bankroll is held back for rent, priority fees, and claim transactions — never deployed.
 - **Slots:** max **5** concurrent positions (tranches count). Small wallets simply run fewer, larger slots: at the 0.3 SOL minimum position, effective slots = `min(5, floor(deployable / 0.3))`.
 
-## Kelly sizing
+## Kelly or Fixed sizing
+
+**Settings → Book & size → Sizing mode** picks one global switch (default **Kelly**).
+
+### Kelly (default)
 
 Position size is a fraction of the wallet, learned from **your own rolling closed-trade ledger** — not from anyone's backtest:
 
@@ -28,7 +32,13 @@ Position size is a fraction of the wallet, learned from **your own rolling close
 
 **Negative edge:** if the ledger says f\* ≤ 0, the shipped behavior (`kelly_block_negative = false`) clamps sizing to the minimum floor — small size while the sample rebuilds. The alternative hard block (`true`) stops new entries entirely until the strategy re-earns its sizing; it's off by default because blocked entries produce no new closes, so f\* could never recover on its own.
 
-Follow-mode legs are **excluded** from this ledger and fixed at 0.25 SOL — the mode must earn bigger sizing with its own closed-leg evidence.
+In Kelly mode, majors still use `majors.size_sol` and follow legs use `follow.leg_size_sol`.
+
+### Fixed
+
+Each sleeve (core, micro, majors, follow) has its own **SOL amount** or **% of deployable** bankroll. No Kelly, no score size tilt, no micro half-Kelly multiplier. Entry score floors still decide *whether* to enter. If the configured size is below `min_position_sol`, the entry is **skipped** (not bumped). Deployable, max wallet %, slots, and brakes still clamp.
+
+Follow-mode legs are **excluded** from the Kelly ledger — in Kelly mode they stay a small fixed `leg_size_sol`; in Fixed mode they use the Follow row.
 
 ## Per-token and pool-share caps
 

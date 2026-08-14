@@ -45,8 +45,39 @@ export function readConfigToml(root) {
   return readFileSync(configPath(root), "utf8");
 }
 
+function fillMissing(target, template) {
+  if (!target || !template || typeof target !== "object" || typeof template !== "object") return;
+  for (const [key, tmplVal] of Object.entries(template)) {
+    const cur = target[key];
+    if (cur === undefined) {
+      target[key] = tmplVal;
+    } else if (
+      cur !== null && typeof cur === "object" && !Array.isArray(cur) &&
+      tmplVal !== null && typeof tmplVal === "object" && !Array.isArray(tmplVal)
+    ) {
+      fillMissing(cur, tmplVal);
+    }
+  }
+}
+
+function normalizeSizing(parsed) {
+  const s = parsed?.sizing;
+  if (!s || typeof s !== "object") return;
+  if (s.mode !== "kelly" && s.mode !== "fixed") {
+    s.mode = s.kelly_enabled === false ? "fixed" : "kelly";
+  }
+  s.kelly_enabled = s.mode === "kelly";
+}
+
 export function parseConfig(root) {
-  return parse(readConfigToml(root));
+  const parsed = parse(readConfigToml(root));
+  normalizeSizing(parsed);
+  try {
+    const tmpl = parse(readFileSync(join(root, "config.toml"), "utf8"));
+    fillMissing(parsed, tmpl);
+  } catch { /* no template */ }
+  normalizeSizing(parsed);
+  return parsed;
 }
 
 /** Flatten top-level sections into dotted paths for the Settings form (skip nested objects). */
@@ -149,6 +180,13 @@ function appendSectionKey(text, section, key, value) {
  */
 export function applyConfigUpdates(root, updates) {
   if (!updates || typeof updates !== "object") throw new Error("updates object required");
+  /** Keep sizing.mode ↔ kelly_enabled mirrored for profiles / older UIs. */
+  const synced = { ...updates };
+  if (synced["sizing.mode"] === "kelly" || synced["sizing.mode"] === "fixed") {
+    synced["sizing.kelly_enabled"] = synced["sizing.mode"] === "kelly";
+  } else if ("sizing.kelly_enabled" in synced) {
+    synced["sizing.mode"] = synced["sizing.kelly_enabled"] ? "kelly" : "fixed";
+  }
   let text = readConfigToml(root);
   const missing = [];
   const applied = [];
@@ -161,7 +199,7 @@ export function applyConfigUpdates(root, updates) {
     return template?.[section]?.[key] !== undefined;
   };
 
-  for (const [path, value] of Object.entries(updates)) {
+  for (const [path, value] of Object.entries(synced)) {
     const dot = path.indexOf(".");
     if (dot <= 0) throw new Error(`invalid path: ${path}`);
     const section = path.slice(0, dot);

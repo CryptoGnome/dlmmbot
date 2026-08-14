@@ -21,7 +21,7 @@ import { flowFor, startSmartFlow } from "../scanner/smartflow.js";
 import { armFollowChain, hasActiveFollowChain, onFollowLegClosed, tickFollowChains } from "./follow.js";
 import { clearHolderWatch, holderCheck } from "./holderwatch.js";
 import { sol24hChangePct, solUsdPrice } from "../market.js";
-import { circuitBreakerTripped, clusterBrakeTripped, computeBankroll, kellyStats, openPositionCount, positionSize, regimeFactor, tokenExposureSol } from "../risk/limits.js";
+import { circuitBreakerTripped, clusterBrakeTripped, computeBankroll, kellyStats, openPositionCount, positionSize, regimeFactor, sizingMode, tokenExposureSol } from "../risk/limits.js";
 import { applyMicroSize, isMicroMcap, microPoolSharePct, microSleeveExposure } from "../risk/micro.js";
 import { enterMajorsPositions } from "./majorsEntry.js";
 import { manageForSleeve } from "../risk/majorsManage.js";
@@ -1057,10 +1057,10 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     }
 
     const kelly = kellyStats();
-    let size = positionSize(bankroll, score);
+    let size = positionSize(bankroll, score, isMicro ? "micro" : "core");
     if (size <= 0) {
-      const gate = kelly.regime === "negative_edge" ? "kelly_negative_edge" : "size_zero";
-      if (kelly.regime === "negative_edge")
+      const gate = sizingMode() === "kelly" && kelly.regime === "negative_edge" ? "kelly_negative_edge" : "size_zero";
+      if (sizingMode() === "kelly" && kelly.regime === "negative_edge")
         console.log(`[risk] Kelly estimates negative edge (f*=${kelly.fullKelly?.toFixed(3)}, n=${kelly.samples}) — entries blocked`);
       recordDecision(cand.tokenMint, cand.pool.address, "skipped", gate, score, { bankroll, kelly });
       continue;
@@ -1077,7 +1077,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     }
     size *= Math.pow(m.reentry_ladder_mult, priorEntries24h);
     size *= regime; // regime filter halves sizing in a SOL downdraft
-    if (isMicro) size = applyMicroSize(size);
+    if (isMicro && sizingMode() === "kelly") size = applyMicroSize(size);
     // Viability floor, applied once, here — AFTER the ladder and regime have
     // had their say. A re-entry gets the lower floor because it reuses a token
     // account the first entry already paid rent for (see min_reentry_sol).

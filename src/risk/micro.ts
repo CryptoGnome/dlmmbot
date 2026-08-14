@@ -1,4 +1,5 @@
 import { config } from "../config.js";
+import { sizingMode } from "./limits.js";
 import { openSleeveExposure } from "./sleeve.js";
 
 export function isMicroMcap(mcapUsd: number | null | undefined): boolean {
@@ -11,8 +12,9 @@ export function microSleeveExposure(): { slots: number; deployedSol: number } {
   return openSleeveExposure("micro");
 }
 
-/** Half-Kelly size for micro band + hard SOL cap. */
+/** Half-Kelly size for micro band + hard SOL cap (Kelly mode only). */
 export function applyMicroSize(size: number): number {
+  if (sizingMode() === "fixed") return size;
   const g = config().gates;
   return Math.min(size * g.micro_size_mult, g.micro_max_position_sol);
 }

@@ -176,8 +176,23 @@ min_reentry_sol = 0.2    # 2026-08-09: viability floor for a re-entry, checked A
                          # flat trade -0.00212, reused-account flat trade -0.00005). Holding
                          # re-entries to the new-mint floor made 0.3 * 0.75 = 0.225 a guaranteed
                          # skip — 336 such rows, including 3 of the 5 best trades to date.
+# --- Sizing mode: kelly (default) or fixed per-sleeve SOL / % of deployable ---
+mode = "kelly"                 # "kelly" | "fixed"
+kelly_enabled = true           # mirror of mode=="kelly" (compat for older profiles / snapshots)
+# Fixed mode (ignored when mode=kelly): each sleeve picks sol or pct of deployable
+fixed_core_unit = "sol"
+fixed_core_sol = 0.5
+fixed_core_pct = 5
+fixed_micro_unit = "sol"
+fixed_micro_sol = 0.3
+fixed_micro_pct = 3
+fixed_majors_unit = "sol"
+fixed_majors_sol = 0.75
+fixed_majors_pct = 10
+fixed_follow_unit = "sol"
+fixed_follow_sol = 0.25
+fixed_follow_pct = 2
 # --- Kelly criterion sizing (learns from our own closed-position ledger) ---
-kelly_enabled = true
 kelly_fraction = 0.25          # 2026-08-09: quarter-Kelly. Half-Kelly is calibrated for a KNOWN
                                # edge; this book has not demonstrated one.
 kelly_lookback = 50            # closed positions in the rolling estimate

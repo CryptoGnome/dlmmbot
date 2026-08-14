@@ -42,6 +42,34 @@ export function computeBankroll(walletSol: number): Bankroll {
   };
 }
 
+export type FixedSleeve = "core" | "micro" | "majors" | "follow";
+
+/** Global Kelly vs Fixed switch (default Kelly). */
+export function sizingMode(): "kelly" | "fixed" {
+  return config().sizing.mode === "fixed" ? "fixed" : "kelly";
+}
+
+/**
+ * Fixed-mode size for one sleeve: exact SOL or % of deployable, then clamp to
+ * deployable + max wallet frac. Returns 0 if below min_position_sol (no silent bump).
+ */
+export function fixedSleeveSize(
+  sleeve: FixedSleeve,
+  deployableSol: number,
+  walletSol: number,
+): number {
+  const s = config().sizing;
+  const unit = s[`fixed_${sleeve}_unit`];
+  const raw = unit === "pct"
+    ? deployableSol * (s[`fixed_${sleeve}_pct`] / 100)
+    : s[`fixed_${sleeve}_sol`];
+  if (!(raw > 0) || raw < s.min_position_sol) return 0;
+  const maxByWallet = walletSol * s.kelly_max_position_frac;
+  const cap = maxByWallet >= s.min_position_sol ? maxByWallet : s.min_position_sol;
+  const size = Math.min(raw, deployableSol, cap);
+  return size >= s.min_position_sol ? size : 0;
+}
+
 // ---- Kelly criterion sizing (§5) ----
 // f* = p − q/b  where p = win rate, q = 1−p, b = avgWin/avgLoss (return odds).
 // Estimated from our OWN rolling closed-position ledger; scaled by
@@ -112,12 +140,20 @@ export function kellyStats(): KellyStats {
   };
 }
 
-/** Kelly-based position size with score tilt (§5); 0 = don't enter. */
-export function positionSize(bankroll: Bankroll, score: number): number {
+/** Position size for meme core or micro; 0 = don't enter. */
+export function positionSize(
+  bankroll: Bankroll,
+  score: number,
+  sleeve: "core" | "micro" = "core",
+): number {
   const s = config().sizing;
   if (bankroll.effectiveSlots < 1) return 0;
   const mult = score >= 85 ? s.score_mult_high : score >= 70 ? s.score_mult_mid : score >= 60 ? s.score_mult_low : 0;
   if (mult === 0) return 0;
+
+  if (sizingMode() === "fixed") {
+    return fixedSleeveSize(sleeve, bankroll.deployableSol, bankroll.walletSol);
+  }
 
   let base: number;
   if (s.kelly_enabled) {
@@ -128,6 +164,7 @@ export function positionSize(bankroll: Bankroll, score: number): number {
     // overhead, so the floor wins over strict Kelly (logged via decisions).
     base = Math.max(base, s.min_position_sol);
   } else {
+    // Legacy kelly_enabled=false without mode=fixed: equal-slot split.
     base = (bankroll.deployableSol + bankroll.deployedSol) / bankroll.effectiveSlots;
   }
 

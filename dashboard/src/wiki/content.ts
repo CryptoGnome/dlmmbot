@@ -148,7 +148,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           {
             title: "Meme",
             badge: "main book",
-            text: "The bread-and-butter. BidAsk under price, Kelly sizing, escape hatch + profit lock.",
+            text: "The bread-and-butter. BidAsk under price, Kelly or Fixed sizing, escape hatch + profit lock.",
             icon: "chart",
           },
           {
@@ -373,12 +373,21 @@ export const WIKI_SECTIONS: WikiSection[] = [
     id: "sizing",
     title: "How big & how many",
     icon: "scale",
-    simple: "We never all-in. Size comes from your track record, score, and hard safety brakes.",
-    summary: "Kelly, slots, circuit breaker, cluster brake, regime, HALT.",
+    simple: "We never all-in. Choose Kelly (learns from your book) or Fixed (exact SOL / % per sleeve).",
+    summary: "Kelly or Fixed sizing, slots, circuit breaker, cluster brake, regime, HALT.",
     blocks: [
       {
         type: "tldr",
-        text: "Wallet stays partly in reserve. Each new position is a measured bite. If the book is bleeding, new entries pause — open ones still get managed.",
+        text: "Wallet stays partly in reserve. Each new position is a measured bite — Kelly from your ledger, or Fixed amounts you set per sleeve. If the book is bleeding, new entries pause — open ones still get managed.",
+      },
+      {
+        type: "flow",
+        title: "Sizing mode (Settings → Book & size)",
+        steps: [
+          { label: "Kelly (default)", detail: "Cold start → estimate f* from closes → kelly_fraction × f* → score tilt → caps." },
+          { label: "Fixed", detail: "Each sleeve (core, micro, majors, follow) uses exact SOL or % of deployable. No Kelly, no score size tilt." },
+          { label: "Shared clamps", detail: "Min position, max % of wallet, deployable, brakes, and slots still apply." },
+        ],
       },
       {
         type: "flow",
@@ -396,8 +405,13 @@ export const WIKI_SECTIONS: WikiSection[] = [
         items: [
           {
             title: "Kelly (with caps)",
-            text: "Learns from your closed trades, then clamps with min size, max % of wallet, and score tilt. All knobs live under Settings → Kelly sizing.",
+            text: "Learns from your closed trades, then clamps with min size, max % of wallet, and score tilt. Knobs under Settings → Kelly sizing.",
             icon: "scale",
+          },
+          {
+            title: "Fixed per sleeve",
+            text: "Set core / micro / majors / follow to SOL or % of deployable. Below min size skips the entry — no silent bump.",
+            icon: "layers",
           },
           {
             title: "Slot limits",
@@ -705,6 +719,8 @@ export const WIKI_SECTIONS: WikiSection[] = [
         rows: [
           ["BidAsk", "Stack SOL under (or around) price — meme default."],
           ["Spot", "Spread evenly across bins — majors style."],
+          ["Kelly", "Adaptive size from your closed-trade ledger (default sizing mode)."],
+          ["Fixed sizing", "Exact SOL or % of deployable per sleeve — Settings → Book & size."],
           ["Active bin", "Where the pool’s price is right now."],
           ["Zap", "Helper that turns leftover tokens into SOL when we exit."],
           ["Escape hatch", "Deep dip, then recovery → close and free the slot (reset), not a slow bleed."],

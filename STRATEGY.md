@@ -168,12 +168,13 @@ Mechanical, no discussion: hold for `[15 min]` grace (wick tolerance). If price 
 
 - **Bankroll**: whatever the dedicated burner wallet holds. Operational reserve `[1.0 SOL]` + `[10%]` of bankroll held back for rent, priority fees, and claim txs — never deployed.
 - **Max concurrent positions**: `[7]` (range 6–8; tranches count toward this). Note the interaction with min position size: at 0.5 SOL minimum per position, running 7 slots needs a deployable bankroll of ≥ ~3.5 SOL to actually fill them — with less, the bot simply runs fewer, larger slots (`effective_slots = min(7, floor(deployable / min_position))`).
-- **Base size — Kelly criterion** `[on]`: per-position fraction of wallet = `f* × [0.5]` (half-Kelly), where `f* = p − (1−p)/b` is estimated from our **own rolling closed-position ledger** (`[50]` most recent, `p` = win rate, `b` = avgWin/avgLoss as return fractions). Rationale: half-Kelly keeps ~75% of optimal growth with far smaller drawdowns, and buffers estimation error — over-betting past full Kelly turns long-run growth negative.
-  - **Cold start** (< `[10]` closed positions): flat `[3%]` of wallet per position.
+- **Base size — mode** `[kelly|fixed]`: default **Kelly**. Settings may flip the whole book to **Fixed**, where each sleeve (core / micro / majors / follow) uses exact SOL or % of deployable — no Kelly, no score size tilt. Fixed sizes below `min_position_sol` skip the entry (no silent bump). Hard wallet % cap, deployable, slots, and brakes still apply.
+- **Kelly criterion** `[on when mode=kelly]`: per-position fraction of wallet = `f* × [0.25]` (quarter-Kelly shipped), where `f* = p − (1−p)/b` is estimated from our **own rolling closed-position ledger** (`[50]` most recent, `p` = win rate, `b` = avgWin/avgLoss as return fractions). Rationale: fractional Kelly keeps most of optimal growth with far smaller drawdowns, and buffers estimation error — over-betting past full Kelly turns long-run growth negative.
+  - **Cold start** (< `[50]` closed positions): flat `[3%]` of wallet per position.
   - **Hard cap**: `[10%]` of wallet per position regardless of how good f* looks.
-  - **Negative-edge brake** `[on]`: if the ledger says f* ≤ 0, new entries stop entirely — the strategy must re-earn its sizing with evidence (gates/config get tuned, paper results improve, brake lifts itself).
-  - **Small-bankroll floor**: min position `[0.5 SOL]` beats strict Kelly when the wallet is small (below it, fees can't beat tx+rent overhead).
-- **Score multiplier** (tilt within the Kelly budget): score 60–70 → `[0.5×]`, 70–85 → `[1.0×]`, 85+ → `[1.5×]` (still capped by the 10% wallet cap and deployable).
+  - **Negative-edge brake** `[off by default]`: if the ledger says f* ≤ 0 and armed, new entries stop; shipped off so sizing can fall to the min floor while the sample rebuilds.
+  - **Small-bankroll floor**: min position `[0.3 SOL]` beats strict Kelly when the wallet is small (below it, fees can't beat tx+rent overhead).
+- **Score multiplier** (Kelly only): score 60–70 → `[0.5×]`, 70–85 → `[1.0×]`, 85+ → `[1.5×]` (still capped by the 10% wallet cap and deployable).
 - **Per-token cap**: `[1]` primary position (+ optional tranche). Never two tokens from the same creator. Never > `[40%]` of deployable in one token including its tranche.
 - **Min position**: `[0.5 SOL]` — below this, fees don't beat tx+rent overhead.
 - **Circuit breaker**: realized loss > `[10%]` of bankroll in rolling 24h → no new entries for `[12h]` (open positions still managed). Two triggers in 7 days → full halt until manually resumed.

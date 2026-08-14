@@ -58,7 +58,7 @@ export async function enterMajorsPositions(exec: Executor, bankroll: Bankroll): 
     }
     const range = rent.range;
 
-    let size = majorsPositionSize(bankroll.deployableSol);
+    let size = majorsPositionSize(bankroll.deployableSol, bankroll.walletSol);
     const exp = majorsSleeveExposure();
     if (exp.deployedSol + size > capSol) {
       size = Math.max(0, capSol - exp.deployedSol);

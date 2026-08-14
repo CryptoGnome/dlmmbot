@@ -154,24 +154,29 @@ Thresholds:
 | `profit_lock_max_fires` | `1` | At most once per position |
 | `below_range_grace_min` | `15` | P5: wick-tolerance grace before closing |
 
-## `[sizing]` — Kelly & portfolio limits
+## `[sizing]` — Kelly / Fixed & portfolio limits
 
 | Key | Default | Meaning |
 |---|---|---|
+| `mode` | `"kelly"` | `"kelly"` (ledger) or `"fixed"` (per-sleeve SOL / % of deployable) |
 | `max_positions` | `5` | Max concurrent positions (tranches count) |
-| `min_position_sol` | `0.3` | Floor — below it, fees can't beat tx+rent overhead |
+| `min_position_sol` | `0.3` | Floor — below it, fees can't beat tx+rent overhead (Fixed skips instead of bumping) |
 | `min_reentry_sol` | `0.2` | Separate viability floor for re-entries (reused accounts are cheaper) |
-| `kelly_enabled` | `true` | Kelly sizing from your own closed-trade ledger |
+| `kelly_enabled` | `true` | Mirror of `mode=="kelly"` (compat for older profiles) |
 | `kelly_fraction` | `0.25` | Quarter-Kelly (half-Kelly assumes a *proven* edge) |
 | `kelly_lookback` | `50` | Closed positions in the rolling estimate |
 | `kelly_min_samples` | `50` | Below this, cold start applies |
 | `kelly_cold_start_frac` | `0.03` | Cold start: flat 3% of wallet per position |
-| `kelly_max_position_frac` | `0.10` | Hard cap: no position exceeds 10% of wallet |
+| `kelly_max_position_frac` | `0.10` | Hard cap: no position exceeds 10% of wallet (Kelly and Fixed) |
 | `kelly_block_negative` | `false` | Off: negative edge clamps to the min-size floor instead of a permanent stop |
+| `fixed_core_unit` / `_sol` / `_pct` | `sol` / `0.5` / `5` | Core meme size when `mode=fixed` |
+| `fixed_micro_unit` / `_sol` / `_pct` | `sol` / `0.3` / `3` | Micro sleeve when `mode=fixed` |
+| `fixed_majors_unit` / `_sol` / `_pct` | `sol` / `0.75` / `10` | Majors when `mode=fixed` (else `majors.size_sol`) |
+| `fixed_follow_unit` / `_sol` / `_pct` | `sol` / `0.25` / `2` | Follow legs when `mode=fixed` (else `follow.leg_size_sol`) |
 | `reserve_sol` | `1.0` | Operational reserve, never deployed |
 | `reserve_pct` | `10` | Plus this % of bankroll held back for rent/fees |
 | `per_token_max_pct` | `40` | Max % of deployable in one token incl. tranche |
-| `score_mult_low` / `mid` / `high` | `0.5` / `1.0` / `1.5` | Size tilt for score 60–70 / 70–85 / 85+ |
+| `score_mult_low` / `mid` / `high` | `0.5` / `1.0` / `1.5` | Size tilt for score 60–70 / 70–85 / 85+ (Kelly only) |
 | `circuit_daily_loss_pct` | `3` | Circuit breaker: realized 24h loss % of bankroll |
 | `circuit_pause_h` | `12` | Breaker pause length |
 | `circuit_weekly_triggers_halt` | `2` | Two trips in 7 days → full halt until resumed |

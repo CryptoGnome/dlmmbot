@@ -1138,6 +1138,11 @@ export function buildLiveBookSnapshot(root) {
         cluster_brake_loss_pct: clusterLossPct,
         open_fail_cooldown_s: tomlNum(toml, "open_fail_cooldown_s"),
         kelly_enabled: tomlBool(toml, "kelly_enabled"),
+        sizing_mode: (() => {
+          const m = new RegExp(`^\\s*mode\\s*=\\s*"?(kelly|fixed)"?`, "m").exec(toml);
+          if (m) return m[1];
+          return tomlBool(toml, "kelly_enabled") === false ? "fixed" : "kelly";
+        })(),
         kelly_min_samples: tomlNum(toml, "kelly_min_samples"),
         max_positions: tomlNum(toml, "max_positions"),
         stop_loss_frac: tomlNum(toml, "stop_loss_frac"),

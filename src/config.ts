@@ -99,9 +99,16 @@ export interface Config {
   };
   sizing: {
     max_positions: number; min_position_sol: number; min_reentry_sol: number;
+    /** Global sizing: kelly (ledger) or fixed per-sleeve SOL / % of deployable. */
+    mode: "kelly" | "fixed";
+    /** Mirror of mode==="kelly" — kept for older profiles / snapshots. */
     kelly_enabled: boolean; kelly_fraction: number; kelly_lookback: number;
     kelly_min_samples: number; kelly_cold_start_frac: number;
     kelly_max_position_frac: number; kelly_block_negative: boolean;
+    fixed_core_unit: "sol" | "pct"; fixed_core_sol: number; fixed_core_pct: number;
+    fixed_micro_unit: "sol" | "pct"; fixed_micro_sol: number; fixed_micro_pct: number;
+    fixed_majors_unit: "sol" | "pct"; fixed_majors_sol: number; fixed_majors_pct: number;
+    fixed_follow_unit: "sol" | "pct"; fixed_follow_sol: number; fixed_follow_pct: number;
     reserve_sol: number; reserve_pct: number; per_token_max_pct: number;
     score_mult_low: number; score_mult_mid: number; score_mult_high: number;
     circuit_daily_loss_pct: number; circuit_pause_h: number;
@@ -223,8 +230,21 @@ function fillMissing(target: Record<string, unknown>, template: Record<string, u
   }
 }
 
+/** Prefer explicit mode; else derive from kelly_enabled. Keep the two in sync. */
+function normalizeSizing(raw: Record<string, unknown>): void {
+  const s = raw.sizing as Record<string, unknown> | undefined;
+  if (!s || typeof s !== "object") return;
+  if (s.mode !== "kelly" && s.mode !== "fixed") {
+    s.mode = s.kelly_enabled === false ? "fixed" : "kelly";
+  }
+  s.kelly_enabled = s.mode === "kelly";
+}
+
 function load(): Config {
   const raw = parse(readFileSync(CONFIG_PATH, "utf8")) as unknown as Record<string, unknown>;
+  // Derive mode from kelly_enabled *before* template fill — otherwise a missing
+  // mode would always become "kelly" from the template and ignore kelly_enabled=false.
+  normalizeSizing(raw);
   // Back-fill keys the repo template gained after this deployment's runtime
   // config.toml was seeded — data/config.toml is copied exactly once, so a new
   // key read by newer code was silently `undefined` forever (NaN sizing,
@@ -236,6 +256,7 @@ function load(): Config {
       fillMissing(raw, parse(readFileSync(tmplPath, "utf8")) as unknown as Record<string, unknown>);
     } catch { /* unreadable template — run with what we have */ }
   }
+  normalizeSizing(raw);
   for (const section of REQUIRED_SECTIONS) {
     if (raw[section] === undefined || typeof raw[section] !== "object") {
       throw new Error(`config.toml is missing required section [${section}] — refusing to load a gutted config`);

@@ -25,12 +25,22 @@ describe("applyMicroSize", () => {
   beforeEach(() => installConfig((c) => {
     c.gates.micro_size_mult = 0.5;
     c.gates.micro_max_position_sol = 0.45;
+    c.sizing.mode = "kelly";
   }));
   afterEach(() => restoreConfig());
 
   it("halves size and caps at micro_max_position_sol", () => {
     expect(applyMicroSize(0.8)).toBe(0.4);
     expect(applyMicroSize(1.2)).toBe(0.45);
+  });
+
+  it("passthrough in fixed mode", () => {
+    installConfig((c) => {
+      c.sizing.mode = "fixed";
+      c.gates.micro_size_mult = 0.5;
+      c.gates.micro_max_position_sol = 0.45;
+    });
+    expect(applyMicroSize(0.8)).toBe(0.8);
   });
 });
 
