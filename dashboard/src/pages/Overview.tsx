@@ -98,7 +98,7 @@ export function OverviewPage({
           signal={openPnlKnown ? openPnl : null}
           pct={openPct}
           tone={!openPnlKnown ? "fg" : openPnl >= 0 ? "ok" : "danger"}
-          sub={`${open.length} open · live marks via WebSocket`}
+          sub={`${open.length} open`}
         />
         <HeroStat
           label="Last 24h profit"
