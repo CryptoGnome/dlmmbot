@@ -216,6 +216,12 @@ export const WIKI_SECTIONS: WikiSection[] = [
         title: "Soft stuff only tilts size",
         text: "Freefall, ATH blast, sell pressure — these change the score (how big / how soon), they don’t secretly override a hard fail.",
       },
+      {
+        type: "callout",
+        tone: "warn",
+        title: "GMGN is paced",
+        text: "Optional trending / honeypot / holder checks share one queue (~1 req/s, heavier routes cost more). A 429 parks GMGN until reset — Meteora scanning keeps going without it.",
+      },
     ],
   },
   {
@@ -512,7 +518,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
         type: "ul",
         items: [
           "ON/OFF = soft pause (no trades; positions stay open). Starts OFF after setup — you flip ON when ready. HALT = emergency close-all (confirm with dash token).",
-          "PAPER / LIVE = mode. Switching live writes both gates; the farmer restarts once so the header flips to LIVE. BRAKE appears when the cluster brake paused entries.",
+          "PAPER / LIVE = mode. Switching live writes both gates; the farmer restarts once so the header flips to LIVE. Overview / Positions / History only show that mode’s book — paper rows stay in the DB but do not mix into live balances or activity. BRAKE appears when the cluster brake paused entries.",
           "HB = farmer alive? Shows seconds since the last finished tick (green = ok, red = stuck/missing). Not a wall clock. WS = this page’s live websocket feed.",
           "Build pill = release version + deploy branch + git SHA + sync (CURRENT / BEHIND / …). Auto on/off switch sits next to it (host pulls vs Changes → Approve).",
           "Host name (and wallet chip when known) sit on the right.",

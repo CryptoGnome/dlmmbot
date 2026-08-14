@@ -308,7 +308,7 @@ export function Shell({
   stale: boolean;
   children: ReactNode;
 }) {
-  const mode = (watch?.heartbeat?.mode ?? "").toLowerCase();
+  const mode = (watch?.book_mode ?? watch?.heartbeat?.mode ?? "").toLowerCase();
   const modeLive = mode === "live";
   const hbAge = watch?.heartbeat_age_s;
   const hbMissing = hbAge == null;

@@ -1,5 +1,10 @@
-import { describe, it, expect } from "vitest";
-import { parseTokenSecurity } from "./gmgn.js";
+import { describe, it, expect, beforeEach } from "vitest";
+import {
+  parseTokenSecurity,
+  parseGmgnResetMs,
+  gmgnRouteWeight,
+  _resetGmgnPaceForTests,
+} from "./gmgn.js";
 
 // tokenSecurity is the pipeline's ONLY honeypot/sell-tax check (vet.ts).
 // The parser must fail closed (null) on shape drift, never read a payload it
@@ -24,5 +29,24 @@ describe("parseTokenSecurity", () => {
   it("returns null (not honeypot=false) when no security field is recognizable", () => {
     expect(parseTokenSecurity(JSON.stringify({ code: 0, data: { msg: "ok" } }))).toBeNull();
     expect(parseTokenSecurity(JSON.stringify({ code: 0, data: {} }))).toBeNull();
+  });
+});
+
+describe("gmgn rate-limit helpers", () => {
+  beforeEach(() => _resetGmgnPaceForTests());
+
+  it("weights holders/traders heavier than trending/security", () => {
+    expect(gmgnRouteWeight(["market", "trending"])).toBe(1);
+    expect(gmgnRouteWeight(["token", "security"])).toBe(1);
+    expect(gmgnRouteWeight(["token", "holders"])).toBe(5);
+    expect(gmgnRouteWeight(["token", "traders"])).toBe(5);
+  });
+
+  it("parses reset_at and X-RateLimit-Reset", () => {
+    const now = 1_700_000_000_000;
+    expect(parseGmgnResetMs('{"error":"RATE_LIMIT_BANNED","reset_at":1700000060}', now))
+      .toBe(1_700_000_060_000);
+    expect(parseGmgnResetMs("X-RateLimit-Reset: 1700000099", now)).toBe(1_700_000_099_000);
+    expect(parseGmgnResetMs("nope", now)).toBeNull();
   });
 });

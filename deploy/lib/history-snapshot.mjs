@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createRequire } from "node:module";
 import { REALIZED_PNL } from "./live-book-snapshot.mjs";
+import { resolveBotMode } from "./bot-mode.mjs";
 import { runtimePaths } from "./runtime-paths.mjs";
 
 function openDb(root) {
@@ -36,13 +37,14 @@ export function buildHistorySnapshot(root, range = "30d") {
     const dayCutoff = since > 0
       ? new Date(since * 1000).toISOString().slice(0, 10)
       : "1970-01-01";
+    const bookMode = resolveBotMode(root);
 
     const daily = db.prepare(
       `SELECT day, realized_sol, unrealized_sol, fees_sol, costs_sol, sol_usd
        FROM pnl_daily
-       WHERE mode='live' AND day >= ?
+       WHERE mode = ? AND day >= ?
        ORDER BY day ASC`
-    ).all(dayCutoff);
+    ).all(bookMode, dayCutoff);
 
     // Carry last known SOL/USD price forward when a day is missing sol_usd
     let lastPx = 0;
@@ -76,10 +78,10 @@ export function buildHistorySnapshot(root, range = "30d") {
               ROUND(SUM(${REALIZED_PNL}), 6) AS pnl,
               ROUND(SUM(entry_sol), 6) AS entry_sol
        FROM positions
-       WHERE mode='live' AND exit_ts IS NOT NULL AND exit_ts >= ?
+       WHERE mode = ? AND exit_ts IS NOT NULL AND exit_ts >= ?
        GROUP BY day
        ORDER BY day ASC`
-    ).all(since).map((r) => ({
+    ).all(bookMode, since).map((r) => ({
       ...r,
       pct: r.entry_sol > 0 ? Math.round((r.pnl / r.entry_sol) * 1e6) / 1e6 : null,
     }));
@@ -95,10 +97,10 @@ export function buildHistorySnapshot(root, range = "30d") {
               ROUND(SUM(${REALIZED_PNL}), 6) AS pnl,
               ROUND(SUM(entry_sol), 6) AS entry_sol
        FROM positions
-       WHERE mode='live' AND exit_ts IS NOT NULL AND exit_ts >= ?
+       WHERE mode = ? AND exit_ts IS NOT NULL AND exit_ts >= ?
        GROUP BY exit_reason
        ORDER BY pnl ASC`
-    ).all(since).map((r) => ({
+    ).all(bookMode, since).map((r) => ({
       ...r,
       pct: r.entry_sol > 0 ? Math.round((r.pnl / r.entry_sol) * 1e6) / 1e6 : null,
     }));
@@ -121,10 +123,10 @@ export function buildHistorySnapshot(root, range = "30d") {
               ROUND(COALESCE(fees_at_close_sol, 0), 6) AS fees_at_close_sol,
               ROUND(exit_sol, 6) AS exit_sol
        FROM positions
-       WHERE mode='live' AND exit_ts IS NOT NULL AND exit_ts >= ?
+       WHERE mode = ? AND exit_ts IS NOT NULL AND exit_ts >= ?
        ORDER BY exit_ts DESC
        LIMIT 40`
-    ).all(since).map((r) => {
+    ).all(bookMode, since).map((r) => {
       const openCost = r.open_cost_sol != null ? Number(r.open_cost_sol) : null;
       const closeRet = r.close_return_sol != null ? Number(r.close_return_sol) : null;
       const feesMeasured = Number(r.fees_measured_sol) || 0;
@@ -206,8 +208,8 @@ export function buildHistorySnapshot(root, range = "30d") {
               ROUND(COALESCE(fees_measured_sol, fees_claimed_sol, 0), 6) AS fees_sol,
               open_cost_sol, close_return_sol, exit_sol
        FROM positions
-       WHERE mode='live' AND exit_ts IS NOT NULL AND exit_ts >= ?`
-    ).all(since);
+       WHERE mode = ? AND exit_ts IS NOT NULL AND exit_ts >= ?`
+    ).all(bookMode, since);
 
     const sleeveAt = db.prepare(
       `SELECT json_extract(features_json, '$.sleeve') AS sleeve,
@@ -376,8 +378,8 @@ export function buildHistorySnapshot(root, range = "30d") {
       chains: db.prepare(
         `SELECT COUNT(DISTINCT follow_chain_id) AS n
          FROM positions
-         WHERE mode='live' AND follow_chain_id IS NOT NULL AND exit_ts IS NOT NULL AND exit_ts >= ?`
-      ).get(since)?.n ?? 0,
+         WHERE mode = ? AND follow_chain_id IS NOT NULL AND exit_ts IS NOT NULL AND exit_ts >= ?`
+      ).get(bookMode, since)?.n ?? 0,
     };
 
     // Funnel
@@ -533,6 +535,7 @@ export function buildHistorySnapshot(root, range = "30d") {
       range,
       since,
       at: new Date(now * 1000).toISOString(),
+      book_mode: bookMode,
       equity,
       exits: exitDaily,
       exit_by_reason: exitByReason,

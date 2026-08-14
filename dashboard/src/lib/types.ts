@@ -6,6 +6,8 @@ export interface LiveWatch {
   host: string;
   /** Bot burner wallet (base58). Public address only. */
   wallet_pubkey?: string | null;
+  /** Active book — paper|live; position/PnL slices never mix the other mode. */
+  book_mode?: "paper" | "live";
   ops?: {
     /** Soft pause — no trades; positions stay open. */
     paused?: boolean;
@@ -270,6 +272,7 @@ export interface HistorySnap {
   range: RangeKey;
   since: number;
   at: string;
+  book_mode?: "paper" | "live";
   equity: Array<{
     day: string; sol: number; usd: number; cum_sol: number; cum_usd: number;
     sol_usd: number | null; day_pct?: number | null;

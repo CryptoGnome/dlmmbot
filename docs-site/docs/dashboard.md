@@ -36,7 +36,7 @@ When RPC and wallet are missing, first login walks through:
 | **HALT** (red) | Emergency close-all: confirm with dash token → close every open, swap to SOL, idle until Resume. |
 | **HB** | Seconds since the last finished tick — green = fresh, red = stuck. Tick age, not wall clock. |
 | **WS** | This browser’s live websocket. |
-| **PAPER / LIVE** | Current mode. |
+| **PAPER / LIVE** | Current mode. Positions, balances, and History follow this book only — paper and live share one DB but never mix on screen. |
 | **BRAKE** | Cluster brake has paused new entries. |
 | **Build pill + Auto switch** | Release, branch, SHA, sync. Auto on/off chooses auto-pull vs Approve-on-Changes. |
 | **Host / wallet chip** | Which machine, and the wallet when known. |
