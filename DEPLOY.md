@@ -16,13 +16,19 @@ This starts three PM2 apps:
 
 - **meteora-farmer** — the bot (`npm run run`), auto-restarted on crash.
 - **meteora-deploy** — the auto-deploy watcher: polls `origin/master` every 30s;
-  on new commits it pulls, runs `npm ci` if dependency manifests changed,
-  typechecks, and **only restarts the bot if the typecheck passes**. A broken
-  push never takes down the running bot — it keeps the last good build and
-  retries when a fixed commit lands. GitHub Actions CI also typechecks every
-  push, so a red X on the commit means the server won't deploy it.
+  on new commits it verifies the new SHA in a **detached throwaway worktree**
+  (`npm ci` if dependency manifests changed, typecheck, tests, dashboard build)
+  and **only moves the live checkout and restarts the bot when everything is
+  green** — the working tree never holds an unverified commit. Before the
+  restart it waits up to 120s for `data/busy.flag` to clear so a deploy never
+  lands mid-executor-transaction. A broken push never takes down the running
+  bot — it keeps the last good build and retries when a fixed commit lands.
+  GitHub Actions CI also typechecks every push, so a red X on the commit means
+  the server won't deploy it.
   Auto-update is on by default (`data/deploy-prefs.json`); turn it off in
-  Settings → Wallet & secrets, then Approve from the Changes tab to pull.
+  Settings → Wallet & secrets, then Approve from the Changes tab to pull. If
+  the gate cannot be evaluated (e.g. corrupt prefs file), the watcher holds
+  the deploy rather than assuming approval.
 - **meteora-dash** — LAN ops dashboard (`deploy/dashboard-server.mjs`) on port
   **8787**. Read-only against `data/farmer.db`. Requires `DASH_TOKEN` in `.env`.
 
@@ -40,12 +46,25 @@ pm2 start deploy/ecosystem.config.cjs --only meteora-dash
 Open from any machine on the LAN:
 
 ```
-http://192.168.68.59:8787/?token=YOUR_DASH_TOKEN
+http://<server-lan-ip>:8787/?token=YOUR_DASH_TOKEN
 ```
 
 - Polls live watch every 15s and history every 60s.
 - **Do not port-forward 8787 to the WAN** — token is a shared secret, not full auth.
 - Dashboard crashes do not restart the farmer (separate PM2 app).
+
+## Log rotation (do this once)
+
+PM2 keeps appending to its log files forever; weeks of tick logs will fill the
+disk, and a full disk makes SQLite writes fail mid-position. Install
+pm2-logrotate once and cap it:
+
+```bash
+pm2 install pm2-logrotate
+pm2 set pm2-logrotate:max_size 10M      # rotate a log when it reaches 10 MB
+pm2 set pm2-logrotate:retain 14         # keep 14 rotated files per app
+pm2 set pm2-logrotate:compress true     # gzip rotated logs
+```
 
 ## Workflow after setup
 
@@ -91,19 +110,26 @@ alerts to the same Telegram chat when it is older than 5 minutes — 20 ticks at
 `poll_s = 15`. It alerts on the falling edge and then at most hourly, so a long
 outage is a handful of messages rather than one every two minutes.
 
-Install:
+Install (replace `/path/to/dlmmbot` with your clone's absolute path):
 
     crontab -e
-    */2 * * * * /usr/bin/env node /home/gizmo/meteora-farmer/deploy/heartbeat-check.cjs >> /tmp/farmer-heartbeat.log 2>&1
+    */2 * * * * /usr/bin/env node /path/to/dlmmbot/deploy/heartbeat-check.cjs >> /tmp/farmer-heartbeat.log 2>&1
 
 Use the ABSOLUTE script path: cron runs from $HOME, and a relative path silently
 fails there — a monitor that never runs is worse than none, because you believe
 you have one.
 
+The checker reads Telegram credentials the same way the farmer does:
+`FARMER_ENV_PATH` if set, else `data/.env`, merged over the repo `.env` (the
+`data/.env` values win) — so wizard/dashboard-configured setups alert without
+any extra wiring.
+
 Run it by hand any time with `npm run heartbeat-check`. Exit codes: 0 healthy,
-1 stale or missing (alert sent), 2 the checker itself could not read the DB —
-which deliberately does NOT alert, so a broken checker cannot page you at 3am
-about itself.
+1 stale or missing (alert sent), 2 the checker itself could not read the DB.
+Exit-2 failures do not page immediately (a broken checker should not wake you
+over one blip), but every 5th consecutive failure sends a "could not check, bot
+state unknown" alert — sqlite-won't-load or an unreadable DB means the farmer
+is certainly not trading.
 
 It is dependency-free and imports nothing from `src/` on purpose: a monitor that
 shares a failure mode with the thing it monitors is not a monitor. Note it runs

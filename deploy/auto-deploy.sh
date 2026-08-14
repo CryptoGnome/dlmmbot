@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # Auto-deploy watcher — run this under PM2 on the server (see ecosystem.config.cjs).
 # Polls origin/$BRANCH and deploys ONLY when origin is strictly ahead of the
-# local branch: pull, reinstall deps if manifests changed, typecheck + tests,
-# and restart the farmer only if both pass. A broken push therefore never
-# kills the running bot — it keeps running the last good build and the
-# watcher logs the failure until a fixed commit lands.
+# local branch: verifies the new commit (npm ci if manifests changed,
+# typecheck + tests + dashboard build) in a detached throwaway worktree, and
+# only on green moves the live checkout to the new SHA and restarts the
+# farmer — waiting for data/busy.flag to clear first so a restart never lands
+# mid-executor-transaction. A broken push therefore never kills the running
+# bot — it keeps running the last good build and the watcher logs the failure
+# until a fixed commit lands.
 #
 # Deliberately inert unless the checkout is ON $BRANCH and behind origin:
 #   feature branch checked out -> skip (branch work must not touch the live bot)
@@ -63,8 +66,33 @@ last_failed=""
 # Tests passed + pull applied but pm2 restart failed — keep retrying while idle.
 pending_restart=""
 
+# The farmer touches data/busy.flag around executor-critical sections (zap
+# swap sent, add-liquidity pending, DB row not yet finalized). Restarting
+# inside that window strands tokens or leaves an on-chain position the ledger
+# only knows as `pending`. Wait for the flag to clear before restarting; after
+# the timeout proceed anyway — a wedged flag must not block deploys forever.
+BUSY_FLAG="${FARMER_BUSY_FLAG:-data/busy.flag}"
+BUSY_WAIT_S="${DEPLOY_BUSY_WAIT_S:-120}"
+
+wait_for_idle() {
+  [ -e "$BUSY_FLAG" ] || return 0
+  echo "[deploy] $BUSY_FLAG present — waiting up to ${BUSY_WAIT_S}s for the farmer to finish its in-flight executor work"
+  local waited=0
+  while [ -e "$BUSY_FLAG" ] && [ "$waited" -lt "$BUSY_WAIT_S" ]; do
+    sleep 2
+    waited=$((waited + 2))
+  done
+  if [ -e "$BUSY_FLAG" ]; then
+    echo "[deploy] WARNING: $BUSY_FLAG still present after ${BUSY_WAIT_S}s — restarting anyway (flag may be stale)"
+  else
+    echo "[deploy] busy flag cleared after ${waited}s"
+  fi
+  return 0
+}
+
 restart_app() {
   echo "[deploy] typecheck + tests passed — restarting $APP_NAME via $PM2"
+  wait_for_idle
   if "$PM2" restart "$APP_NAME" --update-env; then
     echo "[deploy] deployed $(git rev-parse --short HEAD): $(git log -1 --pretty=%s)"
     pending_restart=""
@@ -118,63 +146,117 @@ while true; do
   fi
 
   # Operator gate: auto-update off until Changes → Approve (dashboard writes data/deploy-prefs.json).
+  # Fail CLOSED: any error evaluating the prefs means "hold", never "deploy" —
+  # an evaluation crash must not silently override an operator who turned
+  # auto-update off.
   DEPLOY_GATE=$(node --input-type=module -e "
     import { shouldAutoDeploy } from './deploy/lib/deploy-prefs.mjs';
     const r = shouldAutoDeploy(process.cwd(), process.argv[1]);
     process.stdout.write(r.ok ? 'ok:' + r.reason : 'wait');
-  " "$REMOTE" 2>/dev/null || echo "ok:auto")
-  if [ "$DEPLOY_GATE" = "wait" ]; then
-    note_skip "auto-update off — $(git rev-parse --short "$REMOTE") waiting for Approve on Changes tab"
+  " "$REMOTE" 2>/dev/null || echo "hold:error")
+  case "$DEPLOY_GATE" in
+    ok:*) ;;
+    wait)
+      note_skip "auto-update off — $(git rev-parse --short "$REMOTE") waiting for Approve on Changes tab"
+      sleep "$POLL_SECONDS"; continue
+      ;;
+    *)
+      note_skip "deploy gate could not be evaluated (got '$DEPLOY_GATE') — holding $(git rev-parse --short "$REMOTE") until it works"
+      sleep "$POLL_SECONDS"; continue
+      ;;
+  esac
+
+  last_skip=""
+  echo "[deploy] origin/$BRANCH advanced ($(git rev-parse --short "$LOCAL") -> $(git rev-parse --short "$REMOTE")) — verifying in a detached worktree (gate=$DEPLOY_GATE)"
+
+  DEPS_CHANGED=0
+  DASH_CHANGED=0
+  git diff --name-only "$LOCAL" "$REMOTE" | grep -qE '^package(-lock)?\.json$' && DEPS_CHANGED=1
+  git diff --name-only "$LOCAL" "$REMOTE" | grep -qE '^dashboard/' && DASH_CHANGED=1
+
+  # Verify the NEW commit in a throwaway worktree so the live checkout never
+  # holds an untested build. Previously the pull happened first: for the whole
+  # npm-ci + typecheck + test window the working tree held the unverified
+  # commit, and any unrelated crash there made PM2 autorestart boot it.
+  WORKTREE="$(pwd)/.deploy-verify"
+  rm -rf "$WORKTREE"
+  git worktree prune >/dev/null 2>&1 || true
+
+  FAILURE=""
+  git worktree add --detach "$WORKTREE" "$REMOTE" >/dev/null || FAILURE="worktree add"
+
+  if [ -z "$FAILURE" ]; then
+    if [ "$DEPS_CHANGED" = 1 ]; then
+      echo "[deploy] dependency manifests changed — npm ci (worktree)"
+      (cd "$WORKTREE" && npm ci) || FAILURE="npm ci"
+    else
+      # Deps unchanged — reuse the live node_modules for verification.
+      ln -s "$(pwd)/node_modules" "$WORKTREE/node_modules" || FAILURE="node_modules link"
+    fi
+  fi
+  if [ -z "$FAILURE" ] && ! (cd "$WORKTREE" && npx tsc --noEmit); then
+    FAILURE="typecheck"
+  fi
+  if [ -z "$FAILURE" ] && [ -f "$WORKTREE/tsconfig.deploy.json" ] \
+    && ! (cd "$WORKTREE" && npx tsc -p tsconfig.deploy.json --noEmit); then
+    FAILURE="deploy typecheck"
+  fi
+  if [ -z "$FAILURE" ] && ! (cd "$WORKTREE" && npm test); then
+    FAILURE="tests"
+  fi
+  if [ -z "$FAILURE" ] && [ "$DASH_CHANGED" = 1 ]; then
+    echo "[deploy] dashboard/ changed — building SPA (worktree)"
+    if [ -f "$WORKTREE/dashboard/package-lock.json" ]; then
+      (cd "$WORKTREE/dashboard" && npm ci && npm run build) || FAILURE="dashboard build"
+    else
+      (cd "$WORKTREE/dashboard" && npm install && npm run build) || FAILURE="dashboard build"
+    fi
+  fi
+
+  if [ -n "$FAILURE" ]; then
+    echo "[deploy] $FAILURE FAILED for $(git rev-parse --short "$REMOTE") — live checkout untouched, $APP_NAME stays on $(git rev-parse --short "$LOCAL")"
+    last_failed="$REMOTE"
+    rm -rf "$WORKTREE"
+    git worktree prune >/dev/null 2>&1 || true
     sleep "$POLL_SECONDS"; continue
   fi
 
-  last_skip=""
-  echo "[deploy] origin/$BRANCH advanced ($(git rev-parse --short "$LOCAL") -> $(git rev-parse --short "$REMOTE")), pulling... (gate=$DEPLOY_GATE)"
-
-  # Untracked files that the incoming commit adds (e.g. an SCP'd script left in
-  # deploy/) abort ff-only pulls. Quarantine those only — never touch dirty
+  # Verified green — only now touch the live checkout. Untracked files that the
+  # incoming commit adds (e.g. an SCP'd script left in deploy/) would be
+  # clobbered by reset --hard. Quarantine those only — never touch dirty
   # tracked edits; those still need a human.
   mkdir -p .deploy-quarantine
   while IFS= read -r f; do
     [ -z "$f" ] && continue
     if [ -e "$f" ] && [ -z "$(git ls-files -- "$f")" ]; then
       dest=".deploy-quarantine/$(echo "$f" | tr '/' '__').$(date +%s)"
-      echo "[deploy] quarantining untracked $f -> $dest (would block pull)"
+      echo "[deploy] quarantining untracked $f -> $dest (would be clobbered)"
       mv -- "$f" "$dest" || true
     fi
   done < <(git diff --name-only --diff-filter=A "$LOCAL" "$REMOTE")
 
-  if ! git pull --ff-only origin "$BRANCH"; then
-    note_skip "pull failed (uncommitted changes in the way?) — manual intervention needed"
+  if ! git reset --hard --quiet "$REMOTE"; then
+    echo "[deploy] ERROR: could not advance the live checkout to $(git rev-parse --short "$REMOTE") — manual intervention needed"
+    last_failed="$REMOTE"
+    rm -rf "$WORKTREE"
+    git worktree prune >/dev/null 2>&1 || true
     sleep "$POLL_SECONDS"; continue
   fi
 
-  DEPS_CHANGED=0
-  DASH_CHANGED=0
-  git diff --name-only "$LOCAL" HEAD | grep -qE '^package(-lock)?\.json$' && DEPS_CHANGED=1
-  git diff --name-only "$LOCAL" HEAD | grep -qE '^dashboard/' && DASH_CHANGED=1
-
-  FAILURE=""
+  SWAP_FAILURE=""
   if [ "$DEPS_CHANGED" = 1 ]; then
-    echo "[deploy] dependency manifests changed — npm ci"
-    npm ci || FAILURE="npm ci"
+    echo "[deploy] syncing live node_modules — npm ci"
+    npm ci || SWAP_FAILURE="npm ci (live tree)"
   fi
-  if [ -z "$FAILURE" ] && ! npx tsc --noEmit; then
-    FAILURE="typecheck"
+  if [ -z "$SWAP_FAILURE" ] && [ "$DASH_CHANGED" = 1 ] && [ -d "$WORKTREE/dashboard/dist" ]; then
+    # Reuse the dist verified in the worktree instead of building twice.
+    rm -rf dashboard/dist
+    cp -R "$WORKTREE/dashboard/dist" dashboard/dist || SWAP_FAILURE="dashboard dist copy"
   fi
-  if [ -z "$FAILURE" ] && ! npm test; then
-    FAILURE="tests"
-  fi
-  if [ -z "$FAILURE" ] && [ "$DASH_CHANGED" = 1 ]; then
-    echo "[deploy] dashboard/ changed — building SPA"
-    if [ -f dashboard/package-lock.json ]; then
-      (cd dashboard && npm ci && npm run build) || FAILURE="dashboard build"
-    else
-      (cd dashboard && npm install && npm run build) || FAILURE="dashboard build"
-    fi
-  fi
+  rm -rf "$WORKTREE"
+  git worktree prune >/dev/null 2>&1 || true
 
-  if [ -z "$FAILURE" ]; then
+  if [ -z "$SWAP_FAILURE" ]; then
     restart_app || true
     node --input-type=module -e "
       import { clearApprove } from './deploy/lib/deploy-prefs.mjs';
@@ -187,12 +269,13 @@ while true; do
         || echo "[deploy] meteora-dash not started (ok if DASH_TOKEN unset / app not added yet)"
     fi
   else
-    # `pm2 restart` runs the WORKING TREE, and the pull above already moved it
-    # onto the bad commit. Leaving it there means the next restart from ANY
-    # cause — a later deploy, a reboot, `pm2 resurrect`, a human — silently
-    # boots the broken build. Put the tree back so "keeping the running (old)
-    # build" is true of the code on disk and not just of the live process.
-    echo "[deploy] $FAILURE FAILED at $(git rev-parse --short HEAD) — rolling the checkout back to $(git rev-parse --short "$LOCAL")"
+    # `pm2 restart` runs the WORKING TREE, and the reset above already moved it
+    # onto the new commit that could not be made runnable. Leaving it there
+    # means the next restart from ANY cause — a later deploy, a reboot,
+    # `pm2 resurrect`, a human — silently boots a build whose node_modules or
+    # dashboard assets are wrong. Put the tree back so "keeping the running
+    # (old) build" is true of the code on disk and not just of the live process.
+    echo "[deploy] $SWAP_FAILURE FAILED at $(git rev-parse --short HEAD) — rolling the checkout back to $(git rev-parse --short "$LOCAL")"
     if git reset --hard --quiet "$LOCAL"; then
       if [ "$DEPS_CHANGED" = 1 ]; then
         npm ci || echo "[deploy] npm ci during rollback FAILED — node_modules may not match the restored code"

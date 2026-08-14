@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Read-only live-book watch — gates / Kelly / mark-gap integrity.
- * Run on gn0meserver: node deploy/watch-live-book.mjs
+ * Run on the server: node deploy/watch-live-book.mjs
  */
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
