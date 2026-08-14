@@ -6,11 +6,16 @@ Site: https://dlmmbot.com
 Docs: https://dlmmbot.com/setup/
 GitHub: https://github.com/CryptoGnome/dlmmbot
 Railway signup: https://railway.com?referralCode=SCj9lN
+Vultr VPS signup: https://www.vultr.com/?ref=9917878-9J
+Helius RPC (recommended): https://www.helius.dev/
+Jupiter API key: https://developers.jup.ag/portal
+GMGN API key: https://gmgn.ai/ai (optional — see docs/setup/api-keys)
 
 ## Docs
 
 - [Easy setup (Railway)](https://dlmmbot.com/setup/easy): one service, volume at `/app/data`, public domain, dashboard wizard
 - [Advanced setup](https://dlmmbot.com/setup/advanced): local / VPS / PM2
+- [API keys](https://dlmmbot.com/setup/api-keys): Helius RPC, Jupiter, GMGN signup steps
 - [Settings profiles](https://dlmmbot.com/setup/profiles): official / local / community packs + share via browser PR
 - [How it works](https://dlmmbot.com/setup/how-it-works): pipeline for newcomers — scan/vet/enter/manage/exit, sleeves, follow mode
 - [Strategy reference](https://dlmmbot.com/setup/strategy): pool/token gates, P0–P5 exit ladder, follow mode, blacklist
@@ -18,7 +23,8 @@ Railway signup: https://railway.com?referralCode=SCj9lN
 - [Configuration](https://dlmmbot.com/setup/configuration): every config.toml key with shipped defaults
 - [Dashboard guide](https://dlmmbot.com/setup/dashboard): tabs, setup wizard, encrypted wallet, HALT
 - [CLI reference](https://dlmmbot.com/setup/cli): scan, vet, run, status, halt/pause, force-close, simulate-zap
-- [FAQ](https://dlmmbot.com/setup/faq): honest answers — losses, paper-first, GNME fee, restarts, RPC
+- [FAQ](https://dlmmbot.com/setup/faq): honest answers — losses, paper-first, restarts, RPC
+- [Fees](https://dlmmbot.com/setup/fees): GNME usage fee on live winning closes
 - [Full text for agents](https://dlmmbot.com/llms-full.txt): longer product summary
 - [Strategy (repo)](https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md): exits and risk rules
 
@@ -34,7 +40,7 @@ Railway signup: https://railway.com?referralCode=SCj9lN
 - **Settings profiles:** official Conservative / Balanced / Aggressive; local saves on the volume; community gallery. Share guide: https://dlmmbot.com/setup/profiles (browser fork + PR; works on Railway)
 - First-run setup wizard: RPC, encrypted wallet (create or Phantom import with password retype + one-time backup), paper/live mode
 - Live requires both `FARMER_MODE=live` and `[exec].mode = "live"`
-- **Usage fee:** 1% of measured net profit on each live winning close buys+burns GNME (`BaDjVCpABEVCdt4LT7ivuzA4izBwJCqnDjrLa8XBtT38`). Required product fee; not Settings-tunable. Paper does not spend.
+- **Usage fee:** see https://dlmmbot.com/setup/fees (1% GNME buy-and-burn on live wins only)
 - Runtime config/env/db live under gitignored `data/` (repo `config.toml` is a template)
 - Optional Railway `WALLET_PASSPHRASE` auto-unlocks encrypted wallet on boot
 - Not financial advice; memecoin LP can lose 100%

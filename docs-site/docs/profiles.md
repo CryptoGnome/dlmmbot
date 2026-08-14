@@ -5,7 +5,7 @@ description: Official, local, and community settings packs — apply in the dash
 
 # Settings profiles
 
-Packs of Bot settings knobs (same paths as **Settings → Bot settings**). Apply with a diff preview. Profiles never flip paper/live mode, never touch RPC/wallet secrets, and never change the GNME usage fee.
+Packs of Bot settings knobs (same paths as **Settings → Bot settings**). Apply with a diff preview. Profiles never flip paper/live mode, never touch RPC/wallet secrets, and never change [product fees](./fees).
 
 | Kind | Where it lives | Who sees it |
 |---|---|---|

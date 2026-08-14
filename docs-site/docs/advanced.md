@@ -7,12 +7,10 @@ description: Run DLMM Bot locally or on a VPS with PM2 and auto-deploy.
 
 For people with a server, or who want to run on their own PC. Most newcomers should use [Easy setup (Railway)](./easy).
 
+[Get a VPS on Vultr →](https://www.vultr.com/?ref=9917878-9J)
+
 ::: warning
 Same risk rules: paper first, burner only, never commit `.env`.
-:::
-
-::: info Usage fee
-**1% of measured net profit** on each live winning close buys+burns **GNME**. Required product fee (hardcoded — not in Settings). Paper does not spend.
 :::
 
 ::: tip Settings profiles
@@ -26,6 +24,41 @@ Dashboard **Settings → Profiles** for official / local / community packs. Shar
 | [Easy (Railway)](./easy) | No server. Public HTTPS. Auto-redeploy. |
 | **This guide** | VPS / home box / local PC with full control. |
 | Same bot | Identical code and paper/live gates. |
+
+## VPS on Vultr
+
+Need a box? We run production on a small Linux VPS. [Vultr](https://www.vultr.com/?ref=9917878-9J) is a straightforward pick — spin up Ubuntu, SSH in, then follow [PM2 on a VPS](#pm2-on-a-vps) below.
+
+::: tip Suggested Vultr plan
+**Cloud Compute → Regular Performance** (names vary by region — anything in this ballpark is fine):
+
+| | Minimum |
+| --- | --- |
+| **CPU** | 2 vCPU |
+| **RAM** | 4 GB |
+| **Disk** | 80 GB NVMe |
+| **OS** | Ubuntu 24.04 LTS |
+
+Why this size: the farmer loop + dashboard + auto-deploy watcher stay light day-to-day, but deploy verification runs `npm ci`, typecheck, tests, and a dashboard build — that spike needs RAM headroom. SQLite and `data/` live on disk; 80 GB leaves room for logs and git history.
+
+**Region:** pick one close to your RPC provider (US West/East is common for Helius / QuickNode). After the VM is up: `git clone`, `npm install`, then PM2 as below.
+
+[Create a Vultr VPS →](https://www.vultr.com/?ref=9917878-9J)
+:::
+
+## Required API keys
+
+Helius RPC and Jupiter are required before live. GMGN is optional but recommended (free). **Full step-by-step:** [API keys](./api-keys).
+
+Quick map:
+
+| Key | Sign up |
+| --- | --- |
+| **`RPC_URL`** | [Helius](https://dashboard.helius.dev/signup) → Mainnet RPC URL |
+| **`JUPITER_API_KEY`** | [developers.jup.ag/portal](https://developers.jup.ag/portal) |
+| **`GMGN_API_KEY`** (optional) | [gmgn.ai/ai](https://gmgn.ai/ai) — see [API keys → GMGN](./api-keys#gmgn-api-key-gmgn_api_key-optional) |
+
+The first-run **setup wizard** walks through RPC + Jupiter; GMGN can be added there or later in Settings.
 
 ## Local install (paper)
 
@@ -52,7 +85,8 @@ cp .env.example .env
 
 ```bash
 FARMER_MODE=paper
-RPC_URL=https://api.mainnet-beta.solana.com
+RPC_URL=https://mainnet.helius-rpc.com/?api-key=YOUR_HELIUS_KEY
+JUPITER_API_KEY=your_jupiter_key
 ```
 
 ### 3. Force paper in runtime config
@@ -109,13 +143,13 @@ The **Errors** tab streams structured runtime failures over WebSocket. Header **
 
 ## Keys & going live
 
-Phantom burner → `WALLET_PRIVATE_KEY`, private RPC, Jupiter key.
+Encrypted wallet via the dashboard (recommended) or plain `WALLET_PRIVATE_KEY` for advanced installs. Plus Helius RPC + Jupiter key from [Required API keys](#required-api-keys) above.
 
 ```bash
 # data/.env (seeded from .env on first run)
 FARMER_MODE=live
-RPC_URL=https://your-private-rpc
-JUPITER_API_KEY=…
+RPC_URL=https://mainnet.helius-rpc.com/?api-key=YOUR_HELIUS_KEY
+JUPITER_API_KEY=your_jupiter_key
 WALLET_PRIVATE_KEY=…
 ```
 

@@ -145,6 +145,8 @@ export type SetupStatus = {
   needsWizard: boolean;
   coreReady: boolean;
   hasRpc: boolean;
+  hasJupiterApiKey: boolean;
+  hasGmgnApiKey: boolean;
   farmerMode: string;
   setup: { completed: boolean; skipped: boolean; completedAt: string | null };
   wallet: {

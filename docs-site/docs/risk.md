@@ -94,10 +94,6 @@ On Windows, killing a background `npm run run` kills only the npm wrapper — th
 
 The gate is advisory — the bot won't stop you from flipping both switches early — but the scoreboard exists so the decision is made on evidence.
 
-## The usage fee
-
-On each **live winning close**, 1% of the measured net profit buys and burns GNME in one Jupiter transaction. It is hardcoded (not a Settings knob), skipped on losses and mark-only closes, and logged-but-not-spent in paper mode. Details in the [FAQ](./faq#what-s-the-1-gnme-burn-fee).
-
 ## What the safety net cannot do
 
 Being honest about the limits:
@@ -112,5 +108,6 @@ Being honest about the limits:
 - [Strategy reference](./strategy) — the P0–P5 ladder these brakes protect
 - [Configuration reference](./configuration) — every brake threshold as a key
 - [FAQ](./faq) — "Can I lose money?" and other direct answers
+- [Fees](./fees) — GNME usage fee on live wins
 - [How it works](./how-it-works) — the pipeline overview
 - [CLI reference](./cli) — `halt`, `pause`, `status`, `force-close`

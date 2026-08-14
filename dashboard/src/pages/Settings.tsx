@@ -438,7 +438,7 @@ const SECRET_LABELS: Record<string, string> = {
   WALLET_PRIVATE_KEY: "Private key (advanced)",
   WALLET_KEYPAIR_PATH: "Key file path (advanced)",
   JUPITER_API_KEY: "Jupiter API key",
-  GMGN_API_KEY: "GMGN API key (optional)",
+  GMGN_API_KEY: "Optional — trending + vetting enrichment. Free at gmgn.ai/ai (query key only).",
   TELEGRAM_BOT_TOKEN: "Telegram bot token (optional)",
   TELEGRAM_CHAT_ID: "Telegram chat id (optional)",
   FARMER_MODE: "Bot mode (paper / live)",
@@ -462,9 +462,9 @@ const SECRET_IS_PASSWORD = new Set([
 ]);
 
 const SECRET_HELP: Record<string, string> = {
-  RPC_URL: "Private Solana RPC from Helius / QuickNode / etc.",
+  RPC_URL: "We suggest Helius (helius.dev) — copy your mainnet RPC URL from the dashboard.",
   RPC_URL_FALLBACK: "Used if the primary RPC fails.",
-  JUPITER_API_KEY: "Helps swaps during exits. Free key from Jupiter.",
+  JUPITER_API_KEY: "Required for live exit swaps. Free key at developers.jup.ag/portal (shown once at create).",
   FARMER_MODE: 'Type "paper" or "live". Live also needs Mode → Live in Bot settings.',
   TELEGRAM_BOT_TOKEN: "Optional alerts.",
   TELEGRAM_CHAT_ID: "Optional alerts.",
@@ -952,6 +952,10 @@ export function SettingsPage() {
       {(() => {
         const rpcOk = secretEnv.find((r) => r.key === "RPC_URL")?.set
           || setup?.hasRpc;
+        const jupiterOk = secretEnv.find((r) => r.key === "JUPITER_API_KEY")?.set
+          || setup?.hasJupiterApiKey;
+        const gmgnOk = secretEnv.find((r) => r.key === "GMGN_API_KEY")?.set
+          || setup?.hasGmgnApiKey;
         const modeLive = (safeEnv.find((r) => r.key === "FARMER_MODE")?.value ?? "").toLowerCase() === "live"
           || (setup?.farmerMode ?? "").toLowerCase() === "live";
         const howLabel =
@@ -970,7 +974,21 @@ export function SettingsPage() {
                 <span className={rpcOk ? "text-ok" : "text-warn"}>{rpcOk ? "✓" : "○"}</span>
                 <span>
                   <span className="text-fg">RPC</span>
-                  <span className="text-dim"> — {rpcOk ? "set" : "missing → add under API keys below"}</span>
+                  <span className="text-dim"> — {rpcOk ? "set" : "missing → Helius URL under API keys below"}</span>
+                </span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className={jupiterOk ? "text-ok" : "text-warn"}>{jupiterOk ? "✓" : "○"}</span>
+                <span>
+                  <span className="text-fg">Jupiter</span>
+                  <span className="text-dim"> — {jupiterOk ? "set" : "missing → developers.jup.ag/portal"}</span>
+                </span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className={gmgnOk ? "text-ok" : "text-dim"}>{gmgnOk ? "✓" : "○"}</span>
+                <span>
+                  <span className="text-fg">GMGN</span>
+                  <span className="text-dim"> — {gmgnOk ? "set" : "optional → gmgn.ai/ai (see docs/setup/api-keys)"}</span>
                 </span>
               </li>
               <li className="flex items-start gap-2">

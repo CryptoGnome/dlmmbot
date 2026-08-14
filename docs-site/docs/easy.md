@@ -13,10 +13,6 @@ One service. Config is automated. You attach a volume once, open the public URL,
 Memecoin LP can wipe a wallet. Not financial advice. **Burner only.**
 :::
 
-::: info Usage fee
-**1% of measured net profit** on each live winning close buys+burns **GNME**. Required product fee (hardcoded — not in Settings). Paper does not spend.
-:::
-
 ::: tip Settings profiles
 In **Settings → Profiles**: apply Conservative / Balanced / Aggressive, save your own pack, or browse the community gallery. **Share to GitHub** works on Railway with no host git. Details: [Settings profiles](./profiles).
 :::
@@ -64,10 +60,19 @@ Optional but recommended: copy that token into Railway Variables as `DASH_TOKEN`
 
 ## Finish in our Settings UI
 
-First login opens a **setup wizard** for the core pieces (RPC, wallet, mode). With the volume attached, Settings writes to `/app/data/config.toml` (and `.env`) — the repo template stays clean so git never shows DIRTY from knobs.
+First login opens a **setup wizard** for the core pieces (RPC, Jupiter API key, wallet, mode). With the volume attached, Settings writes to `/app/data/config.toml` (and `.env`) — the repo template stays clean so git never shows DIRTY from knobs.
+
+### API keys (wizard or Settings → Wallet & secrets)
+
+See **[API keys](./api-keys)** for full signup steps (Helius, Jupiter, optional GMGN).
+
+| Key | Required? | Where |
+| --- | --- | --- |
+| **`RPC_URL`** | Yes | [Helius](https://dashboard.helius.dev/signup) mainnet URL |
+| **`JUPITER_API_KEY`** | Yes before live | [Jupiter Portal](https://developers.jup.ag/portal) |
+| **`GMGN_API_KEY`** | Optional (free) | [gmgn.ai/ai](https://gmgn.ai/ai) — trending + vetting enrichment |
 
 - Leave paper mode until you’re comfortable
-- Add private `RPC_URL` (wizard or Settings → Wallet & secrets)
 - Create an encrypted burner wallet under Settings → Wallet & secrets, or import from Phantom — never paste your main wallet
 - Optional: set `WALLET_PASSPHRASE` on Railway to auto-unlock on boot
 - Tune token-safety / sizing under Settings → Bot settings (persisted under the volume)
@@ -83,7 +88,7 @@ Burner only. One farmer process per wallet.
 :::
 
 - Paper looked sane
-- Burner + private RPC + Jupiter set (Settings or Railway Variables)
+- Burner + Helius RPC + Jupiter key set (wizard or Settings / Railway Variables)
 - Set `FARMER_MODE=live` (Railway variable or Settings)
 - Set `[exec] mode = "live"` in Settings / config
 - Restart / redeploy so both switches are live

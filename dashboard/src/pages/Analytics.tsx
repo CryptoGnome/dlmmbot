@@ -159,12 +159,12 @@ export function AnalyticsPage({
       {/* Top charts */}
       <div className="grid items-stretch gap-3 xl:grid-cols-2">
         <Panel
-          title="Profit over time (SOL + USD)"
+          title="Equity & daily closes"
           right={<RangeTabs value={range} onChange={onRange} />}
           className="h-full"
         >
           <div className="h-[280px] xl:h-[320px]">
-            <EquityChart data={hist?.equity ?? []} />
+            <EquityChart data={hist?.equity ?? []} exits={hist?.exits} />
           </div>
         </Panel>
         <Panel title="Daily profit from closes" className="h-full">

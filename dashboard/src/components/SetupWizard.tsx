@@ -14,7 +14,7 @@ import {
 
 const STEPS = [
   { id: "welcome", label: "Welcome" },
-  { id: "rpc", label: "RPC" },
+  { id: "apis", label: "RPC & APIs" },
   { id: "wallet", label: "Wallet" },
   { id: "mode", label: "Mode" },
   { id: "done", label: "Go" },
@@ -36,6 +36,8 @@ export function SetupWizard({
 
   const [confirm, setConfirm] = useState("");
   const [rpc, setRpc] = useState("");
+  const [jupiter, setJupiter] = useState("");
+  const [gmgn, setGmgn] = useState("");
   const [walletTab, setWalletTab] = useState<"create" | "import">("create");
   const [walletModal, setWalletModal] = useState<"create" | "import" | null>(null);
   const [mode, setMode] = useState<"paper" | "live">("paper");
@@ -48,14 +50,25 @@ export function SetupWizard({
     if (next) setStep(next.id);
   };
 
-  const saveRpc = async () => {
+  const saveApis = async () => {
     setBusy(true);
     setErr(null);
     try {
       if (!confirm.trim()) throw new Error("re-enter your dash token");
       if (!rpc.trim().startsWith("http")) throw new Error("RPC URL must start with https://");
-      await patchSecrets(confirm, { RPC_URL: rpc.trim() });
-      setStatus((s) => ({ ...s, hasRpc: true }));
+      if (!jupiter.trim() && !status.hasJupiterApiKey) {
+        throw new Error("Jupiter API key is required for exit swaps");
+      }
+      const secrets: Record<string, string> = { RPC_URL: rpc.trim() };
+      if (jupiter.trim()) secrets.JUPITER_API_KEY = jupiter.trim();
+      if (gmgn.trim()) secrets.GMGN_API_KEY = gmgn.trim();
+      await patchSecrets(confirm, secrets);
+      setStatus((s) => ({
+        ...s,
+        hasRpc: true,
+        hasJupiterApiKey: s.hasJupiterApiKey || !!jupiter.trim(),
+        hasGmgnApiKey: s.hasGmgnApiKey || !!gmgn.trim(),
+      }));
       goNext();
     } catch (e) {
       setErr((e as Error).message);
@@ -159,31 +172,130 @@ export function SetupWizard({
             </div>
           )}
 
-          {step === "rpc" && (
-            <div className="space-y-3">
-              <p className="text-[12px] text-muted">
-                Private RPC from Helius / QuickNode / etc. Public endpoints are too slow and rate-limit hard.
-              </p>
-              <label className="block space-y-1">
-                <span className="text-[11px] text-muted">RPC URL</span>
-                <input
-                  className="input-field"
-                  value={rpc}
-                  onChange={(e) => setRpc(e.target.value)}
-                  placeholder="https://…"
-                  spellCheck={false}
-                />
-              </label>
+          {step === "apis" && (
+            <div className="space-y-4">
+              <div className="space-y-2 border border-grid p-3">
+                <div className="text-[11px] font-semibold tracking-wider text-ok uppercase">Helius RPC (recommended)</div>
+                <p className="text-[11px] leading-relaxed text-muted">
+                  Public Solana RPCs rate-limit hard. We suggest{" "}
+                  <a
+                    href="https://www.helius.dev/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-accent underline"
+                  >
+                    Helius
+                  </a>
+                  {" "}for mainnet reads and tx simulation.
+                </p>
+                <ol className="list-decimal space-y-0.5 pl-4 text-[10px] text-dim">
+                  <li>
+                    Sign up at{" "}
+                    <a href="https://dashboard.helius.dev/signup" target="_blank" rel="noreferrer" className="text-accent underline">
+                      dashboard.helius.dev
+                    </a>
+                  </li>
+                  <li>Create a project → open <strong>RPC</strong> → copy the <strong>Mainnet</strong> HTTPS URL</li>
+                  <li>Paste below (looks like <code className="text-accent">https://mainnet.helius-rpc.com/?api-key=…</code>)</li>
+                </ol>
+                <label className="block space-y-1">
+                  <span className="text-[11px] text-muted">RPC URL</span>
+                  <input
+                    className="input-field"
+                    value={rpc}
+                    onChange={(e) => setRpc(e.target.value)}
+                    placeholder="https://mainnet.helius-rpc.com/?api-key=…"
+                    spellCheck={false}
+                  />
+                </label>
+              </div>
+
+              <div className="space-y-2 border border-grid p-3">
+                <div className="text-[11px] font-semibold tracking-wider text-ok uppercase">Jupiter API key</div>
+                <p className="text-[11px] leading-relaxed text-muted">
+                  Live exits swap token → SOL through Jupiter. Paper simulates the path but still needs a key for{" "}
+                  <code className="text-accent">simulate-zap</code> checks before going live.
+                </p>
+                <ol className="list-decimal space-y-0.5 pl-4 text-[10px] text-dim">
+                  <li>
+                    Open{" "}
+                    <a href="https://developers.jup.ag/portal" target="_blank" rel="noreferrer" className="text-accent underline">
+                      developers.jup.ag/portal
+                    </a>
+                    {" "}and sign in (Google, GitHub, or email)
+                  </li>
+                  <li>Create or join a team → <strong>API Keys</strong> → <strong>Create</strong></li>
+                  <li>Copy the key immediately — Jupiter shows the full value <strong>once</strong></li>
+                  <li>
+                    Free tier is enough to start (
+                    <a href="https://developers.jup.ag/docs/portal/setup" target="_blank" rel="noreferrer" className="text-accent underline">
+                      setup guide
+                    </a>
+                    )
+                  </li>
+                </ol>
+                <label className="block space-y-1">
+                  <span className="text-[11px] text-muted">Jupiter API key</span>
+                  <input
+                    className="input-field"
+                    type="password"
+                    autoComplete="off"
+                    value={jupiter}
+                    onChange={(e) => setJupiter(e.target.value)}
+                    placeholder={status.hasJupiterApiKey ? "already set — paste to replace" : "paste key from Portal"}
+                    spellCheck={false}
+                  />
+                </label>
+              </div>
+
+              <div className="space-y-2 border border-grid p-3">
+                <div className="text-[11px] font-semibold tracking-wider text-muted uppercase">GMGN API key (optional)</div>
+                <p className="text-[11px] leading-relaxed text-muted">
+                  Free trending + smart-money feeds and extra honeypot/sell-tax vetting. Skip if you want Meteora-only discovery for now.
+                </p>
+                <ol className="list-decimal space-y-0.5 pl-4 text-[10px] text-dim">
+                  <li>
+                    Generate Ed25519 keys (terminal:{" "}
+                    <code className="text-accent">openssl genpkey -algorithm Ed25519 …</code>
+                    {" "}— full steps in{" "}
+                    <a href="https://dlmmbot.com/setup/api-keys" target="_blank" rel="noreferrer" className="text-accent underline">
+                      docs → API keys
+                    </a>
+                    )
+                  </li>
+                  <li>
+                    Sign up at{" "}
+                    <a href="https://gmgn.ai/ai" target="_blank" rel="noreferrer" className="text-accent underline">
+                      gmgn.ai/ai
+                    </a>
+                    {" "}→ paste your <strong>public key</strong> → copy the API key
+                  </li>
+                  <li>Paste below — query key only; never put GMGN private keys in the bot</li>
+                </ol>
+                <label className="block space-y-1">
+                  <span className="text-[11px] text-muted">GMGN API key</span>
+                  <input
+                    className="input-field"
+                    type="password"
+                    autoComplete="off"
+                    value={gmgn}
+                    onChange={(e) => setGmgn(e.target.value)}
+                    placeholder={status.hasGmgnApiKey ? "already set — paste to replace" : "optional — paste from gmgn.ai/ai"}
+                    spellCheck={false}
+                  />
+                </label>
+              </div>
+
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   className="btn-primary inline-flex items-center gap-1.5"
-                  disabled={busy || !rpc.trim()}
-                  onClick={() => void saveRpc()}
+                  disabled={busy || !rpc.trim() || (!jupiter.trim() && !status.hasJupiterApiKey)}
+                  onClick={() => void saveApis()}
                 >
                   {busy ? "Saving…" : "Save & continue"}
                 </button>
-                {status.hasRpc && (
+                {status.hasRpc && status.hasJupiterApiKey && (
                   <button
                     type="button"
                     className="border border-grid px-3 py-1.5 text-[11px] tracking-wider text-muted uppercase"
@@ -308,6 +420,8 @@ export function SetupWizard({
               </p>
               <ul className="space-y-1 text-[11px] text-dim">
                 <li>RPC · {status.hasRpc || rpc ? "ready" : "missing"}</li>
+                <li>Jupiter · {status.hasJupiterApiKey || jupiter ? "ready" : "missing"}</li>
+                <li>GMGN · {status.hasGmgnApiKey || gmgn ? "ready" : "optional — skipped"}</li>
                 <li>
                   Wallet · {status.wallet.publicKey
                     ? `${status.wallet.publicKey.slice(0, 8)}…`

@@ -1,5 +1,6 @@
+import { useMemo } from "react";
 import {
-  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell,
+  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, ComposedChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import type { HistorySnap } from "@/lib/types";
@@ -46,8 +47,27 @@ function withPct(value: string, pct: number | null | undefined): string {
   return `${value} (${fmtRet(pct)})`;
 }
 
-/** Cumulative profit only — SOL (left) and USD (right). */
-export function EquityChart({ data }: { data: HistorySnap["equity"] }) {
+/** Cumulative SOL equity with daily close P&L bars overlaid. */
+export function EquityChart({
+  data,
+  exits,
+}: {
+  data: HistorySnap["equity"];
+  exits?: HistorySnap["exits"];
+}) {
+  const chartData = useMemo(() => {
+    const byDay = Object.fromEntries((exits ?? []).map((e) => [e.day, e]));
+    return data.map((row) => {
+      const ex = byDay[row.day];
+      return {
+        ...row,
+        close_pnl: ex?.pnl ?? null,
+        close_n: ex?.n ?? 0,
+        close_pct: ex?.pct ?? null,
+      };
+    });
+  }, [data, exits]);
+
   if (!data.length) return <Empty msg="No profit history yet" />;
   const last = data[data.length - 1]!;
   return (
@@ -71,11 +91,10 @@ export function EquityChart({ data }: { data: HistorySnap["equity"] }) {
           </span>
         </div>
       </div>
-      {/* Absolute fill — ResponsiveContainer needs a real pixel box, not % of flex-0 */}
       <div className="relative min-h-0 w-full flex-1" style={{ minHeight: 260 }}>
         <div className="absolute inset-0">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data} margin={{ top: 8, right: 48, left: 4, bottom: 4 }}>
+            <ComposedChart data={chartData} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
               <defs>
                 <linearGradient id="solFill" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#00FF85" stopOpacity={0.35} />
@@ -85,72 +104,61 @@ export function EquityChart({ data }: { data: HistorySnap["equity"] }) {
               <CartesianGrid {...grid} />
               <XAxis dataKey="day" {...axis} tickFormatter={(d: string) => d.slice(5)} />
               <YAxis
-                yAxisId="sol"
                 {...axis}
                 width={56}
                 tickFormatter={(v: number) => `${v.toFixed(2)}`}
                 label={{ value: "SOL", angle: -90, position: "insideLeft", fill: "#6B6B6B", fontSize: 10 }}
-              />
-              <YAxis
-                yAxisId="usd"
-                orientation="right"
-                {...axis}
-                width={52}
-                tickFormatter={(v: number) => `$${v.toFixed(0)}`}
-                label={{ value: "USD", angle: 90, position: "insideRight", fill: "#6B6B6B", fontSize: 10 }}
               />
               <Tooltip
                 cursor={{ stroke: "#6B6B6B", strokeDasharray: "3 3" }}
                 content={({ active, label, payload }) => {
                   if (!active || !payload?.length) return null;
                   const row = payload[0]?.payload as {
-                    cum_sol?: number; cum_usd?: number; sol?: number; usd?: number; day_pct?: number | null;
+                    cum_sol?: number; cum_usd?: number; close_pnl?: number | null;
+                    close_n?: number; close_pct?: number | null;
                   };
-                  const pct = row?.day_pct;
-                  return (
-                    <ChartTip
-                      title={String(label)}
-                      rows={[
-                        {
-                          label: "Cum SOL",
-                          value: fmtSol(row?.cum_sol),
-                          tone: (row?.cum_sol ?? 0) >= 0 ? "ok" : "danger",
-                        },
-                        {
-                          label: "Cum USD",
-                          value: fmtUsd(row?.cum_usd),
-                          tone: (row?.cum_usd ?? 0) >= 0 ? "accent" : "danger",
-                        },
-                        {
-                          label: "Day",
-                          value: withPct(fmtSol(row?.sol), pct),
-                          tone: (row?.sol ?? 0) >= 0 ? "ok" : "danger",
-                        },
-                      ]}
-                    />
-                  );
+                  const rows: TipRow[] = [
+                    {
+                      label: "Cum SOL",
+                      value: fmtSol(row?.cum_sol),
+                      tone: (row?.cum_sol ?? 0) >= 0 ? "ok" : "danger",
+                    },
+                  ];
+                  if (row?.close_pnl != null) {
+                    rows.push({
+                      label: "Close P&L",
+                      value: withPct(fmtSol(row.close_pnl), row.close_pct),
+                      tone: row.close_pnl >= 0 ? "ok" : "danger",
+                    });
+                    if ((row.close_n ?? 0) > 0) {
+                      rows.push({ label: "Closes", value: String(row.close_n), tone: "fg" });
+                    }
+                  }
+                  rows.push({
+                    label: "Cum USD",
+                    value: fmtUsd(row?.cum_usd),
+                    tone: (row?.cum_usd ?? 0) >= 0 ? "accent" : "danger",
+                  });
+                  return <ChartTip title={String(label)} rows={rows} />;
                 }}
               />
+              <Bar dataKey="close_pnl" name="Close P&L" barSize={10} radius={[2, 2, 0, 0]} fillOpacity={0.45}>
+                {chartData.map((row, i) => (
+                  <Cell
+                    key={i}
+                    fill={row.close_pnl == null ? "transparent" : row.close_pnl >= 0 ? "#00FF85" : "#FF4D6A"}
+                  />
+                ))}
+              </Bar>
               <Area
-                yAxisId="sol"
                 type="monotone"
                 dataKey="cum_sol"
-                name="SOL"
+                name="Equity"
                 stroke="#00FF85"
                 fill="url(#solFill)"
                 strokeWidth={2}
               />
-              <Area
-                yAxisId="usd"
-                type="monotone"
-                dataKey="cum_usd"
-                name="USD"
-                stroke="#1E90FF"
-                fill="transparent"
-                strokeWidth={2}
-                strokeDasharray="4 3"
-              />
-            </AreaChart>
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
       </div>

@@ -3,6 +3,7 @@ import { patchDeployPrefs, type LiveStatus } from "@/lib/api";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { BookText, Check, CircleDot, Copy, ExternalLink, Wallet } from "lucide-react";
 import { HaltToggle } from "@/components/HaltControl";
+import { BrandLogo } from "@/components/BrandLogo";
 import { GithubMark, Icon, PauseCircle, tabIcon, Unplug, Zap } from "@/lib/icons";
 import { copyText } from "@/lib/errorReport";
 import { toast } from "@/lib/toast";
@@ -321,8 +322,13 @@ export function Shell({
     <div className="flex h-screen overflow-hidden bg-bg text-fg">
       <aside className="hidden h-full w-44 shrink-0 border-r border-grid md:flex md:flex-col">
         <div className="shrink-0 border-b border-grid px-3 py-4">
-          <div className="font-display text-sm font-semibold tracking-[0.14em]">DLMM</div>
-          <div className="mt-0.5 text-[10px] tracking-widest text-dim">BOT OPS</div>
+          <div className="flex items-center gap-2.5">
+            <BrandLogo size={22} />
+            <div>
+              <div className="font-display text-sm font-semibold tracking-[0.14em]">DLMM</div>
+              <div className="mt-0.5 text-[10px] tracking-widest text-dim">BOT OPS</div>
+            </div>
+          </div>
         </div>
         <nav className="min-h-0 flex-1 overflow-y-auto py-2">
           {TABS.map((t) => {

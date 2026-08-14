@@ -10,16 +10,16 @@ Scans hot SOL-quoted meme pools, vets the token, opens a **one-sided SOL** LP be
 
 > Memecoin LP can wipe a wallet. Not financial advice. Burner only.
 >
-> **Usage fee:** On live winning closes, **1% of measured net profit** buys and burns [GNME](https://solscan.io/token/BaDjVCpABEVCdt4LT7ivuzA4izBwJCqnDjrLa8XBtT38). This is a required product fee (not adjustable in Settings). Paper mode does not spend.
+> **Usage fee:** see [docs → Fees](https://dlmmbot.com/setup/fees).
 
 ## Setup
 
 | Path | Who it’s for | Link |
 |---|---|---|
 | **Easy — Railway** | Most users (one service, automated config) | [Docs → Easy](https://dlmmbot.com/setup/easy) · [Sign up](https://railway.com?referralCode=SCj9lN) |
-| **Advanced — local / VPS / PM2** | You already have a box | [Docs → Advanced](https://dlmmbot.com/setup/advanced) |
+| **Advanced — local / VPS / PM2** | You already have a box | [Docs → Advanced](https://dlmmbot.com/setup/advanced) · [Vultr VPS](https://www.vultr.com/?ref=9917878-9J) |
 
-**Railway (shortest path):** Deploy `CryptoGnome/dlmmbot` → attach volume at `/app/data` → Generate domain → open the URL (token is in deploy logs if unset) → first-run setup wizard (RPC, encrypted wallet create/import, paper/live) or Settings.
+**Railway (shortest path):** Deploy `CryptoGnome/dlmmbot` → attach volume at `/app/data` → Generate domain → open the URL (token is in deploy logs if unset) → first-run setup wizard (Helius RPC, Jupiter API key, encrypted wallet, paper/live) or Settings.
 
 `railway.toml` builds the dash and starts farmer + dashboard together. Paper mode is the default. Runtime config/env/db live on the volume under `/app/data` (repo `config.toml` is only a template). Optional: set `WALLET_PASSPHRASE` on Railway to auto-unlock an encrypted wallet on boot.
 

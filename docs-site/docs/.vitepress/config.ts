@@ -29,13 +29,16 @@ export default defineConfig({
     ],
   ],
   themeConfig: {
-    logo: undefined,
+    logo: { src: "/logo.svg", width: 24, height: 24 },
     siteTitle: "dlmmbot",
     nav: [
       { text: "Home", link: "https://dlmmbot.com/" },
       { text: "Easy (Railway)", link: "/easy" },
+      { text: "API keys", link: "/api-keys" },
       { text: "How it works", link: "/how-it-works" },
       { text: "Strategy", link: "/strategy" },
+      { text: "Risk", link: "/risk" },
+      { text: "Fees", link: "/fees" },
       { text: "FAQ", link: "/faq" },
       { text: "GitHub", link: "https://github.com/CryptoGnome/dlmmbot" },
     ],
@@ -46,6 +49,7 @@ export default defineConfig({
           { text: "Choose a path", link: "/" },
           { text: "Easy — Railway", link: "/easy" },
           { text: "Advanced — local / VPS", link: "/advanced" },
+          { text: "API keys", link: "/api-keys" },
           { text: "Settings profiles", link: "/profiles" },
         ],
       },
@@ -55,6 +59,7 @@ export default defineConfig({
           { text: "How it works", link: "/how-it-works" },
           { text: "Strategy reference", link: "/strategy" },
           { text: "Risk & sizing", link: "/risk" },
+          { text: "Fees", link: "/fees" },
         ],
       },
       {

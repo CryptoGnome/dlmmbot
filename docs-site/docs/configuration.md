@@ -259,7 +259,7 @@ Thresholds:
 | `paper_promotion_days` | `7` | Consecutive profitable paper days for live eligibility |
 
 ::: info Not a knob
-The 1% GNME buy-and-burn usage fee is hardcoded in `src/executor/profitBurn.ts` — it is deliberately **not** a config key. See the [FAQ](./faq#what-s-the-1-gnme-burn-fee).
+The 1% GNME buy-and-burn usage fee is hardcoded in `src/executor/profitBurn.ts` — it is deliberately **not** a config key. See [Fees](./fees).
 :::
 
 ## `[watchdog]`
@@ -295,9 +295,9 @@ Not in `config.toml`, but part of the same picture:
 | Var | Meaning |
 |---|---|
 | `FARMER_MODE` | `paper` (default) or `live` — half of the live double lock |
-| `RPC_URL` | Solana RPC endpoint (private RPC strongly recommended for live) |
-| `JUPITER_API_KEY` | Jupiter API key for swaps |
-| `GMGN_API_KEY` | Optional — enables GMGN trending/smart-money enrichment |
+| `RPC_URL` | Solana RPC endpoint — we suggest [Helius](https://www.helius.dev/) mainnet (`https://mainnet.helius-rpc.com/?api-key=…`) |
+| `JUPITER_API_KEY` | [Jupiter Developer Portal](https://developers.jup.ag/portal) API key for exit swaps (free tier OK) |
+| `GMGN_API_KEY` | Optional — [GMGN](https://gmgn.ai/ai) query key for trending/vetting enrichment. See [API keys](./api-keys#gmgn-api-key-gmgn_api_key-optional) |
 | `WALLET_PRIVATE_KEY` / `WALLET_KEYPAIR_PATH` | Live wallet (or use the dashboard's encrypted wallet instead) |
 | `WALLET_PASSPHRASE` | Optional (Railway): auto-unlock the encrypted wallet on boot |
 | `DASH_TOKEN` / `DASH_PORT` | Dashboard auth token and port (default 8787) |

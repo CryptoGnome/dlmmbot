@@ -126,7 +126,7 @@ export function OverviewPage({
         bodyClassName="flex flex-col"
       >
         <div className="h-[280px] w-full md:h-[320px]">
-          <EquityChart data={hist?.equity ?? []} />
+          <EquityChart data={hist?.equity ?? []} exits={hist?.exits} />
         </div>
       </Panel>
 

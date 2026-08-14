@@ -169,6 +169,8 @@ export function setupStatus(envMasked) {
   const encrypted = hasEncryptedWallet();
   const hasWallet = encrypted || hasPlainWallet;
   const hasRpc = !!byKey.RPC_URL?.set;
+  const hasJupiterApiKey = !!byKey.JUPITER_API_KEY?.set;
+  const hasGmgnApiKey = !!byKey.GMGN_API_KEY?.set;
   const mode = byKey.FARMER_MODE?.value || process.env.FARMER_MODE || "paper";
   const coreReady = hasWallet && hasRpc;
   // Skip wizard for already-configured boxes (volume with RPC + wallet).
@@ -199,6 +201,8 @@ export function setupStatus(envMasked) {
       createdAt: walletMeta?.createdAt ?? null,
     },
     hasRpc,
+    hasJupiterApiKey,
+    hasGmgnApiKey,
     farmerMode: mode,
     coreReady,
   };

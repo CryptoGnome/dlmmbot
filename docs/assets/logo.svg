@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+  <rect width="32" height="32" rx="6" fill="#141414"/>
+  <!-- BidAsk-under: purple SOL bins below price (left), blue token bins crossed (right) -->
+  <rect x="4" y="18" width="2.5" height="7" rx="0.4" fill="#B56BFF"/>
+  <rect x="7.5" y="15" width="2.5" height="10" rx="0.4" fill="#B56BFF"/>
+  <rect x="11" y="12" width="2.5" height="13" rx="0.4" fill="#B56BFF"/>
+  <rect x="14.5" y="10" width="2.5" height="15" rx="0.4" fill="#B56BFF"/>
+  <rect x="18" y="8" width="2.5" height="17" rx="0.4" fill="#B56BFF"/>
+  <rect x="21.25" y="7" width="1" height="18" rx="0.5" fill="#00FF85"/>
+  <rect x="23" y="11" width="2.5" height="14" rx="0.4" fill="#1E90FF"/>
+  <rect x="26.5" y="14" width="2.5" height="11" rx="0.4" fill="#1E90FF"/>
+</svg>

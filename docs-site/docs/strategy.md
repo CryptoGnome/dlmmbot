@@ -18,7 +18,7 @@ Runs every **60s**:
 3. **Best pool per token** — highest `fee_tvl_ratio_24h` among that token's pools that pass the pool gates. One pool per token.
 4. Output: scored candidates → vetting → entry queue (best score first, ties broken by younger pool).
 
-Optional discovery enrichment: GMGN trending and smart-money feeds (needs `GMGN_API_KEY`; auto-off without one). These only add **score bonuses** (capped at +10 total) — never a substitute for vetting.
+Optional discovery enrichment: GMGN trending and smart-money feeds (needs `GMGN_API_KEY`; auto-off without one — [how to get a key](./api-keys#gmgn-api-key-gmgn_api_key-optional)). These only add **score bonuses** (capped at +10 total) — never a substitute for vetting.
 
 ## 2. Pool gates (hard)
 

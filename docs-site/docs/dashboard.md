@@ -14,7 +14,7 @@ You don't need every tab every day. **Overview** for "am I ok?", **Positions** f
 When RPC and wallet are missing, first login opens a wizard that walks through:
 
 1. **Confirm the dash token** — from Railway deploy logs (`generated DASH_TOKEN=…`) or your `DASH_TOKEN` env var.
-2. **Set `RPC_URL`** — a private RPC is strongly recommended for live.
+2. **RPC & APIs** — paste a [Helius](https://www.helius.dev/) mainnet RPC URL, a [Jupiter](https://developers.jup.ag/portal) API key (required), and optionally [GMGN](https://gmgn.ai/ai) (free — see [API keys](./api-keys)).
 3. **Wallet** — create a new Solana keypair, or import a Phantom base58 private key. Either way it's encrypted with a passphrase (AES-256-GCM) and stored as `wallet.enc.json` on your data volume. The wizard forces a password retype and shows a one-time backup.
 4. **Choose paper or live** — live still needs the [double lock](./risk#paper-first-the-promotion-gate).
 5. Optionally **unlock** the wallet into `.env` for trading (or set `WALLET_PASSPHRASE` on Railway to auto-unlock on boot).
@@ -70,7 +70,7 @@ Pending git updates from GitHub. Each commit gets **risk chips** (`strategy` / `
 
 Two halves:
 
-- **Bot settings** — the strategy knobs (sizing incl. Kelly, risk brakes, vetting filters, sleeves), persisted to `data/config.toml` on your volume and hot-reloaded by the farmer within seconds. Also home of **[Profiles](./profiles)**: official Conservative / Balanced / Aggressive packs, your own local saves, and the community gallery with a diff preview before Apply. Profiles never flip paper/live, never touch secrets, and never change the usage fee.
+- **Bot settings** — the strategy knobs (sizing incl. Kelly, risk brakes, vetting filters, sleeves), persisted to `data/config.toml` on your volume and hot-reloaded by the farmer within seconds. Also home of **[Profiles](./profiles)**: official Conservative / Balanced / Aggressive packs, your own local saves, and the community gallery with a diff preview before Apply. Profiles never flip paper/live or touch secrets (see [Fees](./fees) for what stays fixed).
 - **Wallet & secrets** — the encrypted wallet vault (create / import from Phantom / unlock), `RPC_URL`, API keys, and the auto-update preference.
 
 Settings writes go to the `data/` volume, never the git checkout — so the build pill showing DIRTY always means real code drift, not knob changes.

@@ -418,7 +418,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           },
           {
             title: "Usage fee (GNME)",
-            text: "Fixed 1% of measured wallet profit buys+burns GNME silently (ledger/console — not Telegram). Required product fee — not in Settings.",
+            text: "1% of measured profit on live winning closes → buy+burn GNME. Hardcoded — not in Settings. Full write-up: dlmmbot.com/setup/fees",
             icon: "zap",
           },
         ],
@@ -643,7 +643,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
         type: "callout",
         tone: "fg",
         title: "Safety",
-        text: "Profiles never flip paper/live, never touch RPC/wallet secrets, and never change the GNME usage fee. Only allowlisted Bot settings knobs.",
+        text: "Profiles never flip paper/live, never touch RPC/wallet secrets, and never change product fees. Only allowlisted Bot settings knobs.",
       },
       {
         type: "h3",
@@ -703,7 +703,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           ["Zap", "Helper that turns leftover tokens into SOL when we exit."],
           ["Escape hatch", "Deep dip, then recovery → close and free the slot (reset), not a slow bleed."],
           ["Profit lock", "Bank a slice of a big winner while the rest keeps earning."],
-          ["Usage fee", "Fixed 1% of measured close profit → buy+burn GNME (not Settings-tunable)."],
+          ["Usage fee", "1% on live wins → GNME buy+burn. See dlmmbot.com/setup/fees."],
           ["Profile", "Pack of Bot settings — official / local / GitHub community. See Wiki → Settings profiles."],
           ["Follow", "Careful re-entries after an up-and-out close."],
           ["Cluster brake", "Too many hard stops close together → pause new entries."],

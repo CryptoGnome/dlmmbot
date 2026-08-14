@@ -194,14 +194,18 @@ while true; do
       ln -s "$(pwd)/node_modules" "$WORKTREE/node_modules" || FAILURE="node_modules link"
     fi
   fi
-  if [ -z "$FAILURE" ] && ! (cd "$WORKTREE" && npx tsc --noEmit); then
+  # Drop live runtime paths so verification never reads data/config.toml or farmer.db.
+  verify_env() {
+    env -u FARMER_DB_PATH -u FARMER_CONFIG_PATH -u FARMER_ENV_PATH -u FARMER_ROOT "$@"
+  }
+  if [ -z "$FAILURE" ] && ! (cd "$WORKTREE" && verify_env npx tsc --noEmit); then
     FAILURE="typecheck"
   fi
   if [ -z "$FAILURE" ] && [ -f "$WORKTREE/tsconfig.deploy.json" ] \
-    && ! (cd "$WORKTREE" && npx tsc -p tsconfig.deploy.json --noEmit); then
+    && ! (cd "$WORKTREE" && verify_env npx tsc -p tsconfig.deploy.json --noEmit); then
     FAILURE="deploy typecheck"
   fi
-  if [ -z "$FAILURE" ] && ! (cd "$WORKTREE" && npm test); then
+  if [ -z "$FAILURE" ] && ! (cd "$WORKTREE" && verify_env npm test); then
     FAILURE="tests"
   fi
   if [ -z "$FAILURE" ] && [ "$DASH_CHANGED" = 1 ]; then

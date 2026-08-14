@@ -10,7 +10,7 @@
   <meta property="og:description" content="Automated Meteora DLMM liquidity bot for Solana. Scan, vet, enter, manage, exit — by rules. Paper first. Burner only." />
   <meta property="og:url" content="https://dlmmbot.com/" />
   <meta property="og:type" content="website" />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230D0D0D'/%3E%3Cpath d='M6 24h4v-6H6zM13 24h4V12h-4zM20 24h4V6h-4z' fill='%2300FF85'/%3E%3C/svg%3E" />
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,650;1,500&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -21,7 +21,7 @@
   <header class="nav">
     <div class="nav-inner">
       <a class="brand" href="./" aria-label="DLMM Bot home">
-        <svg width="18" height="18" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="6" fill="#141414"/><path d="M6 24h4v-6H6zM13 24h4V12h-4zM20 24h4V6h-4z" fill="#00FF85"/></svg>
+        <img src="assets/logo.svg" width="18" height="18" alt="" aria-hidden="true" />
         dlmm<span>bot</span>
       </a>
       <nav class="nav-links" aria-label="Primary">
@@ -48,7 +48,6 @@
       <div class="binfield" aria-hidden="true">
         <i style="--h:8;--i:0"></i><i style="--h:14;--i:1"></i><i style="--h:11;--i:2"></i><i style="--h:22;--i:3"></i><i style="--h:18;--i:4"></i><i style="--h:30;--i:5"></i><i style="--h:25;--i:6"></i><i style="--h:40;--i:7"></i><i style="--h:34;--i:8"></i><i style="--h:52;--i:9"></i><i style="--h:44;--i:10"></i><i style="--h:60;--i:11"></i><i style="--h:50;--i:12"></i><i style="--h:38;--i:13"></i><i style="--h:46;--i:14"></i><i style="--h:28;--i:15"></i><i style="--h:36;--i:16"></i><i style="--h:20;--i:17"></i><i style="--h:26;--i:18"></i><i style="--h:12;--i:19"></i><i style="--h:16;--i:20"></i><i style="--h:9;--i:21"></i>
       </div>
-      <div class="pill"><span class="dot" aria-hidden="true"></span> Paper first · live is double-locked</div>
       <h1>Run a DLMM bot that farms fees for you, <em>24/7.</em></h1>
       <p class="lede">
         DLMM Bot scans hot Solana Meteora pools, vets the token, opens one-sided SOL liquidity below price,
@@ -62,38 +61,85 @@
       </div>
 
       <div class="mock-stage reveal">
-        <div class="mock" aria-hidden="true">
+        <div class="mock" id="hero-mock" aria-hidden="true">
           <div class="mock-bar">
             <i></i><i></i><i></i>
+            <img src="assets/logo.svg" width="14" height="14" alt="" />
             <span>dlmmbot · overview</span>
           </div>
-          <div class="mock-body">
-            <div class="mock-side">
-              <button class="on" type="button">Overview</button>
-              <button type="button">Positions</button>
-              <button type="button">Activity</button>
-              <button type="button">Settings</button>
-            </div>
-            <div class="mock-main">
-              <div class="mock-kpis">
-                <div class="mock-kpi">
-                  <div class="lab">Wallet</div>
-                  <div class="val">12.40</div>
-                </div>
-                <div class="mock-kpi">
-                  <div class="lab">24h PnL</div>
-                  <div class="val ok">+0.182</div>
-                </div>
-                <div class="mock-kpi">
-                  <div class="lab">Open</div>
-                  <div class="val">3 <span class="acc" style="font-size:0.8rem">of 5</span></div>
-                </div>
+          <div class="mock-chrome">
+            <nav class="mock-side" id="mock-nav">
+              <button type="button" class="on" data-mock-tab="0">Overview</button>
+              <button type="button" data-mock-tab="1">Positions</button>
+              <button type="button" data-mock-tab="2">Activity</button>
+              <button type="button" data-mock-tab="3">Settings</button>
+            </nav>
+            <div class="mock-col">
+              <div class="mock-header">
+                <span class="mock-pill mock-pill-ok">ON</span>
+                <span class="mock-pill mock-pill-ok">HB <b id="mock-hb">8</b>s</span>
+                <span class="mock-pill mock-pill-ok">WS</span>
+                <span class="mock-pill">PAPER</span>
               </div>
-              <div class="mock-feed" id="tickfeed">
-                <div class="mock-row"><span class="t">14:02</span><span>BONK · entered BidAsk −42%</span><span class="acc">0.500 SOL</span></div>
-                <div class="mock-row"><span class="t">13:41</span><span>WIF · fee claim</span><span class="ok">+0.014 SOL</span></div>
-                <div class="mock-row"><span class="t">13:18</span><span>POPCAT · closed · P1 stop</span><span class="bad">−0.062 SOL</span></div>
-                <div class="mock-row"><span class="t">12:55</span><span>rent reclaim</span><span class="ok">+0.008 SOL</span></div>
+              <div class="mock-main">
+                <div class="mock-kpis">
+                  <div class="mock-kpi">
+                    <div class="lab">Total balance</div>
+                    <div class="val acc" id="mock-bal">12.40 SOL</div>
+                    <div class="sub">wallet + open</div>
+                  </div>
+                  <div class="mock-kpi">
+                    <div class="lab">Open profit</div>
+                    <div class="val ok" id="mock-open">+0.084</div>
+                    <div class="sub" id="mock-slots">3 of 5 · 2 free</div>
+                  </div>
+                  <div class="mock-kpi">
+                    <div class="lab">Last 24h</div>
+                    <div class="val ok" id="mock-24h">+0.182</div>
+                    <div class="sub" id="mock-closes">11 closes</div>
+                  </div>
+                  <div class="mock-kpi mock-kpi-chart">
+                    <div class="lab">Equity</div>
+                    <svg class="mock-spark" id="mock-spark" viewBox="0 0 120 32" preserveAspectRatio="none" aria-hidden="true">
+                      <polyline id="mock-spark-line" fill="none" stroke="#1E90FF" stroke-width="1.5" points="0,28 20,26 40,22 60,18 80,14 100,12 120,8"/>
+                    </svg>
+                  </div>
+                </div>
+                <div class="mock-pos-grid" id="mock-positions">
+                  <div class="mock-pos" data-pos="0">
+                    <div class="mock-pos-top">
+                      <span class="mock-pos-sym">WIF</span>
+                      <span class="mock-pos-badge in">in range</span>
+                      <span class="mock-pos-pnl ok">+3.2%</span>
+                    </div>
+                    <div class="mock-range">
+                      <div class="mock-range-fill" style="--sol:72%"></div>
+                      <div class="mock-range-tick" style="--x:68%"></div>
+                    </div>
+                  </div>
+                  <div class="mock-pos" data-pos="1">
+                    <div class="mock-pos-top">
+                      <span class="mock-pos-sym">PONKE</span>
+                      <span class="mock-pos-badge below">below</span>
+                      <span class="mock-pos-pnl bad">−1.1%</span>
+                    </div>
+                    <div class="mock-range">
+                      <div class="mock-range-fill" style="--sol:38%"></div>
+                      <div class="mock-range-tick warn" style="--x:22%"></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="mock-activity">
+                  <div class="mock-activity-head">
+                    <span>Activity</span>
+                    <span class="mock-live-dot" aria-hidden="true"></span>
+                  </div>
+                  <div class="mock-feed" id="tickfeed">
+                    <div class="mock-row"><span class="t">14:02</span><span>BONK · entered BidAsk −42%</span><span class="acc">0.500 SOL</span></div>
+                    <div class="mock-row"><span class="t">13:41</span><span>WIF · fee claim</span><span class="ok">+0.014 SOL</span></div>
+                    <div class="mock-row"><span class="t">13:18</span><span>POPCAT · closed · P1 stop</span><span class="bad">−0.062 SOL</span></div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -435,6 +481,7 @@
             On each <strong>live</strong> winning close, 1% of measured wallet PnL buys and burns
             <a href="https://solscan.io/token/BaDjVCpABEVCdt4LT7ivuzA4izBwJCqnDjrLa8XBtT38" target="_blank" rel="noreferrer">GNME</a>.
             Required product fee — not adjustable in Settings. Paper mode never spends anything.
+            <a class="linkish" href="setup/fees">Full details in docs →</a>
           </p>
         </div>
       </div>
@@ -443,10 +490,11 @@
     <!-- ================= CTA ================= -->
     <section class="band" id="docs">
       <h2 class="reveal">Read the docs. Then deploy paper.</h2>
-      <p class="reveal">Easy path on Railway. Advanced path for local / VPS / PM2. Same bot either way.</p>
+      <p class="reveal">Easy path on Railway. Advanced path for local / VPS / PM2 — same bot either way.</p>
       <div class="hero-cta reveal">
         <a class="btn btn-primary" href="setup/">Open docs <span class="arrow" aria-hidden="true">→</span></a>
         <a class="linkish" href="https://railway.com?referralCode=SCj9lN" target="_blank" rel="noreferrer">Sign up on Railway</a>
+        <a class="linkish" href="https://www.vultr.com/?ref=9917878-9J" target="_blank" rel="noreferrer">VPS on Vultr</a>
       </div>
     </section>
   </main>
@@ -454,21 +502,23 @@
   <footer class="site-footer">
     <div class="wrap footer-row">
       <a class="brand" href="./">
-        <svg width="16" height="16" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="6" fill="#141414"/><path d="M6 24h4v-6H6zM13 24h4V12h-4zM20 24h4V6h-4z" fill="#00FF85"/></svg>
+        <img src="assets/logo.svg" width="16" height="16" alt="" aria-hidden="true" />
         dlmm<span>bot</span>
       </a>
       <div class="footer-links">
         <a href="setup/">Docs</a>
         <a href="setup/easy">Easy setup</a>
+        <a href="setup/api-keys">API keys</a>
         <a href="setup/advanced">Advanced</a>
+        <a href="setup/fees">Fees</a>
         <a href="setup/profiles">Profiles</a>
         <a href="https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md">Strategy</a>
         <a href="https://railway.com?referralCode=SCj9lN" target="_blank" rel="noreferrer">Railway</a>
+        <a href="https://www.vultr.com/?ref=9917878-9J" target="_blank" rel="noreferrer">Vultr</a>
         <a href="https://github.com/CryptoGnome/dlmmbot">GitHub</a>
       </div>
     </div>
     <div class="wrap footer-note">
-      Usage fee: 1% of measured net profit on live winning closes buys+burns GNME (required; not Settings-tunable).
       Memecoin LP can wipe a wallet. Not financial advice. Paper first. Burner only.
       You can lose 100% of funds under this bot's control.
     </div>

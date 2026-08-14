@@ -1,6 +1,6 @@
 ---
 title: FAQ
-description: Honest answers — can you lose money (yes), why paper first, the 1% GNME burn fee, one-sided SOL, restarts, RPC, and the one-instance rule.
+description: Honest answers — can you lose money (yes), why paper first, one-sided SOL, restarts, RPC, and the one-instance rule.
 ---
 
 # FAQ
@@ -25,14 +25,9 @@ Three reasons:
 2. **The promotion gate needs data.** `npm run status` tracks consecutive profitable paper days; eligibility is **7 in a row** (after simulated costs). That scoreboard is how you decide with evidence instead of hope.
 3. **Live is double-locked on purpose.** Real trading requires **both** `[exec] mode = "live"` in config **and** `FARMER_MODE=live` in the environment. One switch alone stays safe — no single mis-click starts spending SOL.
 
-## What's the 1% GNME burn fee?
+## What's the usage fee?
 
-The product's usage fee: on each **live winning close**, 1% of the *measured* net profit (wallet open cost → close return + fees + rent) buys and burns [GNME](https://solscan.io/token/BaDjVCpABEVCdt4LT7ivuzA4izBwJCqnDjrLa8XBtT38) via Jupiter in one transaction.
-
-- Charged only on **wins** — losses and mark-only closes pay nothing.
-- **Paper mode logs it without spending.**
-- It is **hardcoded** (`src/executor/profitBurn.ts`), deliberately not a Settings knob, and profiles can't change it.
-- If the burn swap fails, the amount sits in a pot and is retried — it isn't silently dropped or double-charged.
+See **[Fees](./fees)** — 1% GNME buy-and-burn on live winning closes only.
 
 ## Why one-sided SOL below price?
 
@@ -57,8 +52,9 @@ Crash-restart loops are handled by PM2/Railway supervision; the out-of-process h
 
 ## What are the RPC requirements?
 
-- **Paper:** the public `https://api.mainnet-beta.solana.com` endpoint works — no wallet needed at all.
-- **Live:** use a **private RPC** (`RPC_URL`). The manager polls every open position on a 15s cadence plus holder snapshots, claims, and swaps — free public endpoints rate-limit exactly when it matters. A Jupiter API key (`JUPITER_API_KEY`) is needed for the swap path.
+- **Paper:** still use a real RPC — we suggest [Helius](https://www.helius.dev/) (`RPC_URL`). Public mainnet works for a smoke test but chokes under load.
+- **Live:** Helius (or another private RPC) is strongly recommended. The manager polls every open position on a 15s cadence plus holder snapshots, claims, and swaps — free public endpoints rate-limit exactly when it matters.
+- **Jupiter:** get a free API key at [developers.jup.ag/portal](https://developers.jup.ag/portal) (`JUPITER_API_KEY`). Required for the live swap path and for `npm run simulate-zap` before you trust live mode. Copy the key at creation — Jupiter shows it only once. [Setup guide](https://developers.jup.ag/docs/portal/setup).
 - If RPC goes dark, the bot **freezes new entries and alerts** — it never blind-closes positions it can't see. See [Risk & sizing → Watchdog](./risk#watchdog-liveness).
 
 ## Why one bot instance per wallet?
@@ -71,7 +67,9 @@ On Windows, killing a background `npm run run` kills **only the npm wrapper** �
 
 ## Do I need the GMGN API key?
 
-No. GMGN trending/smart-money feeds are **discovery enrichment** — score bonuses capped at +10, plus extra security flags. With no `GMGN_API_KEY` the feature auto-disables and the core pipeline (Meteora datapi + RPC + RugCheck) runs unchanged.
+No — the core pipeline runs without it. With a key you get trending/smart-money score bonuses (capped at +10) and extra honeypot/sell-tax vetting.
+
+**How to get one (free):** [API keys → GMGN](./api-keys#gmgn-api-key-gmgn_api_key-optional) — generate an Ed25519 public key, upload at [gmgn.ai/ai](https://gmgn.ai/ai), paste the API key as `GMGN_API_KEY`. You do **not** need `GMGN_PRIVATE_KEY` for this bot.
 
 ## Can the bot trade SOL-USDC or other stable pairs?
 

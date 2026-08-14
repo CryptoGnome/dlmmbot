@@ -6,7 +6,7 @@
 git clone https://github.com/CryptoGnome/dlmmbot.git
 cd dlmmbot
 npm install
-cp .env.example .env        # then fill in: RPC_URL, JUPITER_API_KEY, GMGN_API_KEY
+cp .env.example .env        # Helius RPC_URL + JUPITER_API_KEY (see docs/setup/advanced)
 npm i -g pm2
 pm2 start deploy/ecosystem.config.cjs
 pm2 save && pm2 startup     # survive reboots (follow the printed instructions)
