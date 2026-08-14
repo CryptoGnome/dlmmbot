@@ -19,6 +19,7 @@ Whenever you **create a git commit** (or the user asks to commit), treat documen
 |---------|------|----------------|
 | Marketing site | `docs/index.html`, `docs/assets/*` | Positioning, features, CTAs, branding, pricing/setup claims |
 | Setup docs | `docs/setup/**` (`index`, `easy`, `advanced`) | Deploy/Railway/PM2/env/wizard/wallet steps change |
+| Ops Wiki (dashboard) | `dashboard/src/wiki/content.ts` | Strategy/exits/sleeves/ops/dashboard meaning changes (see also `wiki-sync-on-commit.mdc`) |
 | LLM indexes | `llms.txt`, `llms-full.txt` (repo root; create if missing) | Public product facts, URLs, setup summary, or feature list change |
 | README | `README.md` | Install, quickstart, links, or project description change |
 | Strategy / deploy notes | `STRATEGY.md`, `DEPLOY.md` | Only if the commit actually changes those workflows |

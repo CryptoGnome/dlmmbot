@@ -17,7 +17,7 @@ Railway signup: https://railway.com?referralCode=SCj9lN
 ## Product facts
 
 - Scans SOL-quoted Meteora DLMM pools, vets tokens, opens one-sided SOL LP, exits by fixed rules
-- Dashboard: overview, book, analytics, activity feed, errors log, changes/changelog, research credits, settings
+- Dashboard: overview, book, analytics, activity, errors, research, wiki (strategy/ops manual), changes, settings
 - Update toasts when GitHub is ahead or the bot restarts on a new build; BEHIND build pill pulses
 - Errors tab streams structured runtime errors over WebSocket (copy dump / open GitHub issue)
 - Token symbols show Jupiter / Pump.fun / DexScreener icons (cached in SQLite + browser)

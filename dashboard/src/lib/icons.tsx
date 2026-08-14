@@ -5,6 +5,7 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   Ban,
+  BookMarked,
   BookOpen,
   CircleAlert,
   CircleDot,
@@ -37,6 +38,7 @@ export const tabIcon: Record<TabId, LucideIcon> = {
   activity: Activity,
   errors: OctagonX,
   research: Microscope,
+  wiki: BookMarked,
   changes: ScrollText,
   settings: Settings,
 };

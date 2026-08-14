@@ -2,6 +2,8 @@
 
 Status: **Live spec** (updated 2026-08-13). Bracketed `[defaults]` are the original design reference; **`config.toml` is what runs on gn0meserver** — many values were deliberately changed after live book review (see §11).
 
+Operator-facing mirror: dashboard **Wiki** tab (`dashboard/src/wiki/content.ts`). When this spec or live behavior changes, update the Wiki in the same commit (`.cursor/rules/wiki-sync-on-commit.mdc`).
+
 Philosophy (from the Tux/Gmet playbook): **capital preservation first**. One-sided SOL bid-ask below price as the default entry shape for meme/micro, mechanical exits instead of conviction-holding, PnL denominated in SOL. The bot has no whale chat to consult, so wherever the humans "ask the group," the bot must be strictly more defensive.
 
 ---

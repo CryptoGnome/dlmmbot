@@ -1,0 +1,32 @@
+---
+description: Keep the in-dashboard Wiki current when strategy/ops behavior changes
+alwaysApply: true
+---
+
+# Wiki sync on commit
+
+The ops dashboard **Wiki** tab (`dashboard/src/wiki/content.ts`, rendered by `dashboard/src/pages/Wiki.tsx`) is the operator-facing mirror of how the bot works. Treat it like setup docs: do not leave it stale when behavior changes.
+
+## Before finishing a commit
+
+1. Diff the change set. Ask: does this alter scanning, sleeves, entry/exit priorities, follow mode, sizing/risk brakes, HALT, dashboard tab meaning, update/approve flow, or accounting?
+2. If **yes**, update the matching Wiki section(s) in **`dashboard/src/wiki/content.ts`** in the same commit (surgical edits — do not rewrite untouched sections).
+3. If the change is also a public/setup fact, still apply `docs-sync-on-commit.mdc` (site / setup / llms).
+4. If STRATEGY.md is the source of truth for a strategy change, update STRATEGY.md **and** the Wiki section that mirrors it.
+
+## When Wiki almost always needs a pass
+
+- New/changed P0–P5 rules, follow gates, sleeves, Kelly/circuit/cluster/regime knobs
+- New dashboard tabs or Halt / Errors / Changes / Settings behavior operators must understand
+- New blacklist / skip classes or accounting definitions shown in Activity
+- Kill-switch / HALT semantics
+
+## Do not
+
+- Duplicate full SETUP/Railway install into the Wiki (link Docs instead)
+- Paste secrets, keys, or live `DASH_TOKEN` values
+- Skip Wiki because “STRATEGY.md is enough” — operators use the dashboard Wiki
+
+## Done means
+
+Strategy/ops commits include Wiki updates when operator-visible behavior drifted (or an explicit “no wiki impact” judgment).

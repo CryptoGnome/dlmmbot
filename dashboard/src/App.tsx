@@ -14,6 +14,7 @@ import { AnalyticsPage } from "@/pages/Analytics";
 import { ActivityPage } from "@/pages/Activity";
 import { ErrorsPage } from "@/pages/Errors";
 import { ResearchPage } from "@/pages/Research";
+import { WikiPage } from "@/pages/Wiki";
 import { ChangelogPage } from "@/pages/Changelog";
 import { SettingsPage } from "@/pages/Settings";
 
@@ -148,6 +149,7 @@ export default function App() {
         {tab === "activity" && <ActivityPage watch={watch} />}
         {tab === "errors" && <ErrorsPage watch={watch} />}
         {tab === "research" && <ResearchPage />}
+        {tab === "wiki" && <WikiPage />}
         {tab === "changes" && <ChangelogPage watch={watch} />}
         {tab === "settings" && <SettingsPage />}
 

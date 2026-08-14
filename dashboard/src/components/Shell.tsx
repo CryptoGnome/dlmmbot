@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { BookText, CircleDot, ExternalLink } from "lucide-react";
 import { GithubMark, Icon, PauseCircle, tabIcon, Unplug, Zap } from "@/lib/icons";
 
-export type TabId = "overview" | "book" | "analytics" | "activity" | "errors" | "research" | "changes" | "settings";
+export type TabId = "overview" | "book" | "analytics" | "activity" | "errors" | "research" | "wiki" | "changes" | "settings";
 
 const DOCS_URL = "https://dlmmbot.com/setup/";
 
@@ -15,6 +15,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "activity", label: "Activity" },
   { id: "errors", label: "Errors" },
   { id: "research", label: "Research" },
+  { id: "wiki", label: "Wiki" },
   { id: "changes", label: "Changes" },
   { id: "settings", label: "Settings" },
 ];

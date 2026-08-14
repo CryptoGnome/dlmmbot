@@ -44,11 +44,12 @@ Settings also exposes encrypted wallet create / import / unlock on the Wallet & 
 - Changes tab + toasts when GitHub is ahead, a deploy lands, or the farmer restarts on a new build
 - Host updates: auto-update on by default (PM2 `meteora-deploy`); Settings toggle to require Approve on Changes before pull
 - Errors tab: live `error_log` over WebSocket (stacks, mint/pool, copy dump, open GitHub issue)
-- Token icons/names from Jupiter datapi, cached in SQLite `tokens` and browser localStorage
+- Token icons/names from Jupiter → Pump.fun → DexScreener, cached in SQLite `tokens` and browser localStorage
 - Overview Halt / Resume (writes HALT; farmer closes opens and idles until cleared)
 - Changes pending commits tagged by risk (strategy / deps / deploy / dash / docs)
 - Settings: Bot settings (sizing, risk, filters) and Wallet & secrets (vault, encrypted wallet, auto-update)
 - Research page: public X credits (not partners/signals)
+- Wiki tab: operator manual (sleeves, P0–P5, follow, sizing, dash map); kept in sync with STRATEGY.md
 
 ## Safety model
 
