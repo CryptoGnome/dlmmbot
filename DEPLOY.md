@@ -156,3 +156,30 @@ Marketing + setup docs load Umami via `docs/assets/umami.js` (and
 IPs go in the `BLOCKED` array there so our visits are not tracked. After an ISP
 change, add the new address and push — Cloudflare’s `/cdn-cgi/trace` supplies
 the visitor IP on dlmmbot.com.
+
+## Site deployment (dlmmbot.com)
+
+Production is **Cloudflare Pages** project `dlmmbot` (custom domains
+`dlmmbot.com`, `www.dlmmbot.com`).
+
+**Build settings (Cloudflare dashboard → Pages → dlmmbot → Settings):**
+
+| Setting | Value |
+|--------|--------|
+| Root directory | *(repo root — leave empty)* |
+| Build command | `npm run docs:build` |
+| Output directory | `docs` |
+
+Do **not** set root directory to `docs` only. That made Cloudflare skip pushes
+whose commits touched `docs-site/` (VitePress source outside that folder) with
+**“No deployment available”** / `skip_reason: path_config`. Bot-only commits
+still redeployed the old site; site edits were silently skipped.
+
+Every push to `master` should now build VitePress into `docs/setup/` and
+publish the whole `docs/` tree (marketing `index.html` + setup docs).
+
+**Manual redeploy:** GitHub Actions → **Deploy site** (needs repo secrets
+`CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`), or Cloudflare Pages →
+**Create deployment** on `master`.
+
+**Local check before push:** `npm run docs:build` then spot-check `docs/`.

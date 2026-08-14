@@ -1,0 +1,31 @@
+# Optional manual redeploy for dlmmbot.com → Cloudflare Pages.
+# Normal path: Cloudflare Git integration runs `npm run docs:build` on every
+# master push (see DEPLOY.md → Site). Use this only to force a redeploy.
+
+name: Deploy site
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: site-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+      - name: Build setup docs into docs/setup
+        run: npm run docs:build
+      - name: Publish to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy docs --project-name=dlmmbot --branch=master
