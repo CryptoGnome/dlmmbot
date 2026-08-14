@@ -563,7 +563,8 @@ export const WIKI_SECTIONS: WikiSection[] = [
       {
         type: "ul",
         items: [
-          "Per position: fees + (exit − entry) − rent − tx costs, in SOL.",
+          "Per position: wallet SOL out → back + fees − costs (REALIZED_PNL). Close rows show Move (deposit/IL) vs Fees separately.",
+          "Majors rotation often nets ~0 SOL — small fees offset by IL/tx on a flat exit; check the Fees line, not just headline PnL.",
           "decisions table = why we entered, skipped, or exited (your future tuning gold).",
           "USD may show for readability; SOL is the scoreboard.",
         ],

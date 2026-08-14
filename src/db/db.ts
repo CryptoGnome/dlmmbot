@@ -322,10 +322,17 @@ export function now(): number {
  * Lives in db.ts so every consumer can import it without an import cycle.
  */
 export const REALIZED_PNL_SQL = `
-  CASE WHEN open_cost_sol IS NOT NULL AND close_return_sol IS NOT NULL
-       THEN close_return_sol + fees_measured_sol + recovered_sol - open_cost_sol
+  CASE WHEN close_return_sol IS NOT NULL
+       THEN close_return_sol
+            + COALESCE(fees_measured_sol, 0)
+            + COALESCE(recovered_sol, 0)
+            - COALESCE(open_cost_sol, entry_sol + COALESCE(rent_paid_sol, 0))
        WHEN entry_sol > 0
-       THEN exit_sol - entry_sol + fees_claimed_sol
+       THEN COALESCE(exit_sol, 0) - entry_sol
+            + CASE WHEN COALESCE(fees_measured_sol, 0) > 0
+                   THEN fees_measured_sol
+                   ELSE COALESCE(fees_claimed_sol, 0) END
+            + COALESCE(recovered_sol, 0)
        ELSE 0 END`;
 
 // ---- blacklist helpers (STRATEGY.md §6) ----

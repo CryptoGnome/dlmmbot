@@ -112,9 +112,11 @@ export function buildHistorySnapshot(root, range = "30d") {
               exit_ts,
               ROUND((${REALIZED_PNL}), 6) AS pnl,
               ROUND(entry_sol, 4) AS entry_sol,
+              ROUND(COALESCE(rent_paid_sol, 0), 6) AS rent_paid_sol,
               ROUND(open_cost_sol, 6) AS open_cost_sol,
               ROUND(close_return_sol, 6) AS close_return_sol,
-              ROUND(COALESCE(fees_measured_sol, fees_claimed_sol), 6) AS fees_sol,
+              ROUND(COALESCE(fees_measured_sol, 0), 6) AS fees_measured_sol,
+              ROUND(COALESCE(fees_claimed_sol, 0), 6) AS fees_claimed_sol,
               ROUND(COALESCE(recovered_sol, 0), 6) AS recovered_sol,
               ROUND(COALESCE(fees_at_close_sol, 0), 6) AS fees_at_close_sol,
               ROUND(exit_sol, 6) AS exit_sol
@@ -125,22 +127,24 @@ export function buildHistorySnapshot(root, range = "30d") {
     ).all(since).map((r) => {
       const openCost = r.open_cost_sol != null ? Number(r.open_cost_sol) : null;
       const closeRet = r.close_return_sol != null ? Number(r.close_return_sol) : null;
-      const fees = Number(r.fees_sol) || 0;
+      const feesMeasured = Number(r.fees_measured_sol) || 0;
+      const feesClaimed = Number(r.fees_claimed_sol) || 0;
+      const feesAtClose = Number(r.fees_at_close_sol) || 0;
+      const feesLife = feesMeasured > 0 ? feesMeasured : feesClaimed;
+      const fees = Math.round((feesLife + feesAtClose) * 1e6) / 1e6;
       const recovered = Number(r.recovered_sol) || 0;
       const entry = Number(r.entry_sol) || 0;
-      const exitMarked = r.exit_sol != null ? Number(r.exit_sol) : null;
-      // Wallet exit move (ex fees/recovered): close_return − open_cost, else marked exit − entry.
-      const exitMove = openCost != null && closeRet != null
-        ? Math.round((closeRet - openCost) * 1e6) / 1e6
-        : exitMarked != null && entry > 0
-          ? Math.round((exitMarked - entry) * 1e6) / 1e6
-          : null;
+      const rent = Number(r.rent_paid_sol) || 0;
+      const pnl = Number(r.pnl) || 0;
+      const costBasis = openCost ?? (entry > 0 ? entry + rent : entry);
+      // Deposit move (IL + tx): total PnL minus fee income and late recoveries.
+      const exitMove = Math.round((pnl - fees - recovered) * 1e6) / 1e6;
       return {
         ...r,
-        fees_sol: Math.round(fees * 1e6) / 1e6,
+        fees_sol: fees,
         recovered_sol: Math.round(recovered * 1e6) / 1e6,
         exit_move_sol: exitMove,
-        pct: entry > 0 ? Math.round((r.pnl / entry) * 1e6) / 1e6 : null,
+        pct: costBasis > 0 ? Math.round((pnl / costBasis) * 1e6) / 1e6 : null,
       };
     });
 

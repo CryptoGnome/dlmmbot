@@ -46,6 +46,17 @@ describe("REALIZED_PNL_SQL", () => {
     expect(pnlFor(id)).toBe(0);
   });
 
+  it("uses close_return when open_cost is missing (partial wallet columns)", () => {
+    const id = insertClosedPosition({
+      entrySol: 0.75,
+      exitSol: 0.76,
+      openCostSol: null,
+      closeReturnSol: 0.752,
+      feesMeasuredSol: 0,
+    });
+    expect(pnlFor(id)).toBeCloseTo(0.002, 8);
+  });
+
   it("treats NULL close_return_sol as not measured (legacy path)", () => {
     const id = insertClosedPosition({
       entrySol: 0.3,

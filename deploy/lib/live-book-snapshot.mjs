@@ -21,10 +21,17 @@ const execAsync = promisify(exec);
 const require = createRequire(import.meta.url);
 
 export const REALIZED_PNL = `
-  CASE WHEN open_cost_sol IS NOT NULL AND close_return_sol IS NOT NULL
-       THEN close_return_sol + fees_measured_sol + recovered_sol - open_cost_sol
+  CASE WHEN close_return_sol IS NOT NULL
+       THEN close_return_sol
+            + COALESCE(fees_measured_sol, 0)
+            + COALESCE(recovered_sol, 0)
+            - COALESCE(open_cost_sol, entry_sol + COALESCE(rent_paid_sol, 0))
        WHEN entry_sol > 0
-       THEN exit_sol - entry_sol + fees_claimed_sol
+       THEN COALESCE(exit_sol, 0) - entry_sol
+            + CASE WHEN COALESCE(fees_measured_sol, 0) > 0
+                   THEN fees_measured_sol
+                   ELSE COALESCE(fees_claimed_sol, 0) END
+            + COALESCE(recovered_sol, 0)
        ELSE 0 END`;
 
 /** Map closed token-account addresses → { mint, symbol } for rent_reclaim rows. */
@@ -780,7 +787,8 @@ export function buildLiveBookSnapshot(root) {
     for (const r of db.prepare(
       `SELECT exit_ts AS ts, datetime(exit_ts,'unixepoch') at, id, symbol, token_mint AS mint, pool,
               exit_reason AS gate, ROUND(entry_sol,4) entry_sol,
-              ROUND((${REALIZED_PNL}),4) pnl, ROUND((exit_ts-entry_ts)/60.0,1) hold_min,
+              ROUND((${REALIZED_PNL}),6) pnl, ROUND((exit_ts-entry_ts)/60.0,1) hold_min,
+              ROUND(COALESCE(fees_measured_sol, 0) + COALESCE(fees_at_close_sol, 0), 6) fee_total,
               tranche_of,
               (
                 SELECT COALESCE(NULLIF(e.tx_sig,''), json_extract(e.detail_json,'$.sigs[0]'))
@@ -800,6 +808,7 @@ export function buildLiveBookSnapshot(root) {
         score: null, size: r.entry_sol, sleeve: null, gate: r.gate,
         pnl: r.pnl, detail: [
           r.hold_min != null ? `${r.hold_min}m` : null,
+          r.fee_total > 0 && Math.abs(r.pnl) < 0.0001 ? `fees ${r.fee_total}` : null,
           r.tranche_of != null ? `tranche of #${r.tranche_of}` : `#${r.id}`,
         ].filter(Boolean).join(" · ") || null,
         tx_sig: r.tx_sig || null,

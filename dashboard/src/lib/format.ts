@@ -1,7 +1,8 @@
-export function fmtSol(n: number | null | undefined, digits = 4): string {
+export function fmtSol(n: number | null | undefined, digits?: number): string {
   if (n == null || Number.isNaN(n)) return "—";
+  const d = digits ?? (n !== 0 && Math.abs(n) < 0.01 ? 4 : 3);
   const sign = n > 0 ? "+" : "";
-  return `${sign}${n.toFixed(digits)} SOL`;
+  return `${sign}${n.toFixed(d)} SOL`;
 }
 
 export function fmtUsd(n: number | null | undefined, digits = 2): string {

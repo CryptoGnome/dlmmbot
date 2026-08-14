@@ -255,18 +255,18 @@ export function ClosePnlCell({
         className={pnl >= 0 ? "font-semibold text-ok" : "font-semibold text-danger"}
         title="Realized profit for this close"
       >
-        {fmtSol(pnl, 3)}
+        {fmtSol(pnl)}
         {pct != null && (
           <span className="ml-1 text-[10px] font-normal opacity-80">{fmtRet(pct)}</span>
         )}
       </div>
       <div className="mt-0.5 space-y-0.5 text-[10px] text-muted">
         <div className="flex flex-wrap justify-end gap-x-2 gap-y-0.5">
-          <span className="inline-flex items-center gap-0.5" title="Profit/loss from the LP deposit alone (before fees)">
+          <span className="inline-flex items-center gap-0.5" title="Deposit move (IL and tx costs) — profit minus fees">
             <Layers size={10} strokeWidth={1.75} className="text-dim" aria-hidden />
-            Exit <span className={toneN(exitMove)}>{exitMove == null ? "—" : fmtSol(exitMove, 4)}</span>
+            Move <span className={toneN(exitMove)}>{exitMove == null ? "—" : fmtSol(exitMove, 4)}</span>
           </span>
-          <span className="inline-flex items-center gap-0.5" title="Fees collected while this position was open">
+          <span className="inline-flex items-center gap-0.5" title="Fees earned (claims + collected at close)">
             <Coins size={10} strokeWidth={1.75} className="text-dim" aria-hidden />
             Fees <span className={toneN(fees)}>{fmtSol(fees ?? 0, 4)}</span>
           </span>
