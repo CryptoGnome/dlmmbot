@@ -205,6 +205,23 @@ kelly_block_negative = false   # 2026-08-08: the brake is a one-way door — blo
                                # With it off, negative edge clamps appliedFraction to 0 and
                                # sizing falls to the min_position_sol floor (0.3 SOL): small
                                # size while the sample rebuilds, rather than a permanent stop.
+# Kelly per-sleeve (when mode=kelly): unit=kelly scales adaptive base; sol/pct = explicit target
+kelly_core_unit = "kelly"
+kelly_core_sol = 0.5
+kelly_core_pct = 5
+kelly_core_mult = 1.0
+kelly_micro_unit = "kelly"
+kelly_micro_sol = 0.3
+kelly_micro_pct = 3
+kelly_micro_mult = 1.0
+kelly_majors_unit = "sol"
+kelly_majors_sol = 0.75
+kelly_majors_pct = 10
+kelly_majors_mult = 1.0
+kelly_follow_unit = "sol"
+kelly_follow_sol = 0.25
+kelly_follow_pct = 2
+kelly_follow_mult = 1.0
 reserve_sol = 1.0
 reserve_pct = 10
 per_token_max_pct = 40

@@ -402,6 +402,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           { label: "Cold start", detail: "Until min samples, each position uses cold-start % of wallet." },
           { label: "Estimate f*", detail: "Rolling closed trades → win rate + avg win/loss → full Kelly fraction." },
           { label: "Apply fraction", detail: "Bet kelly_fraction × f*, capped at max share of wallet." },
+          { label: "Per-sleeve tweak", detail: "Settings → Kelly per-sleeve: Kelly (adaptive × mult), fixed SOL, or % deployable per core/micro/majors/follow." },
           { label: "Score tilt", detail: "Scan score picks low/mid/high multiplier on the result." },
           { label: "Floors", detail: "Never below min position size; negative edge can block or clamp to floor." },
         ],
