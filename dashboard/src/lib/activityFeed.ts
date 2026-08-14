@@ -16,6 +16,8 @@ export type FeedItem = {
   name?: string | null;
   icon_url?: string | null;
   gate?: string | null;
+  /** Solscan tx when this row is an on-chain action. */
+  txSig?: string | null;
 };
 
 function toneFor(kind: FeedKind, pnl?: number | null): FeedItem["tone"] {
@@ -94,6 +96,7 @@ export function buildActivityFeed(watch: LiveWatch | null, limit = 80): FeedItem
         name: e.name ?? m?.name,
         icon_url: e.icon_url ?? m?.icon_url,
         gate: e.gate,
+        txSig: e.tx_sig || null,
       };
     });
   }

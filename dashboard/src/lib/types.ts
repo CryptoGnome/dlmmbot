@@ -213,6 +213,8 @@ export interface ActivityEvent {
   gate?: string | null;
   pnl?: number | null;
   detail?: string | null;
+  /** On-chain signature when this row is a real tx (open/close/claim/…). */
+  tx_sig?: string | null;
 }
 
 export interface BookWindow {

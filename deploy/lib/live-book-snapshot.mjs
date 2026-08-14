@@ -748,7 +748,18 @@ export function buildLiveBookSnapshot(root) {
                 NULLIF(json_extract(d.features_json,'$.cand.symbol'),''),
                 (SELECT p.symbol FROM positions p WHERE p.token_mint=d.mint ORDER BY p.id DESC LIMIT 1),
                 NULL
-              ) symbol
+              ) symbol,
+              (
+                SELECT COALESCE(NULLIF(e.tx_sig,''), json_extract(e.detail_json,'$.sigs[0]'))
+                FROM events e
+                JOIN positions p ON p.id = e.position_id
+                WHERE e.type = 'open'
+                  AND p.token_mint = d.mint
+                  AND e.ts BETWEEN d.ts - 30 AND d.ts + 600
+                  AND COALESCE(NULLIF(e.tx_sig,''), json_extract(e.detail_json,'$.sigs[0]')) IS NOT NULL
+                ORDER BY ABS(e.ts - d.ts)
+                LIMIT 1
+              ) AS tx_sig
        FROM decisions d LEFT JOIN tokens t ON t.mint=d.mint
        WHERE d.action='entered' AND d.ts > ?
        ORDER BY d.ts DESC LIMIT 40`
@@ -759,6 +770,7 @@ export function buildLiveBookSnapshot(root) {
         symbol: sym, mint: r.mint || null, pool: r.pool || null,
         score: r.score, size: typeof r.size === "number" ? Math.round(r.size * 1e4) / 1e4 : null,
         sleeve: r.sleeve || null, gate: null, pnl: null, detail: r.tranche ? "tranche" : (r.is_alpha ? "alpha" : null),
+        tx_sig: r.tx_sig || null,
       });
     }
 
@@ -766,7 +778,15 @@ export function buildLiveBookSnapshot(root) {
       `SELECT exit_ts AS ts, datetime(exit_ts,'unixepoch') at, id, symbol, token_mint AS mint, pool,
               exit_reason AS gate, ROUND(entry_sol,4) entry_sol,
               ROUND((${REALIZED_PNL}),4) pnl, ROUND((exit_ts-entry_ts)/60.0,1) hold_min,
-              tranche_of
+              tranche_of,
+              (
+                SELECT COALESCE(NULLIF(e.tx_sig,''), json_extract(e.detail_json,'$.sigs[0]'))
+                FROM events e
+                WHERE e.position_id = positions.id
+                  AND e.type IN ('withdraw','safety_exit','force_close')
+                  AND COALESCE(NULLIF(e.tx_sig,''), json_extract(e.detail_json,'$.sigs[0]')) IS NOT NULL
+                ORDER BY e.ts DESC LIMIT 1
+              ) AS tx_sig
        FROM positions
        WHERE mode='live' AND exit_ts IS NOT NULL AND exit_ts > ?
        ORDER BY exit_ts DESC LIMIT 40`
@@ -779,6 +799,7 @@ export function buildLiveBookSnapshot(root) {
           r.hold_min != null ? `${r.hold_min}m` : null,
           r.tranche_of != null ? `tranche of #${r.tranche_of}` : `#${r.id}`,
         ].filter(Boolean).join(" · ") || null,
+        tx_sig: r.tx_sig || null,
       });
     }
 
@@ -816,7 +837,7 @@ export function buildLiveBookSnapshot(root) {
     }
 
     for (const r of db.prepare(
-      `SELECT e.ts, datetime(e.ts,'unixepoch') at, e.type, e.position_id, e.detail_json,
+      `SELECT e.ts, datetime(e.ts,'unixepoch') at, e.type, e.position_id, e.detail_json, e.tx_sig,
               ROUND(e.sol_delta,4) sol_delta, p.symbol, p.token_mint AS mint, p.pool
        FROM events e
        LEFT JOIN positions p ON p.id = e.position_id
@@ -827,8 +848,10 @@ export function buildLiveBookSnapshot(root) {
       let symbol = r.symbol || null;
       let mint = r.mint || null;
       let detailExtra = null;
+      let txSig = r.tx_sig || null;
       try {
         const j = r.detail_json ? JSON.parse(r.detail_json) : null;
+        if (!txSig && Array.isArray(j?.sigs) && typeof j.sigs[0] === "string") txSig = j.sigs[0];
         const tokens = Array.isArray(j?.tokens) ? j.tokens : null;
         if (tokens?.length) {
           const syms = [...new Set(tokens.map((t) => t?.symbol).filter(Boolean))];
@@ -863,6 +886,7 @@ export function buildLiveBookSnapshot(root) {
           r.position_id != null ? `#${r.position_id}` : null,
           detailExtra,
         ].filter(Boolean).join(" · ") || null,
+        tx_sig: txSig || null,
       });
     }
 

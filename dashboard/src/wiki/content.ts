@@ -477,7 +477,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           { title: "Overview", text: "Money snapshot, equity chart (pick 7d/30d/all here). Halt lives in the header ON/HALT toggle.", icon: "chart", tone: "accent" },
           { title: "Book", text: "Open positions + recent closes.", icon: "book", tone: "fg" },
           { title: "Analytics", text: "Why we made/lost SOL — exits, sleeves, skips.", icon: "calc", tone: "ok" },
-          { title: "Activity", text: "Live play-by-play of decisions.", icon: "zap", tone: "accent" },
+          { title: "Activity", text: "Live play-by-play of decisions. On-chain rows link to Solscan.", icon: "zap", tone: "accent" },
           { title: "Errors", text: "Broken stuff with copy/paste for bug reports.", icon: "alert", tone: "danger" },
           { title: "Research", text: "People we studied — not trade signals.", icon: "book", tone: "fg" },
           { title: "Wiki", text: "This guided tour.", icon: "bot", tone: "ok" },

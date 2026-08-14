@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import { Clock } from "lucide-react";
+import { Clock, ExternalLink } from "lucide-react";
 import { TokenSymbol } from "@/components/TokenSymbol";
 import { cn, fmtSol, shortTime, timeAgo } from "@/lib/utils";
 import type { FeedItem } from "@/lib/activityFeed";
 import { Icon, eventGateIcon, feedKindIcon } from "@/lib/icons";
+
+const SOLSCAN_TX = "https://solscan.io/tx/";
 
 function toneClass(tone: FeedItem["tone"]) {
   return tone === "ok" ? "text-ok"
@@ -54,6 +56,7 @@ export function ActivityFeedList({
         const tone = toneClass(it.tone);
         const sz = dense ? 11 : 12;
         const sol = it.sol;
+        const txHref = it.txSig ? `${SOLSCAN_TX}${it.txSig}` : null;
         return (
           <li
             key={`${it.at}-${it.kind}-${it.symbol}-${i}`}
@@ -91,6 +94,19 @@ export function ActivityFeedList({
                 <span className={cn(dense ? "text-[12px]" : "text-[13px]", tone === "text-muted" ? "text-fg" : tone)}>
                   {it.label}
                 </span>
+                {txHref ? (
+                  <a
+                    href={txHref}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Open on Solscan"
+                    className="inline-flex items-center gap-0.5 text-[10px] tracking-wider text-accent no-underline hover:text-hover"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    tx
+                    <Icon icon={ExternalLink} size={9} className="opacity-70" />
+                  </a>
+                ) : null}
               </div>
               {it.detail && (
                 <div className="truncate text-[11px] text-muted">{it.detail}</div>
@@ -108,9 +124,6 @@ export function ActivityFeedList({
                 {fmtSol(sol, 3)}
               </span>
             )}
-            <span className={cn("mt-0.5 shrink-0", tone)} title={it.kind}>
-              <Icon icon={feedKindIcon[it.kind]} size={sz} />
-            </span>
           </li>
         );
       })}
