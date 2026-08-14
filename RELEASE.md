@@ -82,7 +82,7 @@ Merge `main` back into `develop` (see above) so the next dev cycle starts from t
 
 ## Version visibility
 
-The dashboard build pill reads **`package.json` version** + git describe from the running checkout — after a release, operators see the new semver on `main`.
+The dashboard build pill reads **`package.json` version**, the deploy **branch** (`DEPLOY_BRANCH`), and git describe from the running checkout — after a release, operators see the new semver on `main`.
 
 ## Recommended GitHub settings
 

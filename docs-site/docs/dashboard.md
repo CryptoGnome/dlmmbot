@@ -33,7 +33,7 @@ Create a fresh wallet or import a burner. Never your main wallet.
 | **WS** | This browser page's live websocket feed. |
 | **PAPER / LIVE** | Current mode. |
 | **BRAKE** | Appears when the cluster brake has paused new entries. |
-| **Build pill + Auto switch** | Are you current with GitHub? The Auto on/off switch beside it chooses auto-pull vs Approve-on-Changes. |
+| **Build pill + Auto switch** | Shows release version, deploy branch, SHA, and sync (CURRENT / BEHIND / …). The Auto on/off switch beside it chooses auto-pull vs Approve-on-Changes. |
 | **Host / wallet chip** | Which machine, and the wallet when known. |
 
 ## The tabs

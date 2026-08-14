@@ -500,7 +500,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           "ON/OFF = soft pause (no trades; positions stay open). HALT = emergency close-all (confirm with dash token).",
           "HB = farmer alive? Shows seconds since the last finished tick (green = ok, red = stuck/missing). Not a wall clock. WS = this page’s live websocket feed.",
           "PAPER / LIVE = mode. BRAKE appears when the cluster brake paused entries.",
-          "Build pill = are we current with GitHub? Auto on/off switch sits next to it (host pulls vs Changes → Approve).",
+          "Build pill = release version + deploy branch + git SHA + sync (CURRENT / BEHIND / …). Auto on/off switch sits next to it (host pulls vs Changes → Approve).",
           "Host name (and wallet chip when known) sit on the right.",
         ],
       },

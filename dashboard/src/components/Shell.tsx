@@ -57,7 +57,9 @@ function BuildPill({ build, onOpenChanges }: {
           : sync === "behind" ? "BEHIND"
             : sync === "ahead" ? "AHEAD"
               : sync === "diverged" ? "DIVERGED" : "GIT?";
+  const branch = build.branch || "main";
   const tip = [
+    `v${build.version ?? "?"} · ${branch}`,
     build.message ? `"${build.message}"` : null,
     `disk ${build.describe ?? build.head ?? "—"}`,
     build.running && build.running !== build.describe ? `running ${build.running}` : null,
@@ -75,7 +77,6 @@ function BuildPill({ build, onOpenChanges }: {
       : syncTone === "warn" ? "border-warn/70 text-warn"
         : syncTone === "accent" ? "border-accent/70 text-accent"
           : "border-grid text-muted";
-  const branch = build.branch || "main";
   const href = build.commits_url
     ?? (build.repo_url
       ? `${build.repo_url.replace(/\/$/, "")}/commits/${encodeURIComponent(branch)}`
@@ -86,7 +87,7 @@ function BuildPill({ build, onOpenChanges }: {
   const body = (
     <>
       <GithubMark size={11} />
-      v{build.version ?? "?"} {build.describe ?? build.head ?? "—"} · {syncLabel}
+      v{build.version ?? "?"} · {branch} · {build.describe ?? build.head ?? "—"} · {syncLabel}
       {sync === "behind" && build.origin ? ` → ${build.origin}` : ""}
       {sync === "behind" && build.behind_count ? ` (+${build.behind_count})` : ""}
     </>
