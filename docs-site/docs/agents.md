@@ -61,7 +61,7 @@ Canonical steps: [Easy setup](./easy). Summary:
 1. **Railway** — [railway.com?referralCode=SCj9lN](https://railway.com?referralCode=SCj9lN) → New Project → Deploy from GitHub → `CryptoGnome/dlmmbot` (or their fork). One service. Build/start come from `railway.toml`.
 2. **Volume** — mount `/app/data`. Redeploy once after attaching.
 3. **Domain** — Networking → Generate domain.
-4. **Dash token** — from deploy logs (`[railway] generated DASH_TOKEN=…`) or a Railway variable. Open `https://<domain>/?token=…`. Persist `DASH_TOKEN` as a Railway variable so it does not rotate.
+4. **Dash token** — set a strong `DASH_TOKEN` Railway variable (≥24 random chars; `node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"`). Open `https://<domain>/?token=…`. Do not copy tokens from deploy logs (only a prefix is printed).
 5. **Wizard** — human accepts Terms, pastes RPC + Jupiter (+ optional GMGN), creates/imports an encrypted **burner**, stays on **paper**.
 
 ### Secrets the human must create

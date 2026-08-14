@@ -66,6 +66,8 @@ try {
 const dist = resolve(root, "dashboard/dist");
 const port = Number(process.env.PORT ?? process.env.DASH_PORT ?? 8787);
 const token = process.env.DASH_TOKEN ?? "";
+/** Reject guessable tokens — Railway auto-gen is 48 hex chars; operators should set ≥24. */
+const MIN_DASH_TOKEN_LEN = 24;
 const WATCH_MS = Number(process.env.DASH_WS_WATCH_MS ?? 3_000);
 const HIST_MS = Number(process.env.DASH_WS_HIST_MS ?? 30_000);
 
@@ -833,6 +835,13 @@ setInterval(() => {
 
 if (!token) {
   console.error("[dash] FATAL: DASH_TOKEN env is required");
+  process.exit(1);
+}
+if (token.length < MIN_DASH_TOKEN_LEN) {
+  console.error(
+    `[dash] FATAL: DASH_TOKEN is too short (${token.length} chars; need ≥${MIN_DASH_TOKEN_LEN}). `
+    + "Generate one with: node -e \"console.log(require('crypto').randomBytes(24).toString('hex'))\"",
+  );
   process.exit(1);
 }
 

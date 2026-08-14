@@ -20,7 +20,7 @@ Live window onto the farmer: ledger, settings, wizard, encrypted wallet. On Rail
 When RPC and wallet are missing, first login walks through:
 
 1. **Terms & risk waiver** — scroll and accept [Terms](./terms) (required; also shown to existing installs that have not accepted yet).
-2. **Dash token** — Railway logs (`generated DASH_TOKEN=…`) or your `DASH_TOKEN` env var.
+2. **Dash token** — Railway variable `DASH_TOKEN` (≥24 random chars). Not the truncated prefix in deploy logs.
 3. **RPC & APIs** — Helius mainnet URL, Jupiter key, optional GMGN.
 4. **Wallet** — create a keypair or import a Phantom base58 key. Encrypted with a passphrase (AES-256-GCM) as `wallet.enc.json` on your volume. Password retype + one-time backup.
 5. **Paper or live** — live still needs the [double lock](./risk#paper-first-the-promotion-gate).

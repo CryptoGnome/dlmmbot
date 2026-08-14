@@ -1,6 +1,7 @@
 # Optional manual redeploy for dlmmbot.com → Cloudflare Pages.
-# Normal path: Cloudflare Git integration runs `npm run docs:build` on every
-# master push (see DEPLOY.md → Site). Use this only to force a redeploy.
+# Normal path: Cloudflare Git integration builds from `main` (see DEPLOY.md → Site).
+# This workflow is optional — it needs repo secrets CLOUDFLARE_API_TOKEN +
+# CLOUDFLARE_ACCOUNT_ID. Without them, skip it; Git-connected Pages is enough.
 
 name: Deploy site
 

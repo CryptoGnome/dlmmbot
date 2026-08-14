@@ -16,7 +16,7 @@ Operators who want paper trading first, then a burner wallet for live. Not custo
 
 ## Deploy paths
 
-1. Easy — Railway: deploy the repo template/service, attach a persistent volume at `/app/data`, generate a public domain, open `?token=` (DASH_TOKEN from logs or Railway variables). `railway.toml` builds the dashboard and runs farmer + dash together. Default mode is paper.
+1. Easy — Railway: deploy the repo template/service, attach a persistent volume at `/app/data`, generate a public domain, set `DASH_TOKEN` as a Railway variable (≥24 random chars), open `?token=…`. `railway.toml` builds the dashboard and runs farmer + dash together. Default mode is paper.
 2. Advanced — local, VPS, or PM2: see https://dlmmbot.com/setup/advanced
 
 ## First-run dashboard

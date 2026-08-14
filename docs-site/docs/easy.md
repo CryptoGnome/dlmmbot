@@ -19,7 +19,14 @@ One service. Attach a volume, open the URL, finish secrets in the dashboard.
 
 Railway → **New Project → Deploy from GitHub** → `CryptoGnome/dlmmbot` (or your fork). One service is enough — start/build come from `railway.toml`.
 
-Boot defaults: paper mode, public `PORT`, volume-backed `config.toml` / `.env`, and a generated `DASH_TOKEN` in the logs if you didn’t set one.
+Boot defaults: paper mode, public `PORT`, volume-backed `config.toml` / `.env`.
+
+Set a strong dash token **before** you open the site (do not use a short password):
+
+1. Generate one: `node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"`
+2. Railway → Variables → `DASH_TOKEN` = that value → Redeploy
+
+If you skip this, the bot still generates a token onto the volume (logs only show the first 8 characters on purpose — deploy logs get screenshotted). You would then need shell access to `/app/data/.env` to read it. Setting the Railway variable is the safe path.
 
 ### 2. Volume at `/app/data`
 
@@ -31,7 +38,7 @@ Service → **Volumes** → Add → mount `/app/data`. Keeps SQLite, Settings, a
 
 ## Open the dashboard
 
-Open the domain. If `DASH_TOKEN` isn’t a Railway variable yet, copy `[railway] generated DASH_TOKEN=…` from **Deploy logs** and paste it at the login prompt. Then save it as a Railway variable so it doesn’t rotate.
+Open the domain. Log in with the `DASH_TOKEN` you set as a Railway variable (`?token=…` or the login box).
 
 ## Finish in Settings
 
@@ -105,6 +112,6 @@ Hobby (~$5) plus usage after trial credits — a volume needs a paid tier. Own h
 | Symptom | Fix |
 | --- | --- |
 | Native module build fail | Node 20; check `better-sqlite3` logs |
-| Dash unauthorized | Token from logs, or Railway `DASH_TOKEN` |
+| Dash unauthorized | Confirm Railway `DASH_TOKEN` matches what you paste / `?token=` |
 | History / Settings wiped | Volume at `/app/data`, then redeploy |
 | Healthcheck failing | Wait for first build; path is `/health` |

@@ -102,7 +102,7 @@ npm run dash:build && npm run dash
 ## Local dashboard
 
 ```bash
-DASH_TOKEN=pick-a-long-random-password
+DASH_TOKEN=   # ≥24 random chars — e.g. node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"
 DASH_PORT=8787
 # optional: bind loopback only (default 0.0.0.0)
 DASH_HOST=127.0.0.1

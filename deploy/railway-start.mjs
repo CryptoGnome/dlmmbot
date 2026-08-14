@@ -40,16 +40,21 @@ const port = process.env.PORT || process.env.DASH_PORT || "8787";
 process.env.DASH_PORT = String(port);
 
 if (!process.env.DASH_TOKEN) {
-  const token = randomBytes(24).toString("hex");
+  // 32 bytes → 64 hex chars. Full value is written to the volume .env — never
+  // printed whole (deploy logs get screenshotted). Prefer setting DASH_TOKEN as
+  // a Railway variable so the same token survives and you never need logs.
+  const token = randomBytes(32).toString("hex");
   process.env.DASH_TOKEN = token;
   const line = `DASH_TOKEN=${token}\n`;
   try {
     writeFileSync(envPath, existsSync(envPath) ? `${readFileSync(envPath, "utf8").replace(/\s*$/, "")}\n${line}` : line);
   } catch { /* */ }
-  // Never print the full token — Railway logs are often shared/screenshotted.
-  console.log(`[railway] generated DASH_TOKEN=${token.slice(0, 8)}… (full value in the DASH_TOKEN env var / ${envPath})`);
-  console.log("[railway] open the public URL with ?token=… or paste the token in the login box");
-  console.log("[railway] tip: set DASH_TOKEN as a Railway variable to keep the same token forever");
+  console.log(`[railway] generated DASH_TOKEN=${token.slice(0, 8)}… (full value only in ${envPath} on the volume)`);
+  console.log("[railway] set DASH_TOKEN as a Railway variable (same value) so login works and the token never rotates");
+  console.log("[railway] generate offline: node -e \"console.log(require('crypto').randomBytes(24).toString('hex'))\"");
+} else if (process.env.DASH_TOKEN.length < 24) {
+  console.error(`[railway] FATAL: DASH_TOKEN is too short (${process.env.DASH_TOKEN.length} chars; need ≥24)`);
+  process.exit(1);
 }
 
 const volume = process.env.RAILWAY_VOLUME_MOUNT_PATH;
