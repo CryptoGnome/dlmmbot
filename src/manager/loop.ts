@@ -678,7 +678,14 @@ export async function managePositions(exec: Executor): Promise<void> {
       }
 
       // --- P4 IN RANGE: claim / compound + profit lock ---
-      if (mark.unclaimedFeesSol >= pm.claim_min_sol) {
+      const lastClaimTs = ((getDb().prepare(
+        "SELECT MAX(ts) AS t FROM events WHERE position_id = ? AND type = 'claim'"
+      ).get(pos.id) as { t: number | null }).t) ?? pos.entryTs;
+      if (shouldClaimFees(mark.unclaimedFeesSol, now() - lastClaimTs, {
+        claim_min_sol: pm.claim_min_sol,
+        claim_min_txcost_mult: m.claim_min_txcost_mult,
+        claim_interval_h: m.claim_interval_h,
+      })) {
         if (sleeve === "majors" && config().majors.fee_compound && exec.mode === "paper") {
           getDb().prepare("UPDATE positions SET entry_sol = entry_sol + ?, fees_claimed_sol = fees_claimed_sol + ? WHERE id = ?")
             .run(mark.unclaimedFeesSol, mark.unclaimedFeesSol, pos.id);
@@ -726,6 +733,28 @@ export async function managePositions(exec: Executor): Promise<void> {
 /** Remaining sleep so short ticks keep poll cadence; long ticks never stack extra delay. */
 export function pollSleepMs(elapsedMs: number, pollMs: number): number {
   return Math.max(0, pollMs - elapsedMs);
+}
+
+/** Estimated cost of one claim round-trip (claim tx + swap-to-SOL leg). */
+export const CLAIM_EST_TX_COST_SOL = 0.001;
+
+/**
+ * P4 claim decision (STRATEGY §4 P4). Two ways in:
+ *   1. fees cleared the headline floor (claim_min_sol), or
+ *   2. fees would pay at least claim_min_txcost_mult× the tx cost AND the
+ *      position hasn't claimed for claim_interval_h — sub-floor fees shouldn't
+ *      sit at pool risk for hours; bank them once the trip pays for itself.
+ * Both interval knobs existed in config since launch but were never read.
+ */
+export function shouldClaimFees(
+  unclaimedSol: number,
+  lastClaimAgoS: number,
+  m: { claim_min_sol: number; claim_min_txcost_mult?: number; claim_interval_h?: number },
+): boolean {
+  if (unclaimedSol >= m.claim_min_sol) return true;
+  const costFloorSol = (m.claim_min_txcost_mult ?? 20) * CLAIM_EST_TX_COST_SOL;
+  const intervalS = (m.claim_interval_h ?? 4) * 3600;
+  return unclaimedSol >= costFloorSol && lastClaimAgoS >= intervalS;
 }
 
 /**

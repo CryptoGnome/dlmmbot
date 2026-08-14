@@ -9,6 +9,40 @@ import { feeMomentumPart, opportunityScore, structurePart, timingPart, turnoverP
 
 // STRATEGY.md §1 — sweep → dedupe copycats → best pool per token → gates → score.
 
+/**
+ * Copycat cooldown (§1.2): mints that LOST a symbol dedupe are ignored for
+ * scanner.copycat_ignore_h, so the "canonical" token for a symbol can't flip
+ * sweep-to-sweep as 24h volumes wobble. In-memory on purpose — a restart
+ * re-judging from fresh volumes is fine; what we're damping is oscillation
+ * within a session. The knob existed since launch but was never read.
+ */
+const copycatIgnoredUntil = new Map<string, number>();
+
+/** Pure winner selection for one symbol group: mint -> 24h vol. Exported for tests. */
+export function pickCopycatWinner(
+  volByMint: Map<string, number>,
+  ignoredUntil: Map<string, number>,
+  nowS: number,
+  ignoreS: number,
+): string | null {
+  const eligible = [...volByMint.entries()]
+    .filter(([mint]) => (ignoredUntil.get(mint) ?? 0) <= nowS)
+    .sort((a, b) => b[1] - a[1]);
+  const winner = eligible[0];
+  if (!winner) return null; // every contender is cooling down — skip the symbol
+  if (volByMint.size > 1) {
+    for (const [mint] of volByMint) {
+      if (mint === winner[0]) continue;
+      // Don't extend an active cooldown: refreshing it every sweep would make
+      // "ignored for copycat_ignore_h" effectively permanent for any loser
+      // that keeps showing up. Expired losers get re-judged and may win.
+      if ((ignoredUntil.get(mint) ?? 0) > nowS) continue;
+      ignoredUntil.set(mint, nowS + ignoreS);
+    }
+  }
+  return winner[0];
+}
+
 export interface ScanResult {
   candidates: Candidate[];   // passed all pool gates, sorted by score desc
   rejected: Candidate[];     // failed gates (kept for the decisions log)
@@ -43,11 +77,15 @@ export async function scan(opts: { withTiming?: boolean } = {}): Promise<ScanRes
     bySymbol.set(sym, list);
   }
   const canonical = new Set<string>();
+  const ignoreS = (config().scanner.copycat_ignore_h ?? 24) * 3600;
+  for (const [mint, until] of copycatIgnoredUntil) {
+    if (until <= ts) copycatIgnoredUntil.delete(mint); // prune expired cooldowns
+  }
   for (const list of bySymbol.values()) {
     const byMint = new Map<string, number>();
     for (const p of list) byMint.set(p.mintX, (byMint.get(p.mintX) ?? 0) + p.vol24hUsd);
-    const winner = [...byMint.entries()].sort((a, b) => b[1] - a[1])[0];
-    if (winner) canonical.add(winner[0]);
+    const winner = pickCopycatWinner(byMint, copycatIgnoredUntil, ts, ignoreS);
+    if (winner) canonical.add(winner);
   }
 
   // Best pool per canonical token = highest 24h fee/TVL.

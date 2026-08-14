@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { managePositions, pollSleepMs, resetManagerStateForTests } from "./loop.js";
+import { CLAIM_EST_TX_COST_SOL, managePositions, pollSleepMs, resetManagerStateForTests, shouldClaimFees } from "./loop.js";
 import { FakeExecutor } from "../test/fakeExecutor.js";
 import { installConfig, restoreConfig } from "../test/config.js";
 import { useMemoryDb, resetTestDb, insertOpenPosition } from "../test/db.js";
@@ -11,6 +11,26 @@ describe("pollSleepMs", () => {
     expect(pollSleepMs(2_000, 15_000)).toBe(13_000);
     expect(pollSleepMs(15_000, 15_000)).toBe(0);
     expect(pollSleepMs(50_000, 15_000)).toBe(0);
+  });
+});
+
+describe("shouldClaimFees (P4)", () => {
+  const m = { claim_min_sol: 0.05, claim_min_txcost_mult: 20, claim_interval_h: 4 };
+
+  it("claims immediately above the headline floor", () => {
+    expect(shouldClaimFees(0.05, 0, m)).toBe(true);
+    expect(shouldClaimFees(0.2, 60, m)).toBe(true);
+  });
+
+  it("claims sub-floor fees once the interval elapses and the trip pays", () => {
+    const fees = 20 * CLAIM_EST_TX_COST_SOL; // exactly the cost floor
+    expect(shouldClaimFees(fees, 4 * 3600, m)).toBe(true);
+    expect(shouldClaimFees(fees, 4 * 3600 - 1, m)).toBe(false); // too soon
+  });
+
+  it("never claims dust that would not pay claim_min_txcost_mult× tx cost", () => {
+    expect(shouldClaimFees(20 * CLAIM_EST_TX_COST_SOL - 1e-9, 24 * 3600, m)).toBe(false);
+    expect(shouldClaimFees(0, 24 * 3600, m)).toBe(false);
   });
 });
 
