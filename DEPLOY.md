@@ -148,3 +148,11 @@ It checks the chain first and refuses if any tracked position account still
 exists, so it cannot be used to write off a live position. `exit_sol` and
 `close_return_sol` are left NULL because the outcome is genuinely unknown; such
 a row contributes 0 to realized PnL rather than a fabricated number.
+
+## Site analytics (Umami)
+
+Marketing + setup docs load Umami via `docs/assets/umami.js` (and
+`docs-site/docs/public/umami.js`, kept in sync). Team/home/VPS public egress
+IPs go in the `BLOCKED` array there so our visits are not tracked. After an ISP
+change, add the new address and push — Cloudflare’s `/cdn-cgi/trace` supplies
+the visitor IP on dlmmbot.com.
