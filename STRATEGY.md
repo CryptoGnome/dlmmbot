@@ -49,7 +49,7 @@ A candidate must pass **every hard gate**. Soft criteria feed the opportunity sc
 | Bin step | ≥ `[80]` for tokens < 7 days old | Wide coverage with fewer bins |
 | Fee collection | `[prefer_quote]` — quote-only (SOL) pools get a score bonus; both-token pools stay eligible | User preference: fees in SOL. Quote-only pools (`collect_fee_mode=1`, ~13% of pools) pay fees pre-converted to SOL — no swap at claim. Both-token pools still bank to SOL via claim-time swap. Hard modes `quote_only`/`both_only` available in config |
 | Quote token | SOL `[required]` | Gmet's accumulate-SOL thesis; stable/USDC pairs out of scope |
-| Pool price vs Jupiter quote divergence | ≤ `[2%]` | The video's oracle-glitch / empty-pool trap |
+| Pool price vs Jupiter quote divergence | ≤ `[2%]` | The video's oracle-glitch / empty-pool trap. Fails **closed**: no usable Jupiter quote → distinct `price_divergence_unavailable` skip, never a pass |
 
 ### 2.2 Token gates (hard) — the vetting engine
 
@@ -62,7 +62,9 @@ Computed fresh at entry time from RPC + RugCheck free API:
 - Creator has **zero** tokens in our DB or RugCheck's `creatorTokens` that rugged. One strike = permanent creator blacklist.
 - RugCheck `score_normalised` < `[41]` (their "Danger" line) — used as a veto only, never as approval.
 - Token age ≥ `[45 min]` (survive the instant-rug window; the video author got burned skipping this) and ≤ `[14 days]` in meme mode.
-- Not on our blacklist (§7).
+- Not on our blacklist (§7) — checked for both the token mint **and** the creator address.
+
+Fail-closed rule: when the engine is blind it fails, it does not pass on the gates it could still see. If both holder-data sources are down (no RugCheck report and no RPC holder resolution) → `holder_data_unavailable`; if no age source exists (RugCheck `detectedAt` and pool `created_at` both missing, and at least one age gate is enabled) → `age_unknown`. These transient fails skip the 24h token blacklist so the token is re-checked next sweep. A blind honeypot/sell-tax source is recorded as a `securityDataUnavailable` soft note (it is a cross-check layer, not the primary gate set).
 
 ### 2.3 Timing filter (soft but scored)
 

@@ -357,6 +357,24 @@ export function blacklist(key: string, kind: "token" | "creator", reason: string
     .run(key, kind, reason, now(), ttlHours ? now() + ttlHours * 3600 : null);
 }
 
+/**
+ * One strike (STRATEGY.md §2.2 / §4 P0): increment the creator's rug_count and
+ * permanently blacklist the creator key. Called by the manager on P0/rug
+ * classification and by anything else that proves a rug. Idempotent-ish: each
+ * call is one more strike; the blacklist entry is permanent either way.
+ */
+export function recordCreatorRug(creator: string, reason = "rugged token (P0)"): void {
+  if (!creator) return;
+  getDb()
+    .prepare(
+      `INSERT INTO creators (address, tokens_launched, rug_count, first_seen)
+       VALUES (?, 0, 1, ?)
+       ON CONFLICT(address) DO UPDATE SET rug_count = rug_count + 1`
+    )
+    .run(creator, now());
+  blacklist(creator, "creator", reason); // no TTL = permanent
+}
+
 export function recordDecision(
   mint: string,
   pool: string | null,
