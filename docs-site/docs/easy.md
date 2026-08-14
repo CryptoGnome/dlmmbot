@@ -157,3 +157,4 @@ Hobby (~$5) plus usage after trial credits — a volume needs a paid tier. Own h
 | Dash unauthorized | Confirm Railway `DASH_TOKEN` matches what you paste / `?token=` |
 | History / Settings wiped | Project canvas → **`+ Add`** → **Volume** → attach to service → mount **`/app/data`**, then redeploy (logs must show `volume mount=`) |
 | Healthcheck failing | Wait for first build; path is `/health` |
+| “Deploy Crashed” email on every update | Normal redeploy stops the old container with SIGTERM — not a real crash. Recent builds exit `0` on that signal. Optional: Variables → `RAILWAY_DEPLOYMENT_DRAINING_SECONDS`=`5` so Railway waits for a clean exit before SIGKILL. |
