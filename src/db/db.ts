@@ -96,13 +96,14 @@ CREATE TABLE IF NOT EXISTS decisions (
 CREATE INDEX IF NOT EXISTS idx_decisions_mint ON decisions(mint, ts);
 
 CREATE TABLE IF NOT EXISTS pnl_daily (
-  day TEXT PRIMARY KEY,             -- YYYY-MM-DD (UTC)
+  day TEXT NOT NULL,                -- YYYY-MM-DD (UTC)
   mode TEXT NOT NULL,
   realized_sol REAL NOT NULL DEFAULT 0,
   unrealized_sol REAL NOT NULL DEFAULT 0,
   fees_sol REAL NOT NULL DEFAULT 0,
   costs_sol REAL NOT NULL DEFAULT 0,  -- rent + gas
-  sol_usd REAL
+  sol_usd REAL,
+  PRIMARY KEY (day, mode)           -- day-only key let a mid-day mode flip clobber the paper promotion row
 );
 
 CREATE TABLE IF NOT EXISTS blacklist (
@@ -235,6 +236,26 @@ function migrate(database: Database.Database): void {
   try {
     database.exec("ALTER TABLE positions ADD COLUMN withdrawn_sol REAL NOT NULL DEFAULT 0");
   } catch { /* column already exists */ }
+  // pnl_daily: day-only PK → (day, mode). A paper→live flip mid-day used to
+  // overwrite the day's paper row, deleting it from the promotion scoreboard.
+  {
+    const pk = (database.prepare(
+      "SELECT name FROM pragma_table_info('pnl_daily') WHERE pk > 0 ORDER BY pk"
+    ).all() as Array<{ name: string }>).map((r) => r.name);
+    if (pk.length === 1 && pk[0] === "day") {
+      database.exec(`
+        CREATE TABLE pnl_daily_migrated (
+          day TEXT NOT NULL, mode TEXT NOT NULL,
+          realized_sol REAL NOT NULL DEFAULT 0, unrealized_sol REAL NOT NULL DEFAULT 0,
+          fees_sol REAL NOT NULL DEFAULT 0, costs_sol REAL NOT NULL DEFAULT 0, sol_usd REAL,
+          PRIMARY KEY (day, mode)
+        );
+        INSERT INTO pnl_daily_migrated SELECT day, mode, realized_sol, unrealized_sol, fees_sol, costs_sol, sol_usd FROM pnl_daily;
+        DROP TABLE pnl_daily;
+        ALTER TABLE pnl_daily_migrated RENAME TO pnl_daily;
+      `);
+    }
+  }
   database.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
   try { database.exec("ALTER TABLE tokens ADD COLUMN name TEXT"); } catch { /* */ }
   try { database.exec("ALTER TABLE tokens ADD COLUMN icon_url TEXT"); } catch { /* */ }
@@ -369,11 +390,22 @@ export function isBlacklisted(key: string): string | null {
 }
 
 export function blacklist(key: string, kind: "token" | "creator", reason: string, ttlHours?: number): void {
+  // Never shorten an existing entry: a P0 rug flag is permanent, and the same
+  // token's still-open tranche exiting P1/P5 later used to INSERT OR REPLACE
+  // it down to a 24h cooldown — making a rugged token re-enterable next day.
+  const existing = getDb().prepare("SELECT expires_ts FROM blacklist WHERE key = ?").get(key) as
+    | { expires_ts: number | null }
+    | undefined;
+  const newExpiry = ttlHours ? now() + ttlHours * 3600 : null;
+  if (existing) {
+    if (existing.expires_ts === null) return; // already permanent
+    if (newExpiry !== null && newExpiry <= existing.expires_ts) return; // no downgrade
+  }
   getDb()
     .prepare(
       "INSERT OR REPLACE INTO blacklist (key, kind, reason, created_ts, expires_ts) VALUES (?, ?, ?, ?, ?)"
     )
-    .run(key, kind, reason, now(), ttlHours ? now() + ttlHours * 3600 : null);
+    .run(key, kind, reason, now(), newExpiry);
 }
 
 export function recordDecision(
