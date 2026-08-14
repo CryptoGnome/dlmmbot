@@ -174,6 +174,26 @@ export function dismissErrors(root, opts = {}) {
   }
 }
 
+/**
+ * Permanently delete error_log rows (reclaims space over time; use after dismiss
+ * or when the operator wants a clean slate).
+ * @param {string} root
+ * @param {{ all?: boolean, dismissedOnly?: boolean }} opts
+ */
+export function clearErrorLog(root, opts = {}) {
+  const db = openWritable(root);
+  try {
+    if (opts.dismissedOnly) {
+      return db.prepare(
+        `DELETE FROM error_log WHERE COALESCE(dismissed, 0) = 1`,
+      ).run().changes;
+    }
+    return db.prepare(`DELETE FROM error_log`).run().changes;
+  } finally {
+    db.close();
+  }
+}
+
 export function insertError(root, input) {
   const level = input.level ?? "error";
   const message = String(input.message || "unknown").slice(0, 800);
