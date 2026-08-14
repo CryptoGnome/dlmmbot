@@ -2,6 +2,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+// @ts-expect-error deploy/*.mjs sits outside src rootDir — no ambient types
 import { resolveBotMode } from "../../deploy/lib/bot-mode.mjs";
 
 describe("resolveBotMode", () => {
