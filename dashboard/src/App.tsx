@@ -189,7 +189,17 @@ export default function App() {
         {tab === "wiki" && <WikiPage />}
         {tab === "changes" && <ChangelogPage watch={watch} />}
         {tab === "settings" && (
-          <Suspense fallback={<LoadingState label="Loading settings…" />}>
+          <Suspense
+            fallback={
+              <LoadingState
+                label="Loading settings…"
+                steps={[
+                  "Downloading Settings page…",
+                  "First open can take a few seconds — not stuck",
+                ]}
+              />
+            }
+          >
             <SettingsPage />
           </Suspense>
         )}

@@ -29,15 +29,23 @@ export function LoadingState({
   label = "Loading…",
   className,
   compact = false,
+  steps,
+  elapsedSec,
 }: {
   label?: string;
   className?: string;
   /** Smaller inline block (panels) vs page-sized */
   compact?: boolean;
+  /** Live progress lines (newest last) — proves the page is not stuck */
+  steps?: string[];
+  /** Optional elapsed seconds shown next to the label */
+  elapsedSec?: number;
 }) {
+  const recent = steps?.length ? steps.slice(-8) : null;
   return (
     <div
       role="status"
+      aria-live="polite"
       className={cn(
         "flex flex-col items-center justify-center gap-2.5 text-dim",
         compact ? "min-h-[5rem] py-5" : "min-h-[12rem] border border-grid bg-panel py-12",
@@ -45,7 +53,29 @@ export function LoadingState({
       )}
     >
       <Spinner size={compact ? 18 : 24} label={label} />
-      <span className="text-[11px] tracking-[0.14em] uppercase">{label}</span>
+      <span className="text-[11px] tracking-[0.14em] uppercase">
+        {label}
+        {elapsedSec != null && elapsedSec > 0 ? (
+          <span className="ml-2 tabular-nums tracking-normal text-muted normal-case">
+            {elapsedSec}s
+          </span>
+        ) : null}
+      </span>
+      {recent && recent.length > 0 && (
+        <div className="mt-1 w-full max-w-md border border-grid/80 bg-bg/40 px-3 py-2 text-left">
+          <div className="mb-1 text-[9px] tracking-[0.16em] text-muted uppercase">Status</div>
+          <ul className="max-h-36 space-y-0.5 overflow-y-auto font-mono text-[10px] leading-snug text-dim">
+            {recent.map((line, i) => (
+              <li
+                key={`${i}-${line.slice(0, 24)}`}
+                className={i === recent.length - 1 ? "text-fg" : undefined}
+              >
+                <span className="text-muted">›</span> {line}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

@@ -508,7 +508,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           { title: "Research", text: "People we studied — not trade signals.", icon: "book" },
           { title: "Wiki", text: "This guided tour.", icon: "bot" },
           { title: "Changes", text: "Pending Git updates + Approve if auto-update is off.", icon: "refresh" },
-          { title: "Settings", text: "Knobs + Profiles (official / local / community) + wallet vault. See Wiki → Settings profiles.", icon: "lock" },
+          { title: "Settings", text: "Knobs + Profiles (official / local / community) + wallet vault. Slow first open shows a live Load status log so you know it isn’t stuck. See Wiki → Settings profiles.", icon: "lock" },
         ],
       },
       {
