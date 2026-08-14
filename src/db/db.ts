@@ -232,6 +232,9 @@ function migrate(database: Database.Database): void {
   try {
     database.exec("ALTER TABLE positions ADD COLUMN follow_chain_id INTEGER");
   } catch { /* column already exists */ }
+  try {
+    database.exec("ALTER TABLE positions ADD COLUMN withdrawn_sol REAL NOT NULL DEFAULT 0");
+  } catch { /* column already exists */ }
   database.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
   try { database.exec("ALTER TABLE tokens ADD COLUMN name TEXT"); } catch { /* */ }
   try { database.exec("ALTER TABLE tokens ADD COLUMN icon_url TEXT"); } catch { /* */ }
@@ -272,6 +275,7 @@ CREATE INDEX IF NOT EXISTS idx_error_log_ts ON error_log(ts DESC);
   const required = [
     "ever_in_range", "open_cost_sol", "close_return_sol", "fell_deep",
     "fees_measured_sol", "recovered_sol", "fees_at_close_sol", "follow_chain_id",
+    "withdrawn_sol",
   ];
   const missing = required.filter((c) => !cols.has(c));
   if (missing.length)
@@ -314,26 +318,41 @@ export function now(): number {
  * be three: `npm run status`, the daily rollup and the circuit breaker each
  * carried their own SUM and returned 0.1323 / 0.2303 / 0.2303 for the same book.
  *
- *   1. measured wallet delta where we have it — the truth,
- *   2. the old notional mark for rows closed before those columns existed,
- *   3. zero for adopted rows (entry_sol = 0, no cost basis), which would
- *      otherwise report exit_sol as pure profit and mask a real loss.
+ *   1. measured wallet delta where we have it — the truth. Requires a cost
+ *      basis: adopted rows (entry_sol = 0, open_cost_sol NULL) fall through,
+ *      otherwise close proceeds would read as pure profit and mask real losses.
+ *   2. the old notional mark for rows closed before those columns existed.
+ *      Requires exit_sol: force-closed / reconcile-orphaned rows have no exit
+ *      value at all, and treating them as exit 0 fabricated a −entry_sol loss
+ *      (a crash mid-close could trip the circuit breaker on a position that
+ *      lost nothing).
+ *   3. NULL — "unknown", skipped by SUM — for rows with no usable exit or
+ *      basis. Consumers dividing by entry_sol must also filter the NULLs.
+ *
+ * withdrawn_sol: profit-lock withdrawals land in the wallet mid-position and
+ * are part of realized PnL; without the term a locked winner closing at 70% of
+ * basis read as a loss. Safe to add because open_cost_sol is written at open
+ * by BOTH executors and never shrunk (entry_sol is, so it must not be the
+ * basis for measured rows).
  *
  * Lives in db.ts so every consumer can import it without an import cycle.
  */
 export const REALIZED_PNL_SQL = `
   CASE WHEN close_return_sol IS NOT NULL
+        AND (open_cost_sol IS NOT NULL OR entry_sol > 0)
        THEN close_return_sol
             + COALESCE(fees_measured_sol, 0)
+            + COALESCE(withdrawn_sol, 0)
             + COALESCE(recovered_sol, 0)
             - COALESCE(open_cost_sol, entry_sol + COALESCE(rent_paid_sol, 0))
-       WHEN entry_sol > 0
-       THEN COALESCE(exit_sol, 0) - entry_sol
+       WHEN entry_sol > 0 AND exit_sol IS NOT NULL
+       THEN exit_sol - entry_sol
             + CASE WHEN COALESCE(fees_measured_sol, 0) > 0
                    THEN fees_measured_sol
                    ELSE COALESCE(fees_claimed_sol, 0) END
+            + COALESCE(withdrawn_sol, 0)
             + COALESCE(recovered_sol, 0)
-       ELSE 0 END`;
+       ELSE NULL END`;
 
 // ---- blacklist helpers (STRATEGY.md §6) ----
 

@@ -116,6 +116,32 @@ describe("circuitBreakerTripped", () => {
     expect(circuitBreakerTripped(10)).toBe(true); // -1 > 5% of 10
     expect(circuitBreakerTripped(30)).toBe(false);
   });
+
+  it("ignores losses from the other mode (shared promotion-flow DB)", () => {
+    // Test process runs paper; a live loss must not trip the paper breaker.
+    insertClosedPosition({
+      entrySol: 1,
+      exitSol: 0,
+      openCostSol: 1,
+      closeReturnSol: 0,
+      exitTs: now() - 60,
+      mode: "live",
+    });
+    expect(circuitBreakerTripped(10)).toBe(false);
+  });
+
+  it("ignores unknown-outcome rows (NULL realized PnL)", () => {
+    // Force-close / reconcile-orphan rows: exit values unknown, not a loss.
+    insertClosedPosition({
+      entrySol: 1,
+      exitSol: null,
+      exitReason: "manual",
+      openCostSol: null,
+      closeReturnSol: null,
+      exitTs: now() - 60,
+    });
+    expect(circuitBreakerTripped(10)).toBe(false);
+  });
 });
 
 describe("kellyStats + positionSize", () => {

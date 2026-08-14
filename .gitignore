@@ -8,3 +8,4 @@ coverage/
 HALT
 PAUSE
 secrets/
+.claude/
