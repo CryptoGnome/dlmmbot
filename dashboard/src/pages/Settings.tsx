@@ -839,7 +839,7 @@ export function SettingsPage() {
                       className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(13rem,0.85fr)_1.35fr]"
                     >
                       {renderField(row.gate)}
-                      <div className="grid min-w-0 grid-cols-1 gap-2">
+                      <div className="grid h-full min-w-0 grid-cols-1 gap-2">
                         {row.knobs.map(renderField)}
                       </div>
                     </div>
