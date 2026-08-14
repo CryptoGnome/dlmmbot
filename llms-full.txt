@@ -70,6 +70,14 @@ On each **live** winning close, **1% of measured net profit** (wallet open cost 
 - Docs hub: https://dlmmbot.com/setup/
 - Easy: https://dlmmbot.com/setup/easy
 - Advanced: https://dlmmbot.com/setup/advanced
+- Profiles: https://dlmmbot.com/setup/profiles
+- How it works: https://dlmmbot.com/setup/how-it-works
+- Strategy reference: https://dlmmbot.com/setup/strategy
+- Risk & sizing: https://dlmmbot.com/setup/risk
+- Configuration reference: https://dlmmbot.com/setup/configuration
+- Dashboard guide: https://dlmmbot.com/setup/dashboard
+- CLI reference: https://dlmmbot.com/setup/cli
+- FAQ: https://dlmmbot.com/setup/faq
 - Short LLM map: https://dlmmbot.com/llms.txt
 - Railway referral: https://railway.com?referralCode=SCj9lN
 

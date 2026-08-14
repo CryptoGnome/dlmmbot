@@ -19,6 +19,14 @@ export default defineConfig({
       },
     ],
     ["meta", { name: "theme-color", content: "#0D0D0D" }],
+    [
+      "script",
+      {
+        defer: "",
+        src: "https://cloud.umami.is/script.js",
+        "data-website-id": "3499aa8b-8f9b-4993-8bd5-6b660bebaff6",
+      },
+    ],
   ],
   themeConfig: {
     logo: undefined,
@@ -26,9 +34,9 @@ export default defineConfig({
     nav: [
       { text: "Home", link: "https://dlmmbot.com/" },
       { text: "Easy (Railway)", link: "/easy" },
-      { text: "Advanced", link: "/advanced" },
-      { text: "Profiles", link: "/profiles" },
-      { text: "Strategy", link: "https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md" },
+      { text: "How it works", link: "/how-it-works" },
+      { text: "Strategy", link: "/strategy" },
+      { text: "FAQ", link: "/faq" },
       { text: "GitHub", link: "https://github.com/CryptoGnome/dlmmbot" },
     ],
     sidebar: [
@@ -38,19 +46,26 @@ export default defineConfig({
           { text: "Choose a path", link: "/" },
           { text: "Easy — Railway", link: "/easy" },
           { text: "Advanced — local / VPS", link: "/advanced" },
+          { text: "Settings profiles", link: "/profiles" },
         ],
       },
       {
-        text: "Operate",
+        text: "Understanding the bot",
         items: [
-          { text: "Settings profiles", link: "/profiles" },
+          { text: "How it works", link: "/how-it-works" },
+          { text: "Strategy reference", link: "/strategy" },
+          { text: "Risk & sizing", link: "/risk" },
         ],
       },
       {
         text: "Reference",
         items: [
-          { text: "STRATEGY.md", link: "https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md" },
-          { text: "DEPLOY.md", link: "https://github.com/CryptoGnome/dlmmbot/blob/master/DEPLOY.md" },
+          { text: "Configuration", link: "/configuration" },
+          { text: "Dashboard guide", link: "/dashboard" },
+          { text: "CLI", link: "/cli" },
+          { text: "FAQ", link: "/faq" },
+          { text: "STRATEGY.md (repo)", link: "https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md" },
+          { text: "DEPLOY.md (repo)", link: "https://github.com/CryptoGnome/dlmmbot/blob/master/DEPLOY.md" },
         ],
       },
     ],
