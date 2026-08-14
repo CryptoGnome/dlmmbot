@@ -1,6 +1,6 @@
 import type { HistorySnap, LiveWatch, RangeKey } from "@/lib/types";
-import { exitLabel, shortTime } from "@/lib/utils";
-import { Panel, RangeTabs } from "@/components/ui";
+import { exitLabel, shortTime, slotsSummary } from "@/lib/utils";
+import { Badge, Panel, RangeTabs } from "@/components/ui";
 import { TokenSymbol } from "@/components/TokenSymbol";
 import { ClosePnlCell, OpenPositionCard } from "@/components/OpenPositionCard";
 
@@ -12,20 +12,26 @@ export function BookPage({
   range: RangeKey;
   onRange: (r: RangeKey) => void;
 }) {
+  const open = watch?.open ?? [];
+  const slots = slotsSummary(open.length, watch?.config?.max_positions);
+
   return (
     <div className="space-y-3">
       <div>
         <h1 className="font-display text-lg font-semibold tracking-wide">Book</h1>
-        <p className="text-[11px] text-dim">Open positions and recent closes.</p>
+        <p className="text-[11px] text-dim">{slots.label}. Recent closes below.</p>
       </div>
 
       <div className="grid gap-3 xl:grid-cols-2">
-        <Panel title="Open positions">
-          {!watch?.open.length ? (
+        <Panel
+          title="Open positions"
+          right={<Badge tone={slots.free === 0 ? "warn" : "ok"}>{slots.short}</Badge>}
+        >
+          {!open.length ? (
             <div className="py-8 text-center text-[12px] tracking-wider text-dim">No open positions</div>
           ) : (
             <div className="space-y-2">
-              {watch.open.map((p) => (
+              {open.map((p) => (
                 <OpenPositionCard key={p.id} p={p} live />
               ))}
             </div>

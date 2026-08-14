@@ -154,3 +154,27 @@ export function clockTime(ms: number | Date | null | undefined): string {
     hour12: true,
   }).format(d);
 }
+
+/** Open book occupancy vs Settings max_positions (tranches count as slots). */
+export function slotsSummary(openN: number, maxPositions: number | boolean | null | undefined): {
+  open: number;
+  max: number | null;
+  free: number | null;
+  /** e.g. "3 of 5 slots · 2 free" */
+  label: string;
+  /** Compact badge e.g. "3/5" */
+  short: string;
+} {
+  const max =
+    typeof maxPositions === "number" && Number.isFinite(maxPositions) && maxPositions > 0
+      ? Math.floor(maxPositions)
+      : null;
+  const free = max != null ? Math.max(0, max - openN) : null;
+  return {
+    open: openN,
+    max,
+    free,
+    label: max != null ? `${openN} of ${max} slots · ${free} free` : `${openN} open`,
+    short: max != null ? `${openN}/${max}` : String(openN),
+  };
+}

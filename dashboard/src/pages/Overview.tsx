@@ -1,5 +1,5 @@
 import type { HistorySnap, LiveWatch, RangeKey } from "@/lib/types";
-import { cn, exitLabel, fmtPct, fmtSol, fmtUsd, shortTime } from "@/lib/utils";
+import { cn, exitLabel, fmtPct, fmtSol, fmtUsd, shortTime, slotsSummary } from "@/lib/utils";
 import { Badge, Panel, RangeTabs } from "@/components/ui";
 import { EquityChart } from "@/components/Charts";
 import { TokenSymbol } from "@/components/TokenSymbol";
@@ -64,6 +64,7 @@ export function OverviewPage({
   const open = watch?.open ?? [];
   const closes = hist?.ladder ?? [];
   const feedPreview = buildActivityFeed(watch, 3);
+  const slots = slotsSummary(open.length, watch?.config?.max_positions);
 
   let openPnl = 0;
   let openEntry = 0;
@@ -98,7 +99,7 @@ export function OverviewPage({
           signal={openPnlKnown ? openPnl : null}
           pct={openPct}
           tone={!openPnlKnown ? "fg" : openPnl >= 0 ? "ok" : "danger"}
-          sub={`${open.length} open`}
+          sub={slots.label}
         />
         <HeroStat
           label="Last 24h profit"
@@ -156,7 +157,7 @@ export function OverviewPage({
       <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-2">
         <Panel
           title="Open positions"
-          right={<Badge tone="ok">{open.length}</Badge>}
+          right={<Badge tone={slots.free === 0 ? "warn" : "ok"}>{slots.short}</Badge>}
           className="min-h-0"
         >
           {!open.length ? (
