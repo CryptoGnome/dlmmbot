@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { getDb, REALIZED_PNL_SQL, logError, upsertTokenMeta } from "./db.js";
+import { getDb, isBlacklisted, REALIZED_PNL_SQL, logError, recordCreatorRug, upsertTokenMeta } from "./db.js";
 import { useMemoryDb, resetTestDb, insertClosedPosition } from "../test/db.js";
 
 function pnlFor(id: number): number | null {
@@ -125,6 +125,21 @@ describe("logError", () => {
     expect(b).toBe(0);
     const n = (getDb().prepare("SELECT COUNT(*) AS n FROM error_log").get() as { n: number }).n;
     expect(n).toBe(1);
+  });
+
+  it("recordCreatorRug increments rug_count and blacklists the creator permanently", () => {
+    recordCreatorRug("CrA", "rugged token (P0)");
+    recordCreatorRug("CrA");
+    const row = getDb().prepare(
+      "SELECT rug_count FROM creators WHERE address = ?",
+    ).get("CrA") as { rug_count: number };
+    expect(row.rug_count).toBe(2);
+    expect(isBlacklisted("CrA")).toBeTruthy();
+    const bl = getDb().prepare(
+      "SELECT kind, expires_ts FROM blacklist WHERE key = ?",
+    ).get("CrA") as { kind: string; expires_ts: number | null };
+    expect(bl.kind).toBe("creator");
+    expect(bl.expires_ts).toBeNull(); // permanent — one strike
   });
 
   it("upserts display metadata without wiping existing fields", () => {

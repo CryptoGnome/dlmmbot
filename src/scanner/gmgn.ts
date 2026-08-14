@@ -148,17 +148,35 @@ export interface GmgnSecurity {
   buyTaxPct: number;
 }
 
-/** Token security cross-check. null = unavailable (no key / API failure) — never blocks vetting. */
+const SECURITY_FIELDS = ["honeypot", "is_honeypot", "can_not_sell", "sell_tax", "buy_tax"];
+
+/** Exported for tests: parse a raw `token security` payload. null = unrecognizable. */
+export function parseTokenSecurity(raw: string): GmgnSecurity | null {
+  const parsed = JSON.parse(raw) as Record<string, unknown>;
+  // Like every other endpoint, --raw wraps the payload in { code, data }.
+  // Unwrap up to two levels (some endpoints nest data.security-style objects).
+  let d = parsed;
+  for (let i = 0; i < 2 && typeof d.data === "object" && d.data !== null; i++) {
+    d = d.data as Record<string, unknown>;
+  }
+  // Fail closed on shape drift: no recognizable security field means we know
+  // NOTHING — never synthesize honeypot=false from a payload we can't read.
+  if (!SECURITY_FIELDS.some((k) => k in d)) return null;
+  return {
+    honeypot: Number(d.honeypot ?? d.is_honeypot ?? 0) === 1 || Number(d.can_not_sell ?? 0) === 1,
+    sellTaxPct: Number(d.sell_tax ?? 0) * 100,
+    buyTaxPct: Number(d.buy_tax ?? 0) * 100,
+  };
+}
+
+/** Token security cross-check. null = unavailable (no key / API failure / unrecognizable payload) — vet.ts records the blind spot. */
 export async function tokenSecurity(mint: string): Promise<GmgnSecurity | null> {
   if (!env().gmgnApiKey) return null;
   try {
-    const raw = await cli(["token", "security", "--chain", "sol", "--address", mint]);
-    const j = JSON.parse(raw) as Record<string, unknown>;
-    return {
-      honeypot: Number(j.honeypot ?? 0) === 1 || Number(j.can_not_sell ?? 0) === 1,
-      sellTaxPct: Number(j.sell_tax ?? 0) * 100,
-      buyTaxPct: Number(j.buy_tax ?? 0) * 100,
-    };
+    const raw = await cli(["token", "security", "--chain", "sol", "--address", mint, "--raw"]);
+    const sec = parseTokenSecurity(raw);
+    if (!sec) console.warn(`[gmgn] token security payload unrecognizable for ${mint} — honeypot gate skipped`);
+    return sec;
   } catch {
     return null;
   }
