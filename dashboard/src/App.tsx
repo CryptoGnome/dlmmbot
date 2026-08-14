@@ -4,7 +4,6 @@ import type { HistorySnap, LiveWatch, RangeKey } from "@/lib/types";
 import { clockTime, tokenFromUrl } from "@/lib/utils";
 import { mergeTokenMetaMap } from "@/lib/tokenMetaCache";
 import { useActivityToasts, useBuildToasts, useErrorToasts } from "@/lib/useActivityToasts";
-import { RangeTabs } from "@/components/ui";
 import { Shell, parseTab, type TabId } from "@/components/Shell";
 import { SetupWizard } from "@/components/SetupWizard";
 import { ToastHost } from "@/components/ToastHost";
@@ -113,7 +112,6 @@ export default function App() {
   }, [range]);
 
   const stale = watch?.heartbeat_age_s != null && watch.heartbeat_age_s > 60;
-  const showRange = tab === "overview" || tab === "book" || tab === "analytics";
   useActivityToasts(watch, live, stale);
   useBuildToasts(watch);
   useErrorToasts(watch);
@@ -133,7 +131,6 @@ export default function App() {
         watch={watch}
         live={live}
         stale={stale}
-        rangeTabs={showRange ? <RangeTabs value={range} onChange={setRange} /> : undefined}
       >
         {err && (
           <div className="border border-danger/60 bg-panel px-3 py-2 text-danger text-[11px]">
@@ -142,10 +139,20 @@ export default function App() {
         )}
 
         {tab === "overview" && (
-          <OverviewPage watch={watch} hist={hist} onOpenActivity={() => goTab("activity")} />
+          <OverviewPage
+            watch={watch}
+            hist={hist}
+            range={range}
+            onRange={setRange}
+            onOpenActivity={() => goTab("activity")}
+          />
         )}
-        {tab === "book" && <BookPage watch={watch} hist={hist} />}
-        {tab === "analytics" && <AnalyticsPage watch={watch} hist={hist} />}
+        {tab === "book" && (
+          <BookPage watch={watch} hist={hist} range={range} onRange={setRange} />
+        )}
+        {tab === "analytics" && (
+          <AnalyticsPage watch={watch} hist={hist} range={range} onRange={setRange} />
+        )}
         {tab === "activity" && <ActivityPage watch={watch} />}
         {tab === "errors" && <ErrorsPage watch={watch} />}
         {tab === "research" && <ResearchPage />}

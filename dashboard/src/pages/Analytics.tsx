@@ -1,6 +1,6 @@
-import type { AnalyticsBucket, HistorySnap, LiveWatch } from "@/lib/types";
+import type { AnalyticsBucket, HistorySnap, LiveWatch, RangeKey } from "@/lib/types";
 import { cn, exitLabel, fmtRet, fmtSol, gateLabel, shortTime } from "@/lib/utils";
-import { Badge, Kpi, Panel } from "@/components/ui";
+import { Badge, Kpi, Panel, RangeTabs } from "@/components/ui";
 import { CapitalChart, EquityChart, ExitsChart, FunnelChart } from "@/components/Charts";
 import { TokenSymbol } from "@/components/TokenSymbol";
 
@@ -79,10 +79,12 @@ function TokenList({
 }
 
 export function AnalyticsPage({
-  watch, hist,
+  watch, hist, range, onRange,
 }: {
   watch: LiveWatch | null;
   hist: HistorySnap | null;
+  range: RangeKey;
+  onRange: (r: RangeKey) => void;
 }) {
   const s = hist?.stats;
   const h = s?.headline;
@@ -156,7 +158,11 @@ export function AnalyticsPage({
 
       {/* Top charts */}
       <div className="grid items-stretch gap-3 xl:grid-cols-2">
-        <Panel title="Profit over time (SOL + USD)" className="h-full">
+        <Panel
+          title="Profit over time (SOL + USD)"
+          right={<RangeTabs value={range} onChange={onRange} />}
+          className="h-full"
+        >
           <div className="h-[280px] xl:h-[320px]">
             <EquityChart data={hist?.equity ?? []} />
           </div>

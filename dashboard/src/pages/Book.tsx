@@ -1,14 +1,16 @@
-import type { HistorySnap, LiveWatch } from "@/lib/types";
+import type { HistorySnap, LiveWatch, RangeKey } from "@/lib/types";
 import { exitLabel, shortTime } from "@/lib/utils";
-import { Panel } from "@/components/ui";
+import { Panel, RangeTabs } from "@/components/ui";
 import { TokenSymbol } from "@/components/TokenSymbol";
 import { ClosePnlCell, OpenPositionCard } from "@/components/OpenPositionCard";
 
 export function BookPage({
-  watch, hist,
+  watch, hist, range, onRange,
 }: {
   watch: LiveWatch | null;
   hist: HistorySnap | null;
+  range: RangeKey;
+  onRange: (r: RangeKey) => void;
 }) {
   return (
     <div className="space-y-3">
@@ -30,7 +32,7 @@ export function BookPage({
           )}
         </Panel>
 
-        <Panel title="Recent closes">
+        <Panel title="Recent closes" right={<RangeTabs value={range} onChange={onRange} />}>
           {!hist?.ladder.length ? (
             <div className="py-8 text-center text-[12px] tracking-wider text-dim">No closes in this range</div>
           ) : (

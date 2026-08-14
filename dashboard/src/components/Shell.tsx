@@ -121,7 +121,7 @@ function DocsLink({ className }: { className?: string }) {
 }
 
 export function Shell({
-  tab, onTab, watch, live, stale, children, rangeTabs,
+  tab, onTab, watch, live, stale, children,
 }: {
   tab: TabId;
   onTab: (t: TabId) => void;
@@ -129,8 +129,12 @@ export function Shell({
   live: LiveStatus;
   stale: boolean;
   children: ReactNode;
-  rangeTabs?: ReactNode;
 }) {
+  const mode = (watch?.heartbeat?.mode ?? "").toLowerCase();
+  const modeLive = mode === "live";
+  const hbAge = watch?.heartbeat_age_s;
+  const showBrake = !!watch?.ops?.halted || !!watch?.cluster?.tripped;
+
   return (
     <div className="flex h-screen overflow-hidden bg-bg text-fg">
       <aside className="hidden h-full w-44 shrink-0 border-r border-grid md:flex md:flex-col">
@@ -175,7 +179,11 @@ export function Shell({
               className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10px] tracking-widest ${
                 stale ? "border-danger/70 text-danger" : "border-ok/70 text-ok"
               }`}
-              title={stale ? "bot heartbeat stale / off" : "bot heartbeat fresh"}
+              title={
+                stale
+                  ? `bot heartbeat stale / off${hbAge != null ? ` (${hbAge}s)` : ""}`
+                  : `bot heartbeat fresh${hbAge != null ? ` (${hbAge}s)` : ""}`
+              }
             >
               <Icon icon={stale ? Unplug : CircleDot} size={11} />
               {stale ? "OFF" : "ON"}
@@ -187,38 +195,40 @@ export function Shell({
               title={live === "open" ? "websocket connected" : live === "connecting" ? "websocket connecting" : "websocket disconnected"}
             >
               <Icon icon={Zap} size={11} />
-              {live === "open" ? "WS ON" : "WS OFF"}
+              {live === "open" ? "WS" : "WS OFF"}
             </span>
-            {watch && (
+            {mode ? (
               <span
-                className={
-                  watch.ops?.halted
-                    ? "inline-flex items-center gap-1 border border-danger/70 px-1.5 py-0.5 text-[10px] tracking-widest text-danger"
-                    : watch.cluster.tripped
-                      ? "inline-flex items-center gap-1 border border-danger/70 px-1.5 py-0.5 text-[10px] tracking-widest text-danger"
-                      : "inline-flex items-center gap-1 border border-ok/70 px-1.5 py-0.5 text-[10px] tracking-widest text-ok"
-                }
+                className={`inline-flex items-center border px-1.5 py-0.5 text-[10px] tracking-widest ${
+                  modeLive ? "border-accent/70 text-accent" : "border-grid text-muted"
+                }`}
+                title={modeLive ? "live trading" : "paper / simulation"}
+              >
+                {modeLive ? "LIVE" : "PAPER"}
+              </span>
+            ) : null}
+            {showBrake && (
+              <span
+                className="inline-flex items-center gap-1 border border-danger/70 px-1.5 py-0.5 text-[10px] tracking-widest text-danger"
               >
                 <Icon icon={PauseCircle} size={11} />
-                {watch.ops?.halted
+                {watch?.ops?.halted
                   ? "HALTED"
-                  : watch.cluster.tripped
-                    ? `BRAKE ${watch.cluster.remainingMin}m`
-                    : "BRAKE OFF"}
+                  : `BRAKE ${watch?.cluster?.remainingMin ?? "?"}m`}
               </span>
             )}
             {watch?.build && (
               <BuildPill build={watch.build} onOpenChanges={() => onTab("changes")} />
             )}
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted">
-            <span>{watch?.heartbeat?.mode ?? "—"}</span>
-            <span className="text-dim">|</span>
-            <span>hb {watch?.heartbeat_age_s ?? "—"}s</span>
-            <span className="text-dim">|</span>
-            <span>{watch?.host ?? "—"}</span>
-            {rangeTabs}
-          </div>
+          {watch?.host ? (
+            <div
+              className="max-w-[12rem] truncate text-[10px] tracking-wider text-dim uppercase"
+              title={`host ${watch.host}`}
+            >
+              {watch.host}
+            </div>
+          ) : null}
         </header>
 
         <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-grid px-2 py-1.5 md:hidden no-scrollbar">

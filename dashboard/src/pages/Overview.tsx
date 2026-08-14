@@ -1,6 +1,6 @@
-import type { HistorySnap, LiveWatch } from "@/lib/types";
+import type { HistorySnap, LiveWatch, RangeKey } from "@/lib/types";
 import { cn, exitLabel, fmtPct, fmtSol, fmtUsd, shortTime } from "@/lib/utils";
-import { Badge, Panel } from "@/components/ui";
+import { Badge, Panel, RangeTabs } from "@/components/ui";
 import { EquityChart } from "@/components/Charts";
 import { TokenSymbol } from "@/components/TokenSymbol";
 import { ActivityFeedList } from "@/components/ActivityFeed";
@@ -48,10 +48,12 @@ function HeroStat({
 }
 
 export function OverviewPage({
-  watch, hist, onOpenActivity,
+  watch, hist, range, onRange, onOpenActivity,
 }: {
   watch: LiveWatch | null;
   hist: HistorySnap | null;
+  range: RangeKey;
+  onRange: (r: RangeKey) => void;
   onOpenActivity?: () => void;
 }) {
   const pnl24 = watch?.book.last_24h.pnl ?? 0;
@@ -119,7 +121,12 @@ export function OverviewPage({
 
       <HaltControl watch={watch} />
 
-      <Panel title="Equity" className="shrink-0" bodyClassName="flex flex-col">
+      <Panel
+        title="Equity"
+        right={<RangeTabs value={range} onChange={onRange} />}
+        className="shrink-0"
+        bodyClassName="flex flex-col"
+      >
         <div className="h-[280px] w-full md:h-[320px]">
           <EquityChart data={hist?.equity ?? []} />
         </div>

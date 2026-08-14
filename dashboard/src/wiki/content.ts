@@ -298,9 +298,9 @@ export const WIKI_SECTIONS: WikiSection[] = [
         type: "table",
         headers: ["Tab", "Use it for"],
         rows: [
-          ["Overview", "Wallet / open PnL flash, cluster brake, Halt/Resume, high-level live book"],
-          ["Book", "Open positions + closed history detail (marks, range, exit legs)"],
-          ["Analytics", "Equity, exit mix, skip reasons, fee vs IL style rollups"],
+          ["Overview", "Wallet / open PnL flash, Halt/Resume, equity chart (7d·30d·all), high-level live book"],
+          ["Book", "Open positions + closed history (same range control as equity)"],
+          ["Analytics", "Equity + exit mix + skip reasons; range tabs sit on the equity chart"],
           ["Activity", "Streaming decisions — entries, exits, skips, claims, fails"],
           ["Errors", "Structured runtime failures (copy dump / open GitHub issue)"],
           ["Research", "Public voices we studied — credits, not signals"],
@@ -312,7 +312,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
       {
         type: "ul",
         items: [
-          "Shell pills: ON/OFF heartbeat, WS, HALTED / cluster BRAKE, build CURRENT|BEHIND|DIRTY.",
+          "Shell pills: ON/OFF (heartbeat), WS, PAPER/LIVE, HALTED/BRAKE when active, build CURRENT|BEHIND|DIRTY; host name on the right.",
           "Setup docs (external) cover Railway / PM2 install — linked as Docs under the nav.",
           "Token icons: Jupiter → Pump.fun coins API → DexScreener, cached in SQLite + browser.",
         ],
