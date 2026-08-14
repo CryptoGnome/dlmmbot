@@ -24,10 +24,17 @@ export function computeBankroll(walletSol: number): Bankroll {
     "SELECT COALESCE(SUM(entry_sol), 0) AS d FROM positions WHERE state IN ('pending','open','closing') AND mode = ?"
   ).get(currentMode()) as { d: number }).d;
 
-  const reserve = s.reserve_sol + walletSol * (s.reserve_pct / 100);
-  const deployable = Math.max(0, walletSol - reserve - banked - deployed);
+  // Normalize to total equity: LiveExecutor.walletSol() is the FREE native
+  // balance (deployed capital has already left the wallet), while paper's
+  // virtual wallet is total equity. Without this, live subtracted `deployed`
+  // twice — shrinking deployable and effectiveSlots — and Kelly's base
+  // (walletSol × fraction) differed between the modes the promotion gate
+  // exists to compare.
+  const equity = currentMode() === "live" ? walletSol + deployed : walletSol;
+  const reserve = s.reserve_sol + equity * (s.reserve_pct / 100);
+  const deployable = Math.max(0, equity - reserve - banked - deployed);
   return {
-    walletSol,
+    walletSol: equity,
     bankedSol: banked,
     deployedSol: deployed,
     deployableSol: deployable,

@@ -3,7 +3,8 @@ import {
   sendAndConfirmTransaction, SendTransactionError,
 } from "@solana/web3.js";
 import type { ParsedTransactionWithMeta } from "@solana/web3.js";
-import { createCloseAccountInstruction } from "@solana/spl-token";
+import { createCloseAccountInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
+import bs58 from "bs58";
 import BN from "bn.js";
 import { createRequire } from "node:module";
 import type * as DLMMTypes from "@meteora-ag/dlmm";
@@ -237,6 +238,36 @@ export class LiveExecutor implements Executor {
     return ComputeBudgetProgram.setComputeUnitPrice({ microLamports });
   }
 
+  /**
+   * Resolve what actually happened to a broadcast signature before any resend.
+   * "landed" = confirmed ok; "failed" = confirmed with an on-chain error;
+   * "expired" = its blockhash is dead and it never landed (safe to re-sign);
+   * "unknown" = we cannot tell (RPC blind) — resending would risk a double.
+   */
+  private async signatureFate(sig: string, blockhash: string): Promise<"landed" | "failed" | "expired" | "unknown"> {
+    const deadline = Date.now() + 120_000;
+    while (Date.now() < deadline) {
+      const st = (await this.connection.getSignatureStatuses([sig]).catch(() => null))?.value?.[0];
+      if (st && (st.confirmationStatus === "confirmed" || st.confirmationStatus === "finalized")) {
+        return st.err ? "failed" : "landed";
+      }
+      const valid = await this.connection
+        .isBlockhashValid(blockhash, { commitment: "confirmed" })
+        .catch(() => null);
+      if (valid && valid.value === false) {
+        // Blockhash dead — one final status read closes the race where the tx
+        // confirmed in the same slot window.
+        const st2 = (await this.connection.getSignatureStatuses([sig]).catch(() => null))?.value?.[0];
+        if (st2 && (st2.confirmationStatus === "confirmed" || st2.confirmationStatus === "finalized")) {
+          return st2.err ? "failed" : "landed";
+        }
+        return "expired";
+      }
+      await new Promise((r) => setTimeout(r, 2500));
+    }
+    return "unknown";
+  }
+
   private async send(tx: Transaction, extraSigners: Keypair[] = []): Promise<string> {
     tx.add(await this.priorityFeeIx());
     const retries = config().exec.tx_retries;
@@ -258,9 +289,52 @@ export class LiveExecutor implements Executor {
             || /Simulation failed|custom program error|AnchorError/i.test(detail.summary);
           if (prog) throw Object.assign(new Error(detail.summary), { logs: detail.logs, code: detail.code });
         }
+        // Non-program failure after signing (confirm timeout, network error):
+        // the tx may have reached the RPC and can land for another ~60-90s.
+        // sendAndConfirmTransaction re-fetches a blockhash on the next attempt,
+        // producing a DIFFERENT signature — so a blind retry can double-execute
+        // (double-sell on closes, "account already in use" + an orphaned funded
+        // position on opens) and the landed attempt's signature would never
+        // reach walletDelta. Resolve the first attempt's fate before resending.
+        const attemptSig = tx.signature ? bs58.encode(tx.signature) : null;
+        const attemptBlockhash = tx.recentBlockhash;
+        if (attemptSig && attemptBlockhash) {
+          const fate = await this.signatureFate(attemptSig, attemptBlockhash);
+          if (fate === "landed") {
+            console.log(`[live] tx attempt ${i + 1} actually landed as ${attemptSig} — recovered, not resending`);
+            return attemptSig;
+          }
+          if (fate === "failed") {
+            throw Object.assign(new Error(`tx landed with on-chain error: ${detail.summary}`), { logs: detail.logs, code: detail.code });
+          }
+          if (fate === "unknown") {
+            throw Object.assign(
+              new Error(`tx fate unknown (RPC blind) — not resending to avoid a double: ${detail.summary}`),
+              { maybeSig: attemptSig },
+            );
+          }
+          // "expired": provably never landed — safe to re-sign and resend.
+        }
       }
     }
     throw lastErr ?? new Error("tx failed");
+  }
+
+  /** Current wallet balance of a mint, raw units, across both token programs. */
+  private async tokenBalanceRaw(mint: string): Promise<bigint> {
+    let total = 0n;
+    const TOKEN_PROGRAMS = [
+      new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
+      new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"),
+    ];
+    for (const programId of TOKEN_PROGRAMS) {
+      const accs = await this.connection.getParsedTokenAccountsByOwner(this.wallet.publicKey, { programId });
+      for (const acc of accs.value) {
+        const info = acc.account.data.parsed.info as { mint: string; tokenAmount: { amount: string } };
+        if (info.mint === mint) total += BigInt(info.tokenAmount.amount);
+      }
+    }
+    return total;
   }
 
   /** Token-side → SOL after remove/claim. Zap SDK first when enabled; manual Jupiter fallback. */
@@ -274,7 +348,19 @@ export class LiveExecutor implements Executor {
         const zap = await zapToSolEscalating(this.wallet, mint, amountRaw, slippageBps, sendTx);
         if (zap) return { signature: zap.signature };
       } catch (e) {
+        // A fate-unknown send must NOT fall through to the manual swap: if the
+        // zap actually landed, selling amountRaw again double-sells (or, on a
+        // below-range close, records the real exit under a discarded sig).
+        if ((e as { maybeSig?: string }).maybeSig) throw e;
         console.error("[live] zap path failed, falling back to manual jupiter:", (e as Error).message.split("\n")[0]);
+      }
+      // "Zap threw" is not "zap didn't execute" — send() may have recovered a
+      // landed attempt on a later slippage tier, or a leg landed then a
+      // follow-up errored. Re-read the wallet and only sell what is still there.
+      const bal = await this.tokenBalanceRaw(mint).catch(() => null);
+      if (bal !== null) {
+        if (bal <= 0n) return null; // zap (or someone) already sold it all
+        if (bal < amountRaw) amountRaw = bal;
       }
     }
     const manual = await swapToSolEscalating(this.connection, this.wallet, mint, amountRaw, slippageBps)
@@ -283,6 +369,28 @@ export class LiveExecutor implements Executor {
         return null;
       });
     return manual ? { signature: manual.signature } : null;
+  }
+
+  /**
+   * Unwrap any wSOL sitting in our ATA back to native SOL. The zap SDK's swap
+   * tx carries ONLY Jupiter's swapInstruction — no cleanup/unwrap — so every
+   * zap-path exit landed its proceeds as wSOL that walletSol() (native only)
+   * and the residual sweep (positions mints only) never saw again: a slow,
+   * guaranteed leak of bankroll into an account nothing read. Best-effort.
+   */
+  private async unwrapWsol(): Promise<void> {
+    try {
+      const ata = getAssociatedTokenAddressSync(new PublicKey(SOL_MINT), this.wallet.publicKey);
+      const bal = await this.connection.getTokenAccountBalance(ata, "confirmed").catch(() => null);
+      if (!bal || BigInt(bal.value.amount) <= 0n) return;
+      const tx = new Transaction().add(
+        createCloseAccountInstruction(ata, this.wallet.publicKey, this.wallet.publicKey)
+      );
+      await this.send(tx);
+      console.log(`[live] unwrapped ${(Number(bal.value.amount) / 1e9).toFixed(4)} wSOL back to native`);
+    } catch (e) {
+      console.error("[live] wSOL unwrap failed (will retry next close/sweep):", (e as Error).message.split("\n")[0]);
+    }
   }
 
   /** Our stored on-chain position accounts for a DB position row. */
@@ -396,6 +504,20 @@ export class LiveExecutor implements Executor {
         : Math.min(params.range.minBinId, maxBin - 1);
     }
     const totalBins = maxBin - minBin + 1;
+    if (shape !== "spot") {
+      // Re-anchor sanity: when the on-chain price has dumped THROUGH the
+      // planned depth between planning and open, the min(plannedMin, maxBin-1)
+      // clamp above collapses a ~50-bin ladder into 2 bins holding full size —
+      // a max-size buy wall directly under a crashing (plausibly rugging)
+      // price. The 150-bin gap check only guards the other direction.
+      const plannedBins = params.range.maxBinId - params.range.minBinId + 1;
+      if (totalBins < Math.max(10, Math.ceil(plannedBins * 0.5))) {
+        throw new Error(
+          `range sanity: re-anchored range is ${totalBins} bins vs ${plannedBins} planned — ` +
+          `price fell through the planned depth between planning and open; refusing to open`
+        );
+      }
+    }
     let liveEntryPrice = Number(pool.fromPricePerLamport(Number(activeBin.price)));
     const lamports = Math.floor(params.sizeSol * 1e9);
     const strategyType = shape === "spot" ? StrategyType.Spot : StrategyType.BidAsk;
@@ -618,8 +740,16 @@ export class LiveExecutor implements Executor {
       for (const tx of txs) sigs.push(await this.send(tx));
     }
     if (xToSwap > 0n) {
-      const swap = await this.tokenToSol(position.tokenMint, xToSwap, config().exec.exit_slippage_bps);
-      if (swap) sigs.push(swap.signature);
+      // Clamp to what the removes actually delivered: on-chain removal floors
+      // per bin, so the wallet receives up to ~1 raw unit less per bin than the
+      // pre-remove estimate — and a Jupiter exact-in swap for more than the
+      // balance fails at every slippage tier, stranding the whole token side.
+      const delivered = await this.tokenBalanceRaw(position.tokenMint).catch(() => null);
+      if (delivered !== null && delivered < xToSwap) xToSwap = delivered;
+      if (xToSwap > 0n) {
+        const swap = await this.tokenToSol(position.tokenMint, xToSwap, config().exec.exit_slippage_bps);
+        if (swap) sigs.push(swap.signature);
+      }
     }
 
     const withdrawn = (before.valueSol - before.feesSol) * (bps / 10_000);
@@ -705,24 +835,20 @@ export class LiveExecutor implements Executor {
     // Also sell any wallet residue of this mint (escape rebalance can leave
     // tokens in the ATA while position bins are empty — xToSwap from chain is 0).
     let walletX = 0n;
+    let walletXKnown = false;
     try {
-      const TOKEN_PROGRAMS = [
-        new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
-        new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"),
-      ];
-      for (const programId of TOKEN_PROGRAMS) {
-        const accs = await this.connection.getParsedTokenAccountsByOwner(this.wallet.publicKey, { programId });
-        for (const acc of accs.value) {
-          const info = acc.account.data.parsed.info as { mint: string; tokenAmount: { amount: string } };
-          if (info.mint === position.tokenMint && info.tokenAmount.amount !== "0") {
-            walletX += BigInt(info.tokenAmount.amount);
-          }
-        }
-      }
+      walletX = await this.tokenBalanceRaw(position.tokenMint);
+      walletXKnown = true;
     } catch (e) {
       console.error(`[live] pos#${position.id}: wallet residue check failed:`, (e as Error).message.split("\n")[0]);
     }
-    const toSell = xToSwap > walletX ? xToSwap : walletX;
+    // The wallet balance is the sellable truth when we could read it: the old
+    // max(xToSwap, walletX) turned any chain-side OVERestimate (per-bin
+    // flooring, Token-2022 transfer-fee mints delivering less than
+    // totalXAmount) into an exact-in swap for more than we hold — which fails
+    // every slippage tier on exactly the below-range closes where the swap IS
+    // the exit value. xToSwap remains the fallback for a blind RPC read.
+    const toSell = walletXKnown ? walletX : xToSwap;
     if (toSell > 0n) {
       const swap = await this.tokenToSol(position.tokenMint, toSell, slippageBps);
       if (swap) sigs.push(swap.signature);
@@ -778,6 +904,9 @@ export class LiveExecutor implements Executor {
         bins: closeBins,
       })
     );
+    // Hygiene, after all accounting is written: zap-path proceeds land as wSOL
+    // (wealth-neutral for the delta above, invisible to walletSol/bankroll).
+    await this.unwrapWsol();
     return { exitSol: before.valueSol, txCostSol: 0.001 };
   }
 
@@ -819,6 +948,8 @@ export class LiveExecutor implements Executor {
     );
     const recovered: Array<{ mint: string; symbol: string; soldSol: number; positionId: number | null }> = [];
     const closable: Array<{ pubkey: PublicKey; programId: PublicKey; mint: string; symbol: string }> = [];
+    await this.unwrapWsol(); // wSOL is a residual too — see unwrapWsol
+
     const TOKEN_PROGRAMS = [
       new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
       new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"),
