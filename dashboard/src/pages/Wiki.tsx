@@ -66,23 +66,25 @@ const ICONS: Record<WikiIconKey, LucideIcon> = {
   x: X,
 };
 
-function toneBorder(tone: WikiTone | undefined): string {
+/** Full chip/callout color — only when the tone carries meaning (halt, ban, caution). */
+function toneChip(tone: WikiTone | undefined): string {
   switch (tone) {
-    case "ok": return "border-ok/50 text-ok";
-    case "warn": return "border-warn/50 text-warn";
-    case "accent": return "border-accent/50 text-accent";
-    case "danger": return "border-danger/50 text-danger";
-    default: return "border-grid text-fg";
+    case "ok": return "border-ok/50 bg-ok/10 text-ok";
+    case "warn": return "border-warn/50 bg-warn/10 text-warn";
+    case "accent": return "border-accent/50 bg-accent/10 text-accent";
+    case "danger": return "border-danger/50 bg-danger/10 text-danger";
+    default: return "border-grid bg-panel text-fg";
   }
 }
 
-function toneBg(tone: WikiTone | undefined): string {
+/** Icon-only accent — keeps cards/flows readable without painting whole tiles. */
+function toneIcon(tone: WikiTone | undefined): string {
   switch (tone) {
-    case "ok": return "bg-ok/10";
-    case "warn": return "bg-warn/10";
-    case "accent": return "bg-accent/10";
-    case "danger": return "bg-danger/10";
-    default: return "bg-panel";
+    case "ok": return "border-ok/40 text-ok";
+    case "warn": return "border-warn/40 text-warn";
+    case "accent": return "border-accent/40 text-accent";
+    case "danger": return "border-danger/40 text-danger";
+    default: return "border-grid text-dim";
   }
 }
 
@@ -138,15 +140,9 @@ function FlowBlock({
       <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-stretch">
         {steps.map((s, i) => (
           <div key={`${s.label}-${i}`} className="contents md:flex md:min-w-0 md:flex-1 md:basis-[8.5rem] md:items-stretch md:gap-2">
-            <div
-              className={cn(
-                "flex min-w-0 flex-col gap-1.5 border px-2.5 py-2.5 md:flex-1",
-                toneBorder(s.tone),
-                toneBg(s.tone),
-              )}
-            >
+            <div className="flex min-w-0 flex-col gap-1.5 border border-grid bg-panel px-2.5 py-2.5 md:flex-1">
               <div className="flex items-center gap-2">
-                <span className="inline-flex h-6 w-6 items-center justify-center border border-current/40">
+                <span className={cn("inline-flex h-6 w-6 items-center justify-center border", toneIcon(s.tone))}>
                   <WikiGlyph name={s.icon} size={13} />
                 </span>
                 <span className="text-[10px] tracking-wider text-dim tabular-nums">
@@ -211,17 +207,16 @@ function CardsBlock({
   return (
     <div className="grid gap-2 sm:grid-cols-2">
       {items.map((c) => (
-        <div
-          key={c.title}
-          className={cn("flex gap-2.5 border px-3 py-2.5", toneBorder(c.tone), toneBg(c.tone))}
-        >
-          <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center border border-current/35">
+        <div key={c.title} className="flex gap-2.5 border border-grid bg-panel px-3 py-2.5">
+          <span className={cn("mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center border", toneIcon(c.tone))}>
             <WikiGlyph name={c.icon} size={13} />
           </span>
           <div className="min-w-0 space-y-1">
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="font-display text-[13px] font-semibold text-fg">{c.title}</span>
-              {c.badge ? <Badge tone={c.tone === "fg" ? "accent" : (c.tone ?? "accent")}>{c.badge}</Badge> : null}
+              {c.badge ? (
+                <Badge tone={c.tone && c.tone !== "fg" ? c.tone : "fg"}>{c.badge}</Badge>
+              ) : null}
             </div>
             <p className="text-[12px] leading-relaxed text-muted">{c.text}</p>
           </div>
@@ -252,8 +247,7 @@ function LadderBlock({
             <div
               className={cn(
                 "relative z-[1] flex h-9 w-9 shrink-0 items-center justify-center border text-[10px] font-semibold tracking-wider",
-                toneBorder(item.tone),
-                toneBg(item.tone),
+                toneChip(item.tone),
               )}
             >
               {item.code}
@@ -352,7 +346,7 @@ function BlockView({ block }: { block: WikiBlock }) {
       );
     case "callout":
       return (
-        <div className={cn("border px-3 py-2.5", toneBorder(block.tone), toneBg(block.tone))}>
+        <div className={cn("border px-3 py-2.5", toneChip(block.tone))}>
           {block.title ? (
             <div className="mb-1 text-[10px] font-semibold tracking-[0.14em] uppercase opacity-90">
               {block.title}
@@ -497,8 +491,8 @@ export function WikiPage() {
           }
           bodyClassName="space-y-4"
         >
-          <div className="border border-ok/35 bg-ok/5 px-3 py-2.5">
-            <div className="text-[10px] font-semibold tracking-[0.14em] text-ok uppercase">
+          <div className="border border-grid bg-bg/40 px-3 py-2.5">
+            <div className="text-[10px] font-semibold tracking-[0.14em] text-dim uppercase">
               Remember this
             </div>
             <p className="mt-1 font-display text-[15px] leading-snug font-semibold text-fg">
