@@ -49,7 +49,7 @@ Live mode is **out of scope** unless they explicitly ask — and then both `FARM
 | --- | --- |
 | Paper first | Flip live without an explicit ask |
 | Burner wallet only | Import their main / cold wallet |
-| Volume at `/app/data` on Railway | Let Settings wipe on redeploy (no volume) |
+| Volume at `/app/data` on Railway (`+` → Volume → mount path) | Let Settings wipe on redeploy (no volume / wrong path like `/data`) |
 | Keep keys in the dashboard / volume | Commit `.env`, keys, or `DASH_TOKEN` to git |
 | One bot process per wallet/DB | Run two farmers against the same wallet |
 | Point them at [Terms](./terms) | Skip or auto-click Terms for them without disclosure |
@@ -58,11 +58,12 @@ Live mode is **out of scope** unless they explicitly ask — and then both `FARM
 
 Canonical steps: [Easy setup](./easy). Summary:
 
-1. **Railway** — [railway.com?referralCode=SCj9lN](https://railway.com?referralCode=SCj9lN) → New Project → Deploy from GitHub → `CryptoGnome/dlmmbot` (or their fork). One service. Build/start come from `railway.toml`.
-2. **Volume** — mount `/app/data`. Redeploy once after attaching.
-3. **Domain** — Networking → Generate domain.
-4. **Dash token** — set a strong `DASH_TOKEN` Railway variable (≥24 random chars; `node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"`). Open `https://<domain>/?token=…`. Do not copy tokens from deploy logs (only a prefix is printed).
-5. **Wizard** — human accepts Terms, pastes RPC + Jupiter (+ optional GMGN), creates/imports an encrypted **burner**, stays on **paper**.
+1. **Fork** — human forks [CryptoGnome/dlmmbot](https://github.com/CryptoGnome/dlmmbot) (Railway only deploys repos they can access).
+2. **Railway** — [railway.com?referralCode=SCj9lN](https://railway.com?referralCode=SCj9lN) → New Project → Deploy from GitHub → **their fork**. One service. Build/start come from `railway.toml`.
+3. **Volume (required)** — on the Railway **project canvas**: `+` Create → **Volume** → attach to the bot service → **Mount path** = `/app/data` (not `/data`). Redeploy. Logs must show `volume mount=/app/data`, not `no volume detected`.
+4. **Domain** — open the **service** → Settings → Networking → Generate domain.
+5. **Dash token** — set a strong `DASH_TOKEN` Railway variable (≥24 random chars; `node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"`). Open `https://<domain>/?token=…`. Do not copy tokens from deploy logs (only a prefix is printed).
+6. **Wizard** — human accepts Terms; only paste RPC/Jupiter/GMGN if not already set as Railway variables (wizard detects env and skips those). Create/import an encrypted **burner**, stay on **paper**. Finish leaves **Engine OFF** — human flips ON in the header when ready.
 
 ### Secrets the human must create
 

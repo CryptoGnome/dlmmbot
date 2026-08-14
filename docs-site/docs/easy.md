@@ -15,9 +15,14 @@ One service. Attach a volume, open the URL, finish secrets in the dashboard.
 
 ## Deploy
 
-### 1. New project from GitHub
+### 1. Fork, then deploy from GitHub
 
-Railway → **New Project → Deploy from GitHub** → `CryptoGnome/dlmmbot` (or your fork). One service is enough — start/build come from `railway.toml`.
+Railway only deploys GitHub repos **you can access**. You are not a collaborator on ours, so:
+
+1. On GitHub: open [CryptoGnome/dlmmbot](https://github.com/CryptoGnome/dlmmbot) → **Fork** (your account / org).
+2. Railway → **New Project → Deploy from GitHub** → pick **your fork** (`you/dlmmbot`). One service is enough — start/build come from `railway.toml`.
+
+Connect the Railway GitHub App to that fork if prompted. Later updates: merge/rebase upstream `main` into your fork (or sync fork in GitHub), and Railway will redeploy.
 
 Boot defaults: paper mode, public `PORT`, volume-backed `config.toml` / `.env`.
 
@@ -28,9 +33,31 @@ Set a strong dash token **before** you open the site (do not use a short passwor
 
 If you skip this, the bot still generates a token onto the volume (logs only show the first 8 characters on purpose — deploy logs get screenshotted). You would then need shell access to `/app/data/.env` to read it. Setting the Railway variable is the safe path.
 
-### 2. Volume at `/app/data`
+### 2. Volume at `/app/data` (required)
 
-Service → **Volumes** → Add → mount `/app/data`. Keeps SQLite, Settings, and the wallet across redeploys. Redeploy once after attaching.
+Without this, every redeploy wipes SQLite, Settings, and the wallet. You’ll also see this in deploy logs:
+
+`[railway] no volume detected — attach a volume at /app/data…`
+
+There is **no** “Volumes” tab on the service by itself in the current Railway UI. Add the volume from the **project canvas**:
+
+1. Open your Railway **project** (the canvas with your `dlmmbot` service card).
+2. Click the **`+` Create** button (top right / canvas), **or** right‑click empty canvas space, **or** `⌘K` / `Ctrl+K` → search **Volume**.
+3. Choose **Volume**.
+4. When prompted, **attach it to your bot service** (the GitHub deploy card — not a new empty service).
+5. Set **Mount path** exactly to:
+   ```
+   /app/data
+   ```
+   (Must be `/app/data` — not `/data` and not `data`. Railway runs the app under `/app`.)
+6. Save. Railway will **redeploy** the service so the mount is active.
+
+Confirm in the next deploy logs:
+
+- Good: `[railway] volume mount=/app/data …`
+- Bad (still missing): `[railway] no volume detected …`
+
+Official reference: [Railway Volumes](https://docs.railway.com/volumes).
 
 ### 3. Public domain
 
@@ -42,7 +69,9 @@ Open the domain. Log in with the `DASH_TOKEN` you set as a Railway variable (`?t
 
 ## Finish in Settings
 
-First login opens a wizard: **accept the Terms & risk waiver**, then RPC, Jupiter key, **burner wallet**, paper/live. Writes go to `/app/data` — the git checkout stays clean.
+First login opens a wizard: **accept the Terms & risk waiver**, then only the steps still missing (RPC, Jupiter, **burner wallet**, paper/live). If you already set `RPC_URL` / `JUPITER_API_KEY` / `GMGN_API_KEY` as Railway variables (and redeployed), the wizard detects them and skips those prompts — paste only to replace. Writes go to `/app/data` — the git checkout stays clean.
+
+After Finish, the trading engine stays **OFF** (header toggle). Flip it ON when you want paper (or live) ticks. Choosing **live** in the wizard (or Settings) restarts the farmer once so the header shows LIVE.
 
 | Key | Required | Get it |
 | --- | --- | --- |
@@ -113,5 +142,5 @@ Hobby (~$5) plus usage after trial credits — a volume needs a paid tier. Own h
 | --- | --- |
 | Native module build fail | Node 20; check `better-sqlite3` logs |
 | Dash unauthorized | Confirm Railway `DASH_TOKEN` matches what you paste / `?token=` |
-| History / Settings wiped | Volume at `/app/data`, then redeploy |
+| History / Settings wiped | Project canvas → `+` → **Volume** → attach to service → mount **`/app/data`**, then redeploy (logs must show `volume mount=`) |
 | Healthcheck failing | Wait for first build; path is `/health` |

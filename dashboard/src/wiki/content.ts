@@ -511,12 +511,13 @@ export const WIKI_SECTIONS: WikiSection[] = [
       {
         type: "ul",
         items: [
-          "ON/OFF = soft pause (no trades; positions stay open). HALT = emergency close-all (confirm with dash token).",
+          "ON/OFF = soft pause (no trades; positions stay open). Starts OFF after setup — you flip ON when ready. HALT = emergency close-all (confirm with dash token).",
+          "PAPER / LIVE = mode. Switching live writes both gates; the farmer restarts once so the header flips to LIVE. BRAKE appears when the cluster brake paused entries.",
           "HB = farmer alive? Shows seconds since the last finished tick (green = ok, red = stuck/missing). Not a wall clock. WS = this page’s live websocket feed.",
-          "PAPER / LIVE = mode. BRAKE appears when the cluster brake paused entries.",
           "Build pill = release version + deploy branch + git SHA + sync (CURRENT / BEHIND / …). Auto on/off switch sits next to it (host pulls vs Changes → Approve).",
           "Host name (and wallet chip when known) sit on the right.",
           "First run (and any install that has not accepted yet): Terms of Service & risk waiver must be accepted before setup continues — free software, you can lose 100%, we are not liable.",
+          "Wizard reads host env (Railway variables / `.env`). Keys already set (RPC, Jupiter, GMGN, wallet) show as ready and those steps are skipped — you only fill what’s missing.",
         ],
       },
     ],
@@ -548,7 +549,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           },
           {
             title: "Engine ON/OFF",
-            text: "Header toggle pauses the trading engine without closing positions (PAUSE file).",
+            text: "Header toggle pauses the trading engine without closing positions (PAUSE on the data volume — survives Railway redeploys). Setup leaves it OFF.",
             icon: "pause",
           },
           {

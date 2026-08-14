@@ -32,8 +32,22 @@ CREATE INDEX IF NOT EXISTS idx_error_log_ts ON error_log(ts DESC);
 let cachedBuild;
 function buildLabel(root) {
   if (cachedBuild !== undefined) return cachedBuild;
+  const envSha = (
+    process.env.RAILWAY_GIT_COMMIT_SHA
+    || process.env.SOURCE_COMMIT
+    || process.env.COMMIT_SHA
+    || ""
+  ).trim();
+  if (envSha) {
+    cachedBuild = envSha.length > 12 ? envSha.slice(0, 12) : envSha;
+    return cachedBuild;
+  }
   try {
-    cachedBuild = execFileSync("git", ["describe", "--always", "--dirty"], { cwd: root, encoding: "utf8" }).trim() || null;
+    cachedBuild = execFileSync("git", ["describe", "--always", "--dirty"], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim() || null;
   } catch {
     cachedBuild = null;
   }

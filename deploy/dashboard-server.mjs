@@ -458,7 +458,15 @@ const server = createServer(async (req, res) => {
         skipped: !!body?.skipped,
         completedAt: new Date().toISOString(),
       });
-      sendJson(res, 200, { ok: true, setup: state, ...setupStatus(readEnvMasked(root)) });
+      // Always leave engine OFF after setup — operator turns it on deliberately.
+      const pause = requestPause(root);
+      sendJson(res, 200, {
+        ok: true,
+        setup: state,
+        ...setupStatus(readEnvMasked(root)),
+        paused: pause.paused,
+        note: pause.note,
+      });
     } catch (e) {
       sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
     }
@@ -850,12 +858,15 @@ const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
 
 server.listen(port, host, () => {
   console.log(`[dash] listening on http://${host}:${port} (root=${root}, ws=/ws every ${WATCH_MS}ms)`);
-  if (!LOOPBACK_HOSTS.has(host)) {
+  const onRailway = !!(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID);
+  if (onRailway) {
+    console.log("[dash] Railway edge terminates HTTPS — container HTTP on 0.0.0.0 is expected");
+  } else if (!LOOPBACK_HOSTS.has(host)) {
     console.warn(
       "[dash] WARNING: bound to a non-loopback interface over plain HTTP — the dash token and any "
       + "secrets pasted into Settings travel unencrypted on the network. Keep this port on a trusted "
-      + "LAN or behind a TLS reverse proxy (Caddy/nginx/Cloudflare Tunnel; Railway's edge already "
-      + "terminates HTTPS), or set DASH_HOST=127.0.0.1 and use an SSH tunnel.",
+      + "LAN or behind a TLS reverse proxy (Caddy/nginx/Cloudflare Tunnel), or set DASH_HOST=127.0.0.1 "
+      + "and use an SSH tunnel.",
     );
   }
 });

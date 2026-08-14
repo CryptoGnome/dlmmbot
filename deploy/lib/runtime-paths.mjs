@@ -28,6 +28,17 @@ export function runtimePaths(root = process.cwd()) {
     dbPath: process.env.FARMER_DB_PATH
       ? resolve(process.env.FARMER_DB_PATH)
       : join(dir, "farmer.db"),
+    /** Soft pause — engine OFF. On volume so Railway redeploys keep the state. */
+    pausePath: process.env.FARMER_PAUSE_PATH
+      ? resolve(process.env.FARMER_PAUSE_PATH)
+      : join(dir, "PAUSE"),
+    /** Emergency halt. Same volume persistence as PAUSE. */
+    haltPath: process.env.FARMER_HALT_PATH
+      ? resolve(process.env.FARMER_HALT_PATH)
+      : join(dir, "HALT"),
+    /** Pre-volume locations (repo root) — still honored when reading. */
+    legacyPausePath: resolve(root, "PAUSE"),
+    legacyHaltPath: resolve(root, "HALT"),
   };
 }
 
@@ -57,6 +68,8 @@ export function applyRuntimeEnv(root = process.cwd()) {
   if (!process.env.FARMER_CONFIG_PATH) process.env.FARMER_CONFIG_PATH = paths.configPath;
   if (!process.env.FARMER_ENV_PATH) process.env.FARMER_ENV_PATH = paths.envPath;
   if (!process.env.FARMER_DB_PATH) process.env.FARMER_DB_PATH = paths.dbPath;
+  if (!process.env.FARMER_PAUSE_PATH) process.env.FARMER_PAUSE_PATH = paths.pausePath;
+  if (!process.env.FARMER_HALT_PATH) process.env.FARMER_HALT_PATH = paths.haltPath;
   if (!process.env.FARMER_ROOT) process.env.FARMER_ROOT = resolve(root);
   return paths;
 }

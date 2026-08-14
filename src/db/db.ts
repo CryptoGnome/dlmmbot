@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { hostname } from "node:os";
 import { resolve } from "node:path";
-import { execSync } from "node:child_process";
+import { resolveBuildLabel } from "../buildLabel.js";
 import { presentError } from "../errors/present.js";
 
 // Schema per STRATEGY.md §7. On-chain state is the source of truth for live
@@ -475,11 +475,8 @@ let cachedHost: string | null | undefined;
 
 function runtimeBuild(): string | null {
   if (cachedBuild !== undefined) return cachedBuild;
-  try {
-    cachedBuild = execSync("git describe --always --dirty", { encoding: "utf8" }).trim() || null;
-  } catch {
-    cachedBuild = null;
-  }
+  const label = resolveBuildLabel();
+  cachedBuild = label === "unknown" ? null : label;
   return cachedBuild;
 }
 

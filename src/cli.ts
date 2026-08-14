@@ -169,23 +169,33 @@ async function main(): Promise<void> {
       break;
     }
     case "halt": {
-      const haltPath = resolve(process.cwd(), "HALT");
-      if (existsSync(haltPath)) {
-        unlinkSync(haltPath);
+      const primary = process.env.FARMER_HALT_PATH || resolve(process.cwd(), "data", "HALT");
+      const legacy = resolve(process.cwd(), "HALT");
+      const paths = [...new Set([primary, legacy])];
+      const present = paths.find((p) => existsSync(p));
+      if (present) {
+        for (const p of paths) {
+          if (existsSync(p)) unlinkSync(p);
+        }
         console.log("HALT cleared — farmer resumes on the next tick (or restart if it already exited)");
       } else {
-        writeFileSync(haltPath, new Date().toISOString());
+        writeFileSync(primary, new Date().toISOString());
         console.log("HALT requested — running farmer will close all positions and idle until cleared");
       }
       break;
     }
     case "pause": {
-      const pausePath = resolve(process.cwd(), "PAUSE");
-      if (existsSync(pausePath)) {
-        unlinkSync(pausePath);
+      const primary = process.env.FARMER_PAUSE_PATH || resolve(process.cwd(), "data", "PAUSE");
+      const legacy = resolve(process.cwd(), "PAUSE");
+      const paths = [...new Set([primary, legacy])];
+      const present = paths.find((p) => existsSync(p));
+      if (present) {
+        for (const p of paths) {
+          if (existsSync(p)) unlinkSync(p);
+        }
         console.log("PAUSE cleared — trading engine ON on the next tick");
       } else {
-        writeFileSync(pausePath, new Date().toISOString());
+        writeFileSync(primary, new Date().toISOString());
         console.log("PAUSE set — trading engine OFF; open positions left alone");
       }
       break;

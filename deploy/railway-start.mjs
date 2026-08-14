@@ -59,7 +59,8 @@ if (!process.env.DASH_TOKEN) {
 
 const volume = process.env.RAILWAY_VOLUME_MOUNT_PATH;
 if (!volume) {
-  console.warn("[railway] no volume detected — attach a volume at /app/data so SQLite & Settings survive redeploys");
+  console.warn("[railway] no volume detected — SQLite & Settings will wipe on every redeploy");
+  console.warn("[railway] fix: Railway project canvas → + Create → Volume → attach to this service → Mount path = /app/data → redeploy");
 } else {
   console.log(`[railway] volume mount=${volume} db=${dbPath}`);
 }
@@ -84,6 +85,24 @@ if (process.env.WALLET_PASSPHRASE && !process.env.WALLET_PRIVATE_KEY) {
 }
 
 console.log(`[railway] mode=${process.env.FARMER_MODE} dash_port=${process.env.DASH_PORT}`);
+
+// Fresh installs: trading engine OFF until the operator finishes setup and
+// flips Engine ON. PAUSE lives on the volume so redeploys keep it.
+try {
+  const { readSetupState } = await import("./lib/wallet-crypto.mjs");
+  const { requestPause, readPauseState } = await import("./lib/pause.mjs");
+  const setup = readSetupState();
+  if (!setup.completed && !setup.skipped) {
+    const pause = requestPause(root);
+    console.log(`[railway] engine OFF (setup incomplete) — ${pause.path}`);
+  } else if (!readPauseState(root).paused) {
+    console.log("[railway] engine ON (no PAUSE file)");
+  } else {
+    console.log("[railway] engine OFF (PAUSE on volume)");
+  }
+} catch (e) {
+  console.warn(`[railway] pause bootstrap skipped: ${e.message ?? e}`);
+}
 
 const kids = [];
 function run(label, args) {

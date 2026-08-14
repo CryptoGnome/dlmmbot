@@ -9,6 +9,7 @@ import {
 } from "@/lib/api";
 import { Badge } from "@/components/ui";
 import { Icon } from "@/lib/icons";
+import { sessionDashToken } from "@/lib/utils";
 import { WalletCreateModal } from "@/components/WalletCreateModal";
 import {
   ArrowRight, KeyRound, Shield, Sparkles, Wallet,
@@ -24,6 +25,17 @@ const STEPS = [
 
 type StepId = (typeof STEPS)[number]["id"];
 
+function walletIsReady(s: SetupStatus): boolean {
+  return !!(s.wallet.encrypted || s.wallet.unlocked || s.wallet.ready);
+}
+
+/** After welcome/terms — jump past steps already satisfied by Railway/.env. */
+function stepAfterWelcome(s: SetupStatus): StepId {
+  if (!s.hasRpc || !s.hasJupiterApiKey) return "apis";
+  if (!walletIsReady(s)) return "wallet";
+  return "mode";
+}
+
 export function SetupWizard({
   initial,
   onDone,
@@ -36,7 +48,6 @@ export function SetupWizard({
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const [confirm, setConfirm] = useState("");
   const [termsOk, setTermsOk] = useState(
     !!initial.setup.termsVersion && initial.setup.termsVersion === initial.termsVersion,
   );
@@ -47,10 +58,21 @@ export function SetupWizard({
   const [gmgn, setGmgn] = useState("");
   const [walletTab, setWalletTab] = useState<"create" | "import">("create");
   const [walletModal, setWalletModal] = useState<"create" | "import" | null>(null);
-  const [mode, setMode] = useState<"paper" | "live">("paper");
+  const [mode, setMode] = useState<"paper" | "live">(
+    initial.farmerMode === "live" ? "live" : "paper",
+  );
 
+  const dash = sessionDashToken();
   const idx = STEPS.findIndex((s) => s.id === step);
-  const walletReady = !!(status.wallet.encrypted || status.wallet.unlocked || status.wallet.ready);
+  const walletReady = walletIsReady(status);
+  const apisReady = status.hasRpc && status.hasJupiterApiKey;
+  const rpcOk = status.hasRpc || !!rpc.trim();
+  const jupiterOk = status.hasJupiterApiKey || !!jupiter.trim();
+
+  const requireDash = () => {
+    if (!dash) throw new Error("open the dashboard with ?token=… first");
+    return dash;
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -77,13 +99,14 @@ export function SetupWizard({
     setBusy(true);
     setErr(null);
     try {
-      if (!confirm.trim()) throw new Error("re-enter your dash token");
+      const token = requireDash();
       if (!termsOk) throw new Error("accept the Terms of Service to continue");
+      let next = status;
       if (status.needsTerms || status.setup.termsVersion !== termsVersion) {
-        const next = await acceptTerms({ confirm: confirm.trim(), version: termsVersion });
+        next = await acceptTerms({ confirm: token, version: termsVersion });
         setStatus(next);
       }
-      goNext();
+      setStep(stepAfterWelcome(next));
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -91,26 +114,34 @@ export function SetupWizard({
     }
   };
 
-  const saveApis = async () => {
+  const continueApis = async () => {
     setBusy(true);
     setErr(null);
     try {
-      if (!confirm.trim()) throw new Error("re-enter your dash token");
-      if (!rpc.trim().startsWith("http")) throw new Error("RPC URL must start with https://");
-      if (!jupiter.trim() && !status.hasJupiterApiKey) {
+      const token = requireDash();
+      const rpcVal = rpc.trim();
+      const jupVal = jupiter.trim();
+      const gmgnVal = gmgn.trim();
+      if (!rpcVal && !status.hasRpc) throw new Error("RPC URL is required");
+      if (rpcVal && !rpcVal.startsWith("http")) throw new Error("RPC URL must start with https://");
+      if (!jupVal && !status.hasJupiterApiKey) {
         throw new Error("Jupiter API key is required for exit swaps");
       }
-      const secrets: Record<string, string> = { RPC_URL: rpc.trim() };
-      if (jupiter.trim()) secrets.JUPITER_API_KEY = jupiter.trim();
-      if (gmgn.trim()) secrets.GMGN_API_KEY = gmgn.trim();
-      await patchSecrets(confirm, secrets);
-      setStatus((s) => ({
-        ...s,
-        hasRpc: true,
-        hasJupiterApiKey: s.hasJupiterApiKey || !!jupiter.trim(),
-        hasGmgnApiKey: s.hasGmgnApiKey || !!gmgn.trim(),
-      }));
-      goNext();
+      const secrets: Record<string, string> = {};
+      if (rpcVal) secrets.RPC_URL = rpcVal;
+      if (jupVal) secrets.JUPITER_API_KEY = jupVal;
+      if (gmgnVal) secrets.GMGN_API_KEY = gmgnVal;
+      if (Object.keys(secrets).length) {
+        await patchSecrets(token, secrets);
+      }
+      const next: SetupStatus = {
+        ...status,
+        hasRpc: status.hasRpc || !!rpcVal,
+        hasJupiterApiKey: status.hasJupiterApiKey || !!jupVal,
+        hasGmgnApiKey: status.hasGmgnApiKey || !!gmgnVal,
+      };
+      setStatus(next);
+      setStep(walletIsReady(next) ? "mode" : "wallet");
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -122,10 +153,10 @@ export function SetupWizard({
     setBusy(true);
     setErr(null);
     try {
+      const token = requireDash();
       await patchConfig({ "exec.mode": mode });
-      if (confirm.trim()) {
-        await patchSecrets(confirm, { FARMER_MODE: mode });
-      }
+      await patchSecrets(token, { FARMER_MODE: mode });
+      setStatus((s) => ({ ...s, farmerMode: mode }));
       goNext();
     } catch (e) {
       setErr((e as Error).message);
@@ -185,10 +216,26 @@ export function SetupWizard({
                 Paper mode first — live later when you’re ready.
               </p>
               <ul className="space-y-1 text-[11px] text-dim">
-                <li className="flex items-center gap-2"><Icon icon={Shield} size={12} className="text-ok" /> Dash token gates secret writes</li>
+                <li className="flex items-center gap-2"><Icon icon={Shield} size={12} className="text-ok" /> You’re already signed in with your dash token</li>
                 <li className="flex items-center gap-2"><Icon icon={KeyRound} size={12} className="text-ok" /> Wallet encrypted at rest</li>
                 <li className="flex items-center gap-2"><Icon icon={Wallet} size={12} className="text-ok" /> Burner only — never your main</li>
               </ul>
+              {(status.hasRpc || status.hasJupiterApiKey || status.hasGmgnApiKey || walletReady) && (
+                <ul className="space-y-1 border border-ok/40 bg-ok/5 px-3 py-2 text-[11px] text-ok">
+                  <li className="font-semibold tracking-wider uppercase text-[10px]">Already on this host</li>
+                  {status.hasRpc && <li>RPC URL · set (Railway / .env)</li>}
+                  {status.hasJupiterApiKey && <li>Jupiter API key · set</li>}
+                  {status.hasGmgnApiKey && <li>GMGN API key · set</li>}
+                  {walletReady && (
+                    <li>
+                      Wallet · {status.wallet.publicKey
+                        ? `${status.wallet.publicKey.slice(0, 4)}…${status.wallet.publicKey.slice(-4)}`
+                        : "ready"}
+                    </li>
+                  )}
+                  <li className="text-dim">We’ll skip those steps after Terms.</li>
+                </ul>
+              )}
 
               <div className="space-y-2 border border-danger/40 bg-bg p-3">
                 <div className="text-[11px] font-semibold tracking-wider text-danger uppercase">
@@ -223,34 +270,33 @@ export function SetupWizard({
                 </label>
               </div>
 
-              <div className="space-y-2">
-                <label className="block space-y-1">
-                  <span className="text-[11px] text-muted">Confirm dash token</span>
-                  <input
-                    className="input-field"
-                    type="password"
-                    autoComplete="off"
-                    value={confirm}
-                    onChange={(e) => setConfirm(e.target.value)}
-                    placeholder="same token as the URL"
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="btn-primary inline-flex items-center gap-1.5"
-                  disabled={busy || !confirm.trim() || !termsOk}
-                  onClick={() => void startWizard()}
-                >
-                  {busy ? "Saving…" : <>Continue <Icon icon={ArrowRight} size={12} /></>}
-                </button>
-              </div>
+              <button
+                type="button"
+                className="btn-primary inline-flex items-center gap-1.5"
+                disabled={busy || !dash || !termsOk}
+                onClick={() => void startWizard()}
+              >
+                {busy ? "Saving…" : <>Continue <Icon icon={ArrowRight} size={12} /></>}
+              </button>
+              {!dash && (
+                <p className="text-[11px] text-danger">Open with <code className="text-accent">?token=…</code> first.</p>
+              )}
             </div>
           )}
 
           {step === "apis" && (
             <div className="space-y-4">
+              {apisReady && (
+                <div className="border border-ok/40 bg-ok/5 px-3 py-2 text-[11px] text-ok">
+                  RPC and Jupiter are already set on this host (Railway variables or `.env`).
+                  Continue to keep them, or paste below to replace.
+                </div>
+              )}
               <div className="space-y-2 border border-grid p-3">
-                <div className="text-[11px] font-semibold tracking-wider text-ok uppercase">Helius RPC (recommended)</div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[11px] font-semibold tracking-wider text-ok uppercase">Helius RPC (recommended)</div>
+                  {status.hasRpc && <Badge tone="ok">set</Badge>}
+                </div>
                 <p className="text-[11px] leading-relaxed text-muted">
                   Public Solana RPCs rate-limit hard. We suggest{" "}
                   <a
@@ -263,52 +309,59 @@ export function SetupWizard({
                   </a>
                   {" "}for mainnet reads and tx simulation.
                 </p>
-                <ol className="list-decimal space-y-0.5 pl-4 text-[10px] text-dim">
-                  <li>
-                    Sign up at{" "}
-                    <a href="https://dashboard.helius.dev/signup" target="_blank" rel="noreferrer" className="text-accent underline">
-                      dashboard.helius.dev
-                    </a>
-                  </li>
-                  <li>Create a project → open <strong>RPC</strong> → copy the <strong>Mainnet</strong> HTTPS URL</li>
-                  <li>Paste below (looks like <code className="text-accent">https://mainnet.helius-rpc.com/?api-key=…</code>)</li>
-                </ol>
+                {!status.hasRpc && (
+                  <ol className="list-decimal space-y-0.5 pl-4 text-[10px] text-dim">
+                    <li>
+                      Sign up at{" "}
+                      <a href="https://dashboard.helius.dev/signup" target="_blank" rel="noreferrer" className="text-accent underline">
+                        dashboard.helius.dev
+                      </a>
+                    </li>
+                    <li>Create a project → open <strong>RPC</strong> → copy the <strong>Mainnet</strong> HTTPS URL</li>
+                    <li>Paste below (looks like <code className="text-accent">https://mainnet.helius-rpc.com/?api-key=…</code>)</li>
+                  </ol>
+                )}
                 <label className="block space-y-1">
                   <span className="text-[11px] text-muted">RPC URL</span>
                   <input
                     className="input-field"
                     value={rpc}
                     onChange={(e) => setRpc(e.target.value)}
-                    placeholder="https://mainnet.helius-rpc.com/?api-key=…"
+                    placeholder={status.hasRpc ? "already set — paste to replace" : "https://mainnet.helius-rpc.com/?api-key=…"}
                     spellCheck={false}
                   />
                 </label>
               </div>
 
               <div className="space-y-2 border border-grid p-3">
-                <div className="text-[11px] font-semibold tracking-wider text-ok uppercase">Jupiter API key</div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[11px] font-semibold tracking-wider text-ok uppercase">Jupiter API key</div>
+                  {status.hasJupiterApiKey && <Badge tone="ok">set</Badge>}
+                </div>
                 <p className="text-[11px] leading-relaxed text-muted">
                   Live exits swap token → SOL through Jupiter. Paper simulates the path but still needs a key for{" "}
                   <code className="text-accent">simulate-zap</code> checks before going live.
                 </p>
-                <ol className="list-decimal space-y-0.5 pl-4 text-[10px] text-dim">
-                  <li>
-                    Open{" "}
-                    <a href="https://developers.jup.ag/portal" target="_blank" rel="noreferrer" className="text-accent underline">
-                      developers.jup.ag/portal
-                    </a>
-                    {" "}and sign in (Google, GitHub, or email)
-                  </li>
-                  <li>Create or join a team → <strong>API Keys</strong> → <strong>Create</strong></li>
-                  <li>Copy the key immediately — Jupiter shows the full value <strong>once</strong></li>
-                  <li>
-                    Free tier is enough to start (
-                    <a href="https://developers.jup.ag/docs/portal/setup" target="_blank" rel="noreferrer" className="text-accent underline">
-                      setup guide
-                    </a>
-                    )
-                  </li>
-                </ol>
+                {!status.hasJupiterApiKey && (
+                  <ol className="list-decimal space-y-0.5 pl-4 text-[10px] text-dim">
+                    <li>
+                      Open{" "}
+                      <a href="https://developers.jup.ag/portal" target="_blank" rel="noreferrer" className="text-accent underline">
+                        developers.jup.ag/portal
+                      </a>
+                      {" "}and sign in (Google, GitHub, or email)
+                    </li>
+                    <li>Create or join a team → <strong>API Keys</strong> → <strong>Create</strong></li>
+                    <li>Copy the key immediately — Jupiter shows the full value <strong>once</strong></li>
+                    <li>
+                      Free tier is enough to start (
+                      <a href="https://developers.jup.ag/docs/portal/setup" target="_blank" rel="noreferrer" className="text-accent underline">
+                        setup guide
+                      </a>
+                      )
+                    </li>
+                  </ol>
+                )}
                 <label className="block space-y-1">
                   <span className="text-[11px] text-muted">Jupiter API key</span>
                   <input
@@ -324,29 +377,34 @@ export function SetupWizard({
               </div>
 
               <div className="space-y-2 border border-grid p-3">
-                <div className="text-[11px] font-semibold tracking-wider text-muted uppercase">GMGN API key (optional)</div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[11px] font-semibold tracking-wider text-muted uppercase">GMGN API key (optional)</div>
+                  {status.hasGmgnApiKey && <Badge tone="ok">set</Badge>}
+                </div>
                 <p className="text-[11px] leading-relaxed text-muted">
                   Free trending + smart-money feeds and extra honeypot/sell-tax vetting. Skip if you want Meteora-only discovery for now.
                 </p>
-                <ol className="list-decimal space-y-0.5 pl-4 text-[10px] text-dim">
-                  <li>
-                    Generate Ed25519 keys (terminal:{" "}
-                    <code className="text-accent">openssl genpkey -algorithm Ed25519 …</code>
-                    {" "}— full steps in{" "}
-                    <a href="https://dlmmbot.com/setup/api-keys" target="_blank" rel="noreferrer" className="text-accent underline">
-                      docs → API keys
-                    </a>
-                    )
-                  </li>
-                  <li>
-                    Sign up at{" "}
-                    <a href="https://gmgn.ai/ai" target="_blank" rel="noreferrer" className="text-accent underline">
-                      gmgn.ai/ai
-                    </a>
-                    {" "}→ paste your <strong>public key</strong> → copy the API key
-                  </li>
-                  <li>Paste below — query key only; never put GMGN private keys in the bot</li>
-                </ol>
+                {!status.hasGmgnApiKey && (
+                  <ol className="list-decimal space-y-0.5 pl-4 text-[10px] text-dim">
+                    <li>
+                      Generate Ed25519 keys (terminal:{" "}
+                      <code className="text-accent">openssl genpkey -algorithm Ed25519 …</code>
+                      {" "}— full steps in{" "}
+                      <a href="https://dlmmbot.com/setup/api-keys" target="_blank" rel="noreferrer" className="text-accent underline">
+                        docs → API keys
+                      </a>
+                      )
+                    </li>
+                    <li>
+                      Sign up at{" "}
+                      <a href="https://gmgn.ai/ai" target="_blank" rel="noreferrer" className="text-accent underline">
+                        gmgn.ai/ai
+                      </a>
+                      {" "}→ paste your <strong>public key</strong> → copy the API key
+                    </li>
+                    <li>Paste below — query key only; never put GMGN private keys in the bot</li>
+                  </ol>
+                )}
                 <label className="block space-y-1">
                   <span className="text-[11px] text-muted">GMGN API key</span>
                   <input
@@ -365,20 +423,13 @@ export function SetupWizard({
                 <button
                   type="button"
                   className="btn-primary inline-flex items-center gap-1.5"
-                  disabled={busy || !rpc.trim() || (!jupiter.trim() && !status.hasJupiterApiKey)}
-                  onClick={() => void saveApis()}
+                  disabled={busy || !rpcOk || !jupiterOk}
+                  onClick={() => void continueApis()}
                 >
-                  {busy ? "Saving…" : "Save & continue"}
+                  {busy ? "Saving…" : apisReady && !rpc.trim() && !jupiter.trim() && !gmgn.trim()
+                    ? <>Keep env & continue <Icon icon={ArrowRight} size={12} /></>
+                    : "Save & continue"}
                 </button>
-                {status.hasRpc && status.hasJupiterApiKey && (
-                  <button
-                    type="button"
-                    className="border border-grid px-3 py-1.5 text-[11px] tracking-wider text-muted uppercase"
-                    onClick={goNext}
-                  >
-                    Already set — skip
-                  </button>
-                )}
               </div>
             </div>
           )}
@@ -417,8 +468,8 @@ export function SetupWizard({
                     type="button"
                     className="btn-primary inline-flex items-center gap-1.5"
                     onClick={() => {
-                      if (!confirm.trim()) {
-                        setErr("re-enter your dash token on the Welcome step first");
+                      if (!dash) {
+                        setErr("open the dashboard with ?token=… first");
                         return;
                       }
                       setWalletModal(walletTab);
@@ -475,6 +526,11 @@ export function SetupWizard({
                   </button>
                 ))}
               </div>
+              {mode === "live" && (
+                <p className="border border-warn/50 bg-warn/5 px-3 py-2 text-[11px] text-warn">
+                  Live needs both switches. The farmer restarts once to load the live executor — header shows LIVE after that.
+                </p>
+              )}
               <button
                 type="button"
                 className="btn-primary inline-flex items-center gap-1.5"
@@ -489,7 +545,8 @@ export function SetupWizard({
           {step === "done" && (
             <div className="space-y-3">
               <p className="text-[13px] text-muted">
-                Core is set. Tune size, risk, and pool filters anytime under{" "}
+                Core is set. The trading engine stays <span className="text-warn">OFF</span> until you flip it
+                ON in the header. Tune size, risk, and pool filters under{" "}
                 <span className="text-ok">Settings</span>. Re-run wallet unlock there after redeploys
                 (or set <code className="text-accent">WALLET_PASSPHRASE</code> on Railway).
               </p>
@@ -503,7 +560,8 @@ export function SetupWizard({
                     : "missing"}
                   {status.wallet.unlocked ? " (unlocked)" : status.wallet.encrypted ? " (locked)" : ""}
                 </li>
-                <li>Mode · {mode}</li>
+                <li>Mode · {mode}{mode === "live" ? " (farmer restarts to apply)" : ""}</li>
+                <li>Engine · OFF — turn ON in the header when ready</li>
               </ul>
               <button
                 type="button"
@@ -522,7 +580,7 @@ export function SetupWizard({
         <WalletCreateModal
           mode={walletModal}
           overwrite={!!status.wallet.encrypted}
-          initialDashToken={confirm}
+          initialDashToken={dash}
           unlockAfter
           onCancel={() => setWalletModal(null)}
           onDone={({ status: next }) => {

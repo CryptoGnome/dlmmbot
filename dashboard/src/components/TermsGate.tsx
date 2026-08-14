@@ -6,6 +6,7 @@ import {
 } from "@/lib/api";
 import { Badge } from "@/components/ui";
 import { Icon } from "@/lib/icons";
+import { sessionDashToken } from "@/lib/utils";
 import { ShieldAlert } from "lucide-react";
 
 /** Blocking overlay for existing installs that have not accepted the current TERMS version. */
@@ -16,7 +17,7 @@ export function TermsGate({
   initial: SetupStatus;
   onAccepted: (next: SetupStatus) => void;
 }) {
-  const [confirm, setConfirm] = useState("");
+  const dash = sessionDashToken();
   const [accepted, setAccepted] = useState(false);
   const [markdown, setMarkdown] = useState<string | null>(null);
   const [version, setVersion] = useState(initial.termsVersion);
@@ -42,9 +43,9 @@ export function TermsGate({
     setBusy(true);
     setErr(null);
     try {
-      if (!confirm.trim()) throw new Error("re-enter your dash token");
+      if (!dash) throw new Error("open the dashboard with ?token=… first");
       if (!accepted) throw new Error("you must accept the Terms to continue");
-      const next = await acceptTerms({ confirm: confirm.trim(), version });
+      const next = await acceptTerms({ confirm: dash, version });
       onAccepted(next);
     } catch (e) {
       setErr((e as Error).message);
@@ -92,25 +93,17 @@ export function TermsGate({
               including the waiver of claims and limitation of liability.
             </span>
           </label>
-          <label className="block space-y-1">
-            <span className="text-[11px] text-muted">Confirm dash token</span>
-            <input
-              className="input-field"
-              type="password"
-              autoComplete="off"
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              placeholder="same token as the URL"
-            />
-          </label>
           <button
             type="button"
             className="btn-primary"
-            disabled={busy || !accepted || !confirm.trim()}
+            disabled={busy || !accepted || !dash}
             onClick={() => void submit()}
           >
             {busy ? "Saving…" : "Accept & continue"}
           </button>
+          {!dash && (
+            <p className="text-[11px] text-danger">Open with <code className="text-accent">?token=…</code> first.</p>
+          )}
         </div>
       </div>
     </div>
