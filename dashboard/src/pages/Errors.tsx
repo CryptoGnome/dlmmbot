@@ -8,12 +8,13 @@ import { dismissErrors } from "@/lib/api";
 import {
   copyText, errorIssueUrl, formatErrorDump, formatErrorLogDump,
 } from "@/lib/errorReport";
+import { errorPresentation, kindLabel, kindTone } from "@/lib/errorPresent";
 import {
   Bug, Check, ChevronDown, ChevronRight, Copy, ExternalLink, OctagonX, X,
 } from "lucide-react";
 import { TokenSymbol } from "@/components/TokenSymbol";
 
-type Filter = "all" | "error" | "warn" | "fatal";
+type Filter = "all" | "attention" | "transient" | "warn" | "fatal";
 
 function levelTone(level: string): "danger" | "warn" | "accent" | "fg" {
   if (level === "fatal") return "danger";
@@ -32,8 +33,9 @@ function ErrorRow({
   onDismiss: () => void;
   busy: boolean;
 }) {
-  const dump = formatErrorDump(e, watch);
-  const issueHref = errorIssueUrl(e, watch);
+  const pres = errorPresentation(e);
+  const dump = formatErrorDump(e, watch, pres);
+  const issueHref = errorIssueUrl(e, watch, pres);
 
   return (
     <li className="border-t border-grid first:border-0">
@@ -50,6 +52,7 @@ function ErrorRow({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
             <Badge tone={levelTone(e.level)}>{e.level}</Badge>
+            <Badge tone={kindTone(pres.kind)}>{kindLabel(pres.kind)}</Badge>
             <span className="font-mono text-[10px] text-dim">#{e.id}</span>
             <span className="text-[10px] tracking-wider text-muted uppercase">
               {e.source}{e.code ? `/${e.code}` : ""}
@@ -66,7 +69,13 @@ function ErrorRow({
               {shortTime(e.at)} · {timeAgo(e.at)}
             </span>
           </div>
-          <p className="mt-1 break-words font-mono text-[12px] leading-snug text-fg">
+          <p className="mt-1 text-[13px] font-medium leading-snug text-fg">
+            {pres.label}
+          </p>
+          {pres.hint && (
+            <p className="mt-1 text-[11px] leading-snug text-muted">{pres.hint}</p>
+          )}
+          <p className="mt-1 break-words font-mono text-[11px] leading-snug text-dim">
             {e.message}
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5">
@@ -180,9 +189,20 @@ export function ErrorsPage({ watch }: { watch: LiveWatch | null }) {
     [allRaw, hidden],
   );
   const stats = watch?.error_stats;
-  const items = useMemo(
-    () => (filter === "all" ? all : all.filter((e) => e.level === filter)),
-    [all, filter],
+  const items = useMemo(() => {
+    if (filter === "all") return all;
+    if (filter === "attention") {
+      return all.filter((e) => errorPresentation(e).kind === "incident");
+    }
+    if (filter === "transient") {
+      return all.filter((e) => errorPresentation(e).kind === "transient");
+    }
+    return all.filter((e) => e.level === filter);
+  }, [all, filter]);
+
+  const attentionCount = useMemo(
+    () => all.filter((e) => errorPresentation(e).kind === "incident").length,
+    [all],
   );
 
   async function runDismiss(opts: { ids?: number[]; all?: boolean }) {
@@ -226,7 +246,7 @@ export function ErrorsPage({ watch }: { watch: LiveWatch | null }) {
             Errors
           </h1>
           <p className="text-[11px] text-dim">
-            Live runtime log — copy, open a GitHub issue, or dismiss after you review.
+            Labeled runtime log — transient API blips are warnings, not bot failures.
           </p>
         </div>
         <div className="flex flex-wrap gap-1.5">
@@ -263,10 +283,10 @@ export function ErrorsPage({ watch }: { watch: LiveWatch | null }) {
       </div>
 
       <div className="flex flex-wrap gap-2 text-[11px]">
-        <Badge tone="danger">1h {stats?.count_1h ?? 0}</Badge>
+        <Badge tone="danger">attention {attentionCount}</Badge>
         <Badge tone="warn">24h {stats?.count_24h ?? 0}</Badge>
         <Badge tone="fg">{all.length} loaded</Badge>
-        {(["all", "fatal", "error", "warn"] as Filter[]).map((f) => (
+        {(["all", "attention", "transient", "warn", "fatal"] as Filter[]).map((f) => (
           <button
             key={f}
             type="button"
@@ -275,15 +295,18 @@ export function ErrorsPage({ watch }: { watch: LiveWatch | null }) {
             }`}
             onClick={() => setFilter(f)}
           >
-            {f}
-            {f !== "all" ? ` ${all.filter((e) => e.level === f).length}` : ""}
+            {f === "attention" ? "needs attention" : f}
+            {f === "attention" ? ` ${attentionCount}` : f !== "all" ? ` ${all.filter((e) => {
+              if (f === "transient") return errorPresentation(e).kind === "transient";
+              return e.level === f;
+            }).length}` : ""}
           </button>
         ))}
       </div>
 
       <Panel
         title="Live error log"
-        right={<Badge tone={items.length ? "danger" : "ok"}>{items.length}</Badge>}
+        right={<Badge tone={attentionCount ? "danger" : "ok"}>{attentionCount}</Badge>}
       >
         {!items.length ? (
           <div className="flex items-center gap-2 py-6 justify-center text-[12px] text-dim">

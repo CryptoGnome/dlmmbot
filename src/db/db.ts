@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { hostname } from "node:os";
 import { resolve } from "node:path";
 import { execSync } from "node:child_process";
+import { presentError } from "../errors/present.js";
 
 // Schema per STRATEGY.md §7. On-chain state is the source of truth for live
 // positions; this DB is the ledger, decision log, and tuning dataset.
@@ -431,17 +432,35 @@ function errParts(err: unknown): { message: string; stack: string | null } {
  * Returns the new row id, or 0 if deduped / write failed.
  */
 export function logError(input: LogErrorInput): number {
-  const level = input.level ?? "error";
   const fromErr = input.err != null ? errParts(input.err) : null;
   const message = (input.message || fromErr?.message || "unknown error").slice(0, 800);
   const stack = fromErr?.stack ?? null;
   const code = input.code ?? null;
   const dedupeSec = input.dedupeSec ?? 60;
+  const presentation = presentError({
+    source: input.source,
+    code,
+    message,
+    stack,
+    level: input.level,
+  });
+  const level = input.level ?? presentation.level ?? (presentation.kind === "incident" ? "error" : "warn");
 
-  const line = `[${input.source}${code ? `/${code}` : ""}] ${message}`;
+  const line = `[${input.source}${code ? `/${code}` : ""}] ${presentation.label}: ${message}`;
   if (level === "warn") console.warn(line);
   else console.error(line);
   if (stack && level !== "warn") console.error(stack.split("\n").slice(1, 8).join("\n"));
+
+  const detailPayload: Record<string, unknown> = input.detail != null && typeof input.detail === "object" && !Array.isArray(input.detail)
+    ? { ...(input.detail as Record<string, unknown>) }
+    : input.detail != null
+      ? { raw: input.detail }
+      : {};
+  detailPayload._present = {
+    label: presentation.label,
+    kind: presentation.kind,
+    hint: presentation.hint ?? null,
+  };
 
   try {
     const database = getDb();
@@ -468,7 +487,7 @@ export function logError(input: LogErrorInput): number {
         code,
         message,
         stack,
-        input.detail != null ? JSON.stringify(input.detail) : null,
+        JSON.stringify(detailPayload),
         input.positionId ?? null,
         input.symbol ?? null,
         input.mint ?? null,

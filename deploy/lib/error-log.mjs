@@ -76,6 +76,7 @@ export function listRecentErrors(db, limit = 100) {
       if (r.detail_json) {
         try { detail = JSON.parse(r.detail_json); } catch { detail = r.detail_json; }
       }
+      const present = detail?._present ?? null;
       return {
         id: r.id,
         ts: r.ts,
@@ -86,6 +87,9 @@ export function listRecentErrors(db, limit = 100) {
         message: r.message,
         stack: r.stack,
         detail,
+        label: present?.label ?? null,
+        kind: present?.kind ?? null,
+        hint: present?.hint ?? null,
         position_id: r.position_id,
         symbol: r.symbol,
         mint: r.mint,

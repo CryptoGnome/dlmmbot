@@ -484,7 +484,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           { title: "Book", text: "Open positions (slot badge) + recent closes.", icon: "book", tone: "fg" },
           { title: "Analytics", text: "Why we made/lost SOL — exits, sleeves, skips.", icon: "calc", tone: "ok" },
           { title: "Activity", text: "Live play-by-play. SOL: green in / win, blue deployed (entries), red only for losses. On-chain rows link to Solscan.", icon: "zap", tone: "accent" },
-          { title: "Errors", text: "Broken stuff with copy/paste for bug reports.", icon: "alert", tone: "danger" },
+          { title: "Errors", text: "Broken stuff with copy/paste for bug reports. Each row has a plain label (Transient / Degraded / Needs attention).", icon: "alert", tone: "danger" },
           { title: "Research", text: "People we studied — not trade signals.", icon: "book", tone: "fg" },
           { title: "Wiki", text: "This guided tour.", icon: "bot", tone: "ok" },
           { title: "Changes", text: "Pending Git updates + Approve if auto-update is off.", icon: "refresh", tone: "warn" },
@@ -538,7 +538,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           },
           {
             title: "Errors",
-            text: "Structured failures stream live — copy, open a GitHub issue, or dismiss one / all after review.",
+            text: "Labeled log: Transient = API blip (auto-retries), Degraded = partial, Needs attention = review. Copy, GitHub issue, or dismiss.",
             icon: "alert",
           },
         ],

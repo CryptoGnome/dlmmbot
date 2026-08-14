@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { buildActivityFeed, type FeedItem } from "@/lib/activityFeed";
 import { toast } from "@/lib/toast";
+import { errorPresentation } from "@/lib/errorPresent";
 import type { LiveWatch } from "@/lib/types";
 import type { LiveStatus } from "@/lib/api";
 import { fmtSol } from "@/lib/utils";
@@ -231,13 +232,18 @@ export function useErrorToasts(watch: LiveWatch | null) {
     }
     if (top == null || top === lastId.current) return;
     const prev = lastId.current ?? 0;
-    const fresh = errs.filter((e) => e.id > prev && e.level !== "warn").slice(0, 3);
+    const fresh = errs.filter((e) => {
+      if (e.id <= prev) return false;
+      const p = errorPresentation(e);
+      return p.kind === "incident" || e.level === "fatal";
+    }).slice(0, 3);
     fresh.reverse();
     for (const e of fresh) {
+      const p = errorPresentation(e);
       toast({
         id: `err-${e.id}`,
-        title: e.symbol ? `${e.symbol} · ${e.source}` : `${e.source}${e.code ? `/${e.code}` : ""}`,
-        detail: e.message.slice(0, 120),
+        title: e.symbol ? `${p.label} · ${e.symbol}` : p.label,
+        detail: (p.hint ?? e.message).slice(0, 120),
         tone: "danger",
         kind: "fail",
         ttlMs: 8_000,

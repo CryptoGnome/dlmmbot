@@ -192,6 +192,11 @@ export interface ErrorLogEntry {
   message: string;
   stack: string | null;
   detail: unknown;
+  /** Plain-language title (stored at log time). */
+  label?: string | null;
+  /** transient | degraded | incident */
+  kind?: string | null;
+  hint?: string | null;
   position_id: number | null;
   symbol: string | null;
   mint: string | null;

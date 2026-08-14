@@ -846,7 +846,19 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
   const rot = config().rotation;
   const normalCap = Math.max(0, bankroll.effectiveSlots - rot.alpha_slots);
 
-  const { candidates } = await scan();
+  let candidates;
+  try {
+    ({ candidates } = await scan());
+  } catch (e) {
+    logError({
+      source: "scanner",
+      code: "sweep_failed",
+      message: (e as Error).message,
+      err: e,
+      dedupeSec: 60,
+    });
+    return;
+  }
   for (const cand of candidates) {
     const opened = openPositionCount();
     // Cheap admission pre-check before spending vetting calls: when the normal
