@@ -791,6 +791,12 @@ export function SettingsPage() {
   const [loading, setLoading] = useState(false);
   const [configReady, setConfigReady] = useState(() => !!boot?.config);
   const [walletReady, setWalletReady] = useState(() => !!boot?.setup);
+  const [loadLog, setLoadLog] = useState<string[]>(() =>
+    boot?.config ? ["Using cached settings — refreshing in background…"] : ["Opening Settings…"],
+  );
+  const [loadElapsed, setLoadElapsed] = useState(0);
+  const loadStartedAt = useRef<number | null>(boot?.config ? null : Date.now());
+  const waitTick = useRef(0);
   const [secretsOpen, setSecretsOpen] = useState(false);
   const [secretsUnlocked, setSecretsUnlocked] = useState(false);
   const [confirmToken, setConfirmToken] = useState("");
@@ -808,22 +814,56 @@ export function SettingsPage() {
   /** When wallet is already ready, hide create/import/unlock until user asks to replace. */
   const [walletReplaceOpen, setWalletReplaceOpen] = useState(false);
 
+  const pushLoad = (line: string) => {
+    setLoadLog((prev) => [...prev.slice(-20), line]);
+  };
+
   const load = async (opts?: { quiet?: boolean }) => {
     if (!opts?.quiet) setLoading(true);
     setErr(null);
+    loadStartedAt.current = Date.now();
+    setLoadElapsed(0);
+    waitTick.current = 0;
+    pushLoad(opts?.quiet ? "Background refresh…" : "Starting settings load…");
+    if (cachedSettings()?.config) pushLoad("Local cache present — UI can paint early when ready");
     try {
-      const bundle = await fetchSettingsBootstrap();
+      const bundle = await fetchSettingsBootstrap({ onStatus: pushLoad });
+      pushLoad("Applying settings to the form…");
       applySettingsBundle(bundle, setConfig, setDraft, setEnv, setSetup, setWalletTab);
       setConfigReady(true);
       setWalletReady(true);
+      const ms = loadStartedAt.current ? Date.now() - loadStartedAt.current : 0;
+      pushLoad(`Ready${ms > 0 ? ` (${(ms / 1000).toFixed(1)}s)` : ""}`);
     } catch (e) {
+      pushLoad(`Failed: ${(e as Error).message ?? String(e)}`);
       setErr((e as Error).message ?? String(e));
     } finally {
       setLoading(false);
+      loadStartedAt.current = null;
     }
   };
 
   useEffect(() => { void load({ quiet: !!boot?.config }); }, []);
+
+  // Tick elapsed + "still waiting" lines while a load is in flight (esp. when the
+  // dashboard server is busy rebuilding the live book and /api/settings is slow).
+  useEffect(() => {
+    if (!loading && configReady) return;
+    const id = window.setInterval(() => {
+      const started = loadStartedAt.current;
+      if (!started) return;
+      const sec = Math.floor((Date.now() - started) / 1000);
+      setLoadElapsed(sec);
+      if (sec > 0 && sec % 3 === 0) {
+        waitTick.current += 1;
+        const n = waitTick.current;
+        if (n === 1) pushLoad(`Still waiting for dashboard (${sec}s)…`);
+        else if (n === 2) pushLoad("Server may be refreshing the live book — hang tight…");
+        else if (n % 2 === 0) pushLoad(`Still working… ${sec}s`);
+      }
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [loading, configReady]);
 
   const safeEnv = useMemo(() => env.filter((r) => !r.secret), [env]);
   const secretEnv = useMemo(() => env.filter((r) => r.editable), [env]);
@@ -1143,7 +1183,40 @@ export function SettingsPage() {
 
       {err && <div className="border border-danger/60 bg-panel px-3 py-2 text-danger text-[11px]">{err}</div>}
       {msg && <div className="border border-ok/60 bg-panel px-3 py-2 text-ok text-[11px]">{msg}</div>}
-      {!configReady && pageTab === "bot" && <LoadingState label="Loading bot settings…" />}
+
+      {(loading || !configReady) && loadLog.length > 0 && (
+        <div className="border border-grid bg-panel/60 px-3 py-2">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="text-[9px] tracking-[0.16em] text-muted uppercase">Load status</span>
+            {loadElapsed > 0 && (
+              <span className="font-mono text-[10px] tabular-nums text-dim">{loadElapsed}s</span>
+            )}
+          </div>
+          <ul className="max-h-28 space-y-0.5 overflow-y-auto font-mono text-[10px] leading-snug text-dim">
+            {loadLog.slice(-10).map((line, i, arr) => (
+              <li key={`${i}-${line.slice(0, 32)}`} className={i === arr.length - 1 ? "text-fg" : undefined}>
+                <span className="text-muted">›</span> {line}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {!configReady && pageTab === "bot" && (
+        <LoadingState
+          label="Loading bot settings…"
+          steps={loadLog}
+          elapsedSec={loadElapsed}
+        />
+      )}
+
+      {!walletReady && pageTab === "wallet" && (
+        <LoadingState
+          label="Loading wallet & keys…"
+          steps={loadLog}
+          elapsedSec={loadElapsed}
+        />
+      )}
 
       {configReady && pageTab === "bot" && (
         <Suspense fallback={<Panel title="Profiles"><LoadingState compact label="Loading profiles…" /></Panel>}>
@@ -1221,10 +1294,6 @@ export function SettingsPage() {
           </LazySettingsGroup>
         );
       })}
-
-      {pageTab === "wallet" && !walletReady && (
-        <LoadingState compact label="Loading wallet & keys…" />
-      )}
 
       {walletReady && pageTab === "wallet" && (
       <>

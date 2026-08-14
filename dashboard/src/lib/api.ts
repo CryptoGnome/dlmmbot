@@ -70,22 +70,40 @@ export function refreshSettingsCache(patch: Partial<SettingsBundle>): void {
 }
 
 /** One round-trip for Settings boot (config + env + setup). Falls back on older dash servers. */
-export async function fetchSettingsBootstrap(): Promise<SettingsBundle> {
+export async function fetchSettingsBootstrap(opts?: {
+  onStatus?: (line: string) => void;
+}): Promise<SettingsBundle> {
+  const note = opts?.onStatus ?? (() => {});
   const t = tokenFromUrl();
   const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  note("Contacting dashboard…");
   try {
+    note("GET /api/settings (config + env + setup)…");
     const res = await fetch(`/api/settings${q}`, { headers: authHeaders() });
     if (res.ok) {
+      note("Reading response…");
       const data = await res.json() as SettingsBundle;
+      const n = data.config ? Object.keys(data.config).length : 0;
+      note(`Got ${n} setting(s)${data.env ? `, ${data.env.length} env row(s)` : ""}`);
       cacheSettings(data);
+      note("Cached for next open");
       return data;
     }
-  } catch { /* older server — fall through */ }
-  const [config, env, setup] = await Promise.all([
-    fetchConfig(), fetchEnv(), fetchSetupStatus(),
-  ]);
+    note(`Combined endpoint returned ${res.status} — falling back…`);
+  } catch {
+    note("Combined endpoint unavailable — fetching pieces separately…");
+  }
+  note("GET /api/config…");
+  const configP = fetchConfig();
+  note("GET /api/env…");
+  const envP = fetchEnv();
+  note("GET /api/setup/status…");
+  const setupP = fetchSetupStatus();
+  const [config, env, setup] = await Promise.all([configP, envP, setupP]);
+  note(`Got ${Object.keys(config).length} setting(s), ${env.length} env row(s)`);
   const bundle = { config, env, setup };
   cacheSettings(bundle);
+  note("Cached for next open");
   return bundle;
 }
 

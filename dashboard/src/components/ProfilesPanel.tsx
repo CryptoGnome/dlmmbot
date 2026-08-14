@@ -108,24 +108,38 @@ export function ProfilesPanel({
   const [communityErr, setCommunityErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
+  const [loadLog, setLoadLog] = useState<string[]>(["Loading official + local profiles…"]);
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [shareGuide, setShareGuide] = useState<ShareState | null>(null);
   const [saveName, setSaveName] = useState("");
   const [q, setQ] = useState("");
 
   const reload = useCallback(async () => {
+    setLoadLog((p) => [...p.slice(-8), "GET /api/profiles…"]);
     const p = await fetchProfiles();
     setOfficial(p.official);
     setLocal(p.local);
     setShare(p.share);
     setReady(true);
+    setLoadLog((prev) => [
+      ...prev.slice(-8),
+      `Official ${p.official.length} · local ${p.local.length}`,
+      "Fetching community gallery…",
+    ]);
     void fetchCommunityProfiles()
       .then((c) => {
         setCommunity(c.profiles);
         setCommunityErr(c.error);
         if (c.share) setShare(c.share);
+        setLoadLog((prev) => [
+          ...prev.slice(-8),
+          c.error ? `Community: ${c.error}` : `Community ${c.profiles.length} pack(s)`,
+        ]);
       })
-      .catch((e) => setCommunityErr((e as Error).message));
+      .catch((e) => {
+        setCommunityErr((e as Error).message);
+        setLoadLog((prev) => [...prev.slice(-8), `Community failed: ${(e as Error).message}`]);
+      });
   }, []);
 
   useEffect(() => {
@@ -267,7 +281,7 @@ export function ProfilesPanel({
         </p>
 
         {!ready ? (
-          <LoadingState compact label="Loading profiles…" />
+          <LoadingState compact label="Loading profiles…" steps={loadLog} />
         ) : (
           <>
         <div className="mb-4">
