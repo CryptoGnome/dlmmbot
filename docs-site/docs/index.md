@@ -25,3 +25,7 @@ Also see [STRATEGY.md](https://github.com/CryptoGnome/dlmmbot/blob/master/STRATE
 ::: info Usage fee
 On each **live** winning close, **1% of measured net profit** buys and burns **GNME** (`BaDjVCpABEVCdt4LT7ivuzA4izBwJCqnDjrLa8XBtT38`). This is a required product fee — not a Settings toggle. Paper mode logs it without spending.
 :::
+
+::: tip Settings profiles
+Dashboard **Settings → Profiles**: official Conservative / Balanced / Aggressive packs, save your own on the volume, and browse community packs from GitHub (`profiles/community`). Share via Export → Propose on GitHub. Profiles never change paper/live mode or secrets.
+:::

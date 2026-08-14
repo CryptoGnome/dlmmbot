@@ -9,6 +9,7 @@ import { Badge, Panel } from "@/components/ui";
 import { Icon } from "@/lib/icons";
 import { toast } from "@/lib/toast";
 import { WalletCreateModal } from "@/components/WalletCreateModal";
+import { ProfilesPanel } from "@/components/ProfilesPanel";
 import { walletPresence } from "@/lib/walletStatus";
 import {
   Settings as SettingsIcon, Save, RefreshCw, Lock, Unlock, KeyRound, Wallet, RefreshCcw,
@@ -759,6 +760,20 @@ export function SettingsPage() {
       {err && <div className="border border-danger/60 bg-panel px-3 py-2 text-danger text-[11px]">{err}</div>}
       {msg && <div className="border border-ok/60 bg-panel px-3 py-2 text-ok text-[11px]">{msg}</div>}
       {loading && <div className="text-[12px] text-dim">Loading…</div>}
+
+      {!loading && pageTab === "bot" && (
+        <ProfilesPanel
+          onApplied={(next) => {
+            setConfig(next);
+            const d: Record<string, string> = {};
+            for (const path of PUBLIC_PATHS) {
+              if (path in next) d[path] = wireStr(next[path]);
+            }
+            setDraft(d);
+            setMsg("Applied profile. Bot hot-reloads within ~2s.");
+          }}
+        />
+      )}
 
       {!loading && pageTab === "bot" && GROUPS.map((g) => (
         <Panel key={g.title} title={g.title} right={<Badge tone="accent">{g.fields.filter((f) => f.path in (config ?? {})).length}</Badge>}>

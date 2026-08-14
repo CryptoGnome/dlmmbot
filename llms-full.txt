@@ -47,7 +47,8 @@ Settings also exposes encrypted wallet create / import / unlock on the Wallet & 
 - Token icons/names from Jupiter → Pump.fun → DexScreener, cached in SQLite `tokens` and browser localStorage
 - Header ON/OFF soft-pauses trading (PAUSE file; positions stay open); HALT closes opens and idles until cleared
 - Changes pending commits tagged by risk (strategy / deps / deploy / dash / docs)
-- Settings: Bot settings (sizing, risk, filters) and Wallet & secrets (vault, encrypted wallet, auto-update)
+- Settings: Bot settings (sizing, risk, filters, **profiles**) and Wallet & secrets (vault, encrypted wallet, auto-update)
+- Settings profiles: official Conservative / Balanced / Aggressive; private local saves under `data/profiles/`; community gallery fetched from GitHub `profiles/community` (share via JSON export + PR)
 - Research page: public X credits (not partners/signals)
 - Wiki tab: operator manual (sleeves, P0–P5, follow, sizing, dash map); kept in sync with STRATEGY.md
 

@@ -488,7 +488,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           { title: "Research", text: "People we studied — not trade signals.", icon: "book", tone: "fg" },
           { title: "Wiki", text: "This guided tour.", icon: "bot", tone: "ok" },
           { title: "Changes", text: "Pending Git updates + Approve if auto-update is off.", icon: "refresh", tone: "warn" },
-          { title: "Settings", text: "Knobs + wallet vault + auto-update toggle.", icon: "lock", tone: "fg" },
+          { title: "Settings", text: "Knobs + profiles (official / local / GitHub community) + wallet vault + auto-update.", icon: "lock", tone: "fg" },
         ],
       },
       {
@@ -626,6 +626,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           ["Escape hatch", "Deep dip, then recovery → reshape the range instead of dying slowly."],
           ["Profit lock", "Bank a slice of a big winner while the rest keeps earning."],
           ["Usage fee", "Fixed 1% of measured close profit → buy+burn GNME (not Settings-tunable)."],
+          ["Profile", "Pack of Bot settings — official / local / GitHub community gallery."],
           ["Follow", "Careful re-entries after an up-and-out close."],
           ["Cluster brake", "Too many hard stops close together → pause new entries."],
           ["HALT", "Emergency stop file/flag — close book, idle."],

@@ -366,6 +366,160 @@ export async function dismissErrors(opts: { ids?: number[]; all?: boolean }): Pr
   return { ok: !!data.ok, dismissed: Number(data.dismissed) || 0 };
 }
 
+export type SettingsProfile = {
+  schema: number;
+  id: string;
+  name: string;
+  description?: string;
+  author?: string;
+  tags?: string[];
+  updated?: string;
+  updates?: Record<string, unknown>;
+  source?: "official" | "local" | "community";
+  file?: string;
+};
+
+export type ProfileShareMeta = {
+  repo: string;
+  ref: string;
+  new_file_base: string;
+  community_readme: string;
+};
+
+export async function fetchProfiles(): Promise<{
+  official: SettingsProfile[];
+  local: SettingsProfile[];
+  share: ProfileShareMeta;
+}> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/profiles${q}`, { headers: authHeaders() });
+  const data = await res.json() as {
+    official?: SettingsProfile[]; local?: SettingsProfile[]; share?: ProfileShareMeta; error?: string;
+  };
+  if (!res.ok) throw new Error(data.error ?? `profiles ${res.status}`);
+  return {
+    official: data.official ?? [],
+    local: data.local ?? [],
+    share: data.share ?? { repo: "CryptoGnome/dlmmbot", ref: "master", new_file_base: "", community_readme: "" },
+  };
+}
+
+export async function fetchCommunityProfiles(): Promise<{
+  profiles: Array<{
+    id: string; name: string; author?: string; description?: string;
+    tags?: string[]; file?: string; updated?: string;
+  }>;
+  error: string | null;
+  share: ProfileShareMeta;
+}> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/profiles/community${q}`, { headers: authHeaders() });
+  const data = await res.json() as {
+    profiles?: Array<{
+      id: string; name: string; author?: string; description?: string;
+      tags?: string[]; file?: string; updated?: string;
+    }>;
+    error?: string | null;
+    share?: ProfileShareMeta;
+  };
+  if (!res.ok) throw new Error((data as { error?: string }).error ?? `community ${res.status}`);
+  return {
+    profiles: data.profiles ?? [],
+    error: data.error ?? null,
+    share: data.share ?? { repo: "CryptoGnome/dlmmbot", ref: "master", new_file_base: "", community_readme: "" },
+  };
+}
+
+export async function saveLocalProfileApi(opts: {
+  name: string; description?: string; author?: string; id?: string;
+}): Promise<SettingsProfile> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/profiles/local${q}`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(opts),
+  });
+  const data = await res.json() as { ok?: boolean; profile?: SettingsProfile; error?: string };
+  if (!res.ok || !data.profile) throw new Error(data.error ?? `save ${res.status}`);
+  return data.profile;
+}
+
+export async function deleteLocalProfileApi(id: string): Promise<void> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/profiles/local/${encodeURIComponent(id)}${q}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  const data = await res.json() as { error?: string };
+  if (!res.ok) throw new Error(data.error ?? `delete ${res.status}`);
+}
+
+export async function previewProfileApi(body: {
+  source?: string; id?: string; updates?: Record<string, unknown>;
+}): Promise<{
+  changes: Array<{ path: string; from: unknown; to: unknown }>;
+  updates: Record<string, unknown>;
+  dropped: string[];
+  profile: SettingsProfile | null;
+}> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/profiles/preview${q}`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json() as {
+    changes?: Array<{ path: string; from: unknown; to: unknown }>;
+    updates?: Record<string, unknown>;
+    dropped?: string[];
+    profile?: SettingsProfile | null;
+    error?: string;
+  };
+  if (!res.ok) throw new Error(data.error ?? `preview ${res.status}`);
+  return {
+    changes: data.changes ?? [],
+    updates: data.updates ?? {},
+    dropped: data.dropped ?? [],
+    profile: data.profile ?? null,
+  };
+}
+
+export async function applyProfileApi(body: {
+  source?: string; id?: string; updates?: Record<string, unknown>;
+}): Promise<{ applied: string[]; config: FlatConfig }> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/profiles/apply${q}`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json() as {
+    applied?: string[]; config?: FlatConfig; error?: string;
+  };
+  if (!res.ok) throw new Error(data.error ?? `apply ${res.status}`);
+  return { applied: data.applied ?? [], config: data.config ?? {} };
+}
+
+export async function fetchProfileSnapshot(): Promise<{
+  updates: Record<string, unknown>;
+  share_url: string;
+}> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/profiles/snapshot${q}`, { headers: authHeaders() });
+  const data = await res.json() as {
+    updates?: Record<string, unknown>; share_url?: string; error?: string;
+  };
+  if (!res.ok) throw new Error(data.error ?? `snapshot ${res.status}`);
+  return { updates: data.updates ?? {}, share_url: data.share_url ?? "" };
+}
+
 export type LiveStatus = "connecting" | "open" | "closed";
 
 type LiveHandlers = {

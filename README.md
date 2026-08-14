@@ -32,6 +32,7 @@ Scans hot SOL-quoted meme pools, vets the token, opens a **one-sided SOL** LP be
 | [dlmmbot.com](https://dlmmbot.com) | Marketing site |
 | [STRATEGY.md](STRATEGY.md) | Full strategy / exits |
 | [config.toml](config.toml) | Live knobs (hot-reloaded) |
+| [profiles/](profiles/) | Official + community settings packs |
 
 ---
 

@@ -22,6 +22,11 @@ import {
   approveDeploy, readDeployPrefs, writeDeployPrefs,
 } from "./lib/deploy-prefs.mjs";
 import { insertError, dismissErrors } from "./lib/error-log.mjs";
+import {
+  listProfiles, listCommunityProfiles, saveLocalProfile, deleteLocalProfile,
+  resolveProfileUpdates, previewProfileDiff, applyProfileUpdates, githubProposeUrl,
+  snapshotAllowlistedConfig,
+} from "./lib/profiles.mjs";
 import { requestHalt, clearHalt, readHaltState } from "./lib/halt.mjs";
 import { requestPause, clearPause, readPauseState } from "./lib/pause.mjs";
 import { execSync } from "node:child_process";
@@ -186,6 +191,100 @@ const server = createServer(async (req, res) => {
       const updates = body?.updates ?? body;
       const result = applyConfigUpdates(root, updates);
       sendJson(res, 200, result);
+    } catch (e) {
+      sendJson(res, 400, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/profiles" && req.method === "GET") {
+    try {
+      sendJson(res, 200, listProfiles(root));
+    } catch (e) {
+      sendJson(res, 500, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/profiles/community" && req.method === "GET") {
+    try {
+      sendJson(res, 200, await listCommunityProfiles());
+    } catch (e) {
+      sendJson(res, 500, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/profiles/snapshot" && req.method === "GET") {
+    try {
+      const updates = snapshotAllowlistedConfig(root);
+      sendJson(res, 200, { updates, share_url: githubProposeUrl("my-profile") });
+    } catch (e) {
+      sendJson(res, 500, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/profiles/local" && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      const profile = saveLocalProfile(root, {
+        name: body?.name,
+        description: body?.description,
+        author: body?.author,
+        tags: body?.tags,
+        id: body?.id,
+      });
+      sendJson(res, 200, { ok: true, profile });
+    } catch (e) {
+      sendJson(res, 400, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname.startsWith("/api/profiles/local/") && req.method === "DELETE") {
+    try {
+      const id = decodeURIComponent(url.pathname.slice("/api/profiles/local/".length));
+      sendJson(res, 200, deleteLocalProfile(root, id));
+    } catch (e) {
+      sendJson(res, 400, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/profiles/preview" && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      const resolved = await resolveProfileUpdates(root, body);
+      const preview = previewProfileDiff(root, resolved.updates);
+      sendJson(res, 200, {
+        ok: true,
+        profile: resolved.profile,
+        updates: resolved.updates,
+        dropped: resolved.dropped,
+        changes: preview.changes,
+      });
+    } catch (e) {
+      sendJson(res, 400, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/profiles/apply" && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      const resolved = await resolveProfileUpdates(root, body);
+      const result = applyProfileUpdates(root, resolved.updates);
+      watchCache = { at: 0, data: null, building: null };
+      sendJson(res, 200, {
+        ok: true,
+        applied: result.applied,
+        dropped: result.dropped,
+        profile: resolved.profile
+          ? { id: resolved.profile.id, name: resolved.profile.name, source: resolved.profile.source }
+          : null,
+        config: result.config,
+      });
     } catch (e) {
       sendJson(res, 400, { error: e.message ?? String(e) });
     }

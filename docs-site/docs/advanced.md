@@ -15,6 +15,10 @@ Same risk rules: paper first, burner only, never commit `.env`.
 **1% of measured net profit** on each live winning close buys+burns **GNME**. Required product fee (hardcoded — not in Settings). Paper does not spend.
 :::
 
+::: tip Settings profiles
+Dashboard **Settings → Profiles** for official / local / GitHub community packs. See [profiles/](https://github.com/CryptoGnome/dlmmbot/tree/master/profiles).
+:::
+
 ## When to use this
 
 | Path | Best for |
