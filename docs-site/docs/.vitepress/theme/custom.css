@@ -286,6 +286,22 @@ html:not(.dark) {
   border-color: #00ff85;
   color: #0d0d0d;
 }
+.dash-token-gen__pem {
+  display: block;
+  max-height: 7rem;
+  overflow: auto;
+  margin: 0 0 0.75rem !important;
+  white-space: pre-wrap;
+  font-size: 0.68rem;
+}
+.dash-token-gen__link {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+.dash-token-gen__link:hover {
+  text-decoration: none;
+}
 .vp-doc .lede {
   color: #a3a3a3;
   margin-bottom: 0.25rem;
