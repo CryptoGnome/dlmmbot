@@ -1,6 +1,6 @@
-import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { resolveBuildLabel } from "../buildLabel.js";
 import { config, currentMode, isLive, syncFarmerModeFromDisk } from "../config.js";
 import { reconcileLive } from "./reconcile.js";
 import { alert, type AlertKind } from "../alerts.js";
@@ -1359,7 +1359,7 @@ export async function runLoop(): Promise<void> {
   // `--dirty` matters more than the SHA here: pm2 runs the WORKING TREE, not
   // HEAD, so a clean-looking SHA on a dirty checkout is precisely the false
   // reassurance this line exists to prevent.
-  try { buildSha = execSync("git describe --always --dirty", { encoding: "utf8" }).trim(); } catch { /* not a checkout */ }
+  try { buildSha = resolveBuildLabel(); } catch { /* keep unknown */ }
   console.log(`[farmer] starting in ${exec.mode} mode (pid ${process.pid}, build ${buildSha})`);
   startSmartFlow();
   let lastScan = 0;

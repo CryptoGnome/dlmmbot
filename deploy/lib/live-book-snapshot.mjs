@@ -117,7 +117,11 @@ function buildReclaimAtaIndex(db) {
 /** Run git with an argv array — no shell, so values can never be interpreted. */
 function git(root, args) {
   try {
-    return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+    return execFileSync("git", args, {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
   } catch {
     return null;
   }
