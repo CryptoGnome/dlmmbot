@@ -7,6 +7,7 @@ import { ActivityFeedList } from "@/components/ActivityFeed";
 import { buildActivityFeed } from "@/lib/activityFeed";
 import { ClosePnlCell, OpenPositionCard } from "@/components/OpenPositionCard";
 import { LiveNum } from "@/components/LiveNum";
+import { HaltControl } from "@/components/HaltControl";
 
 function HeroStat({
   label, value, signal, pct, tone = "fg", sub,
@@ -115,6 +116,8 @@ export function OverviewPage({
           sub={`${watch?.book.all_time_live.n ?? 0} closes · Kelly ${fmtPct(watch?.kelly.appliedFraction)}`}
         />
       </div>
+
+      <HaltControl watch={watch} />
 
       <Panel title="Equity" className="shrink-0" bodyClassName="flex flex-col">
         <div className="h-[280px] w-full md:h-[320px]">

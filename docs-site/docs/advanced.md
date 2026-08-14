@@ -93,7 +93,7 @@ npm run dash
 
 Open [http://localhost:8787](http://localhost:8787) with that token.
 
-The **Errors** tab streams structured runtime failures (tick/open/RPC/etc.) over the same live WebSocket — expand a row for stack + context, **Copy** / **Copy all**, or **GitHub issue** to open a prefilled bug report.
+The **Errors** tab streams structured runtime failures over WebSocket. Overview has **Halt / Resume** (same `HALT` file as `npm run halt`). Pending updates on **Changes** show risk chips (`strategy`, `deps`, `deploy`, `dash`, `docs`).
 
 ## Keys & going live
 

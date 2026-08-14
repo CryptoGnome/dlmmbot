@@ -191,13 +191,19 @@ export function Shell({
             {watch && (
               <span
                 className={
-                  watch.cluster.tripped
+                  watch.ops?.halted
                     ? "inline-flex items-center gap-1 border border-danger/70 px-1.5 py-0.5 text-[10px] tracking-widest text-danger"
-                    : "inline-flex items-center gap-1 border border-ok/70 px-1.5 py-0.5 text-[10px] tracking-widest text-ok"
+                    : watch.cluster.tripped
+                      ? "inline-flex items-center gap-1 border border-danger/70 px-1.5 py-0.5 text-[10px] tracking-widest text-danger"
+                      : "inline-flex items-center gap-1 border border-ok/70 px-1.5 py-0.5 text-[10px] tracking-widest text-ok"
                 }
               >
                 <Icon icon={PauseCircle} size={11} />
-                {watch.cluster.tripped ? `BRAKE ${watch.cluster.remainingMin}m` : "BRAKE OFF"}
+                {watch.ops?.halted
+                  ? "HALTED"
+                  : watch.cluster.tripped
+                    ? `BRAKE ${watch.cluster.remainingMin}m`
+                    : "BRAKE OFF"}
               </span>
             )}
             {watch?.build && (

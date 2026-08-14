@@ -13,6 +13,7 @@ import { listRecentErrors, errorStats } from "./error-log.mjs";
 import {
   decorateWithMeta, loadTokenMetaMap, scheduleTokenMetaBackfill,
 } from "./token-meta.mjs";
+import { readHaltState } from "./halt.mjs";
 
 const execAsync = promisify(exec);
 
@@ -156,12 +157,36 @@ function buildGitInfo(root) {
     }).filter((c) => c.sha);
   };
 
+  /** Classify commit files so Changes can show risk chips for manual approve. */
+  function riskTagsForSha(sha) {
+    if (!sha) return [];
+    const files = (git(root, `git diff-tree --no-commit-id --name-only -r ${sha}`) || "")
+      .split("\n").filter(Boolean);
+    const tags = new Set();
+    for (const f of files) {
+      if (/^dashboard\//.test(f) || /^deploy\/dashboard-server/.test(f)) tags.add("dash");
+      else if (/^(docs\/|docs-site\/|llms)/.test(f) || /\.md$/i.test(f)) tags.add("docs");
+      else if (/package(-lock)?\.json$/.test(f) || /^dashboard\/package/.test(f)) tags.add("deps");
+      else if (/^deploy\//.test(f) || /^\.github\//.test(f) || /^railway/.test(f)) tags.add("deploy");
+      else if (
+        /^src\/(manager|risk|ranges|scanner|vetting)\//.test(f)
+        || f === "STRATEGY.md"
+        || f === "config.toml"
+        || /^src\/executor\//.test(f)
+      ) tags.add("strategy");
+      else if (/^src\//.test(f)) tags.add("core");
+    }
+    const order = ["strategy", "deps", "deploy", "core", "dash", "docs"];
+    return order.filter((t) => tags.has(t));
+  }
+
   const recent = parseLog(git(root, "git log -20 --pretty=format:%h%x09%ct%x09%s"));
   let pending = [];
   let behindCount = 0;
   if (sync === "behind" && originFull) {
     behindCount = Number(git(root, `git rev-list --count HEAD..${originFull}`)) || 0;
-    pending = parseLog(git(root, `git log HEAD..${originFull} -20 --pretty=format:%h%x09%ct%x09%s`));
+    pending = parseLog(git(root, `git log HEAD..${originFull} -20 --pretty=format:%h%x09%ct%x09%s`))
+      .map((c) => ({ ...c, risk: riskTagsForSha(c.sha) }));
   }
 
   const prefs = readDeployPrefs(root);
@@ -982,12 +1007,16 @@ export function buildLiveBookSnapshot(root) {
     decorateWithMeta(p3Missed, tokenMeta);
     decorateWithMeta(recentErrors, tokenMeta);
     scheduleTokenMetaBackfill(root, metaMints);
+    const halt = readHaltState(root);
 
     return {
       ts: now,
       at: new Date(now * 1000).toISOString(),
       host: git(root, "hostname") ?? "local",
-      build: {
+      ops: {
+        halted: halt.halted,
+        halt_at: halt.halt_at,
+      },      build: {
         version: gitInfo.version,
         branch: gitInfo.branch,
         head: gitInfo.head,

@@ -294,6 +294,31 @@ export async function approveDeployUpdate(): Promise<{ ok: boolean; note?: strin
   };
 }
 
+export async function postHalt(action: "halt" | "resume", confirm: string): Promise<{
+  ok: boolean;
+  halted: boolean;
+  halt_at: string | null;
+  note?: string;
+}> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/halt${q}`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ action, confirm }),
+  });
+  const data = await res.json() as {
+    ok?: boolean; halted?: boolean; halt_at?: string | null; note?: string; error?: string;
+  };
+  if (!res.ok) throw new Error(data.error ?? `halt ${res.status}`);
+  return {
+    ok: !!data.ok,
+    halted: !!data.halted,
+    halt_at: data.halt_at ?? null,
+    note: data.note,
+  };
+}
+
 export type LiveStatus = "connecting" | "open" | "closed";
 
 type LiveHandlers = {

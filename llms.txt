@@ -20,7 +20,8 @@ Railway signup: https://railway.com?referralCode=SCj9lN
 - Dashboard: overview, book, analytics, activity feed, errors log, changes/changelog, research credits, settings
 - Update toasts when GitHub is ahead or the bot restarts on a new build; BEHIND build pill pulses
 - Errors tab streams structured runtime errors over WebSocket (copy dump / open GitHub issue)
-- Token symbols show Jupiter icons (cached in SQLite + browser) after first load
+- Token symbols show Jupiter / Pump.fun / DexScreener icons (cached in SQLite + browser)
+- Overview Halt/Resume control; Changes shows risk tags on pending commits
 - Auto-update on by default (PM2); Settings can require Approve on Changes before pull
 - First-run setup wizard: RPC, encrypted wallet (create or Phantom import with password retype + one-time backup), paper/live mode
 - Live requires both `FARMER_MODE=live` and `[exec].mode = "live"`

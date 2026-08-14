@@ -7,16 +7,27 @@ import { ExternalLink, ScrollText, Check } from "lucide-react";
 import { approveDeployUpdate } from "@/lib/api";
 import { toast } from "@/lib/toast";
 
-type Commit = NonNullable<LiveWatch["build"]["recent"]>[number];
+type Commit = NonNullable<LiveWatch["build"]["recent"]>[number] & { risk?: string[] };
+
+const RISK_TONE: Record<string, "danger" | "warn" | "accent" | "ok" | "fg"> = {
+  strategy: "danger",
+  deps: "warn",
+  deploy: "warn",
+  core: "accent",
+  dash: "ok",
+  docs: "fg",
+};
 
 function CommitList({
   items,
   empty,
   repoUrl,
+  showRisk,
 }: {
   items: Commit[];
   empty: string;
   repoUrl?: string | null;
+  showRisk?: boolean;
 }) {
   if (!items.length) {
     return <p className="text-[12px] text-dim">{empty}</p>;
@@ -43,7 +54,12 @@ function CommitList({
               )}
             </span>
             <div className="min-w-0 flex-1">
-              <div className="text-[13px] text-fg">{c.subject}</div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[13px] text-fg">{c.subject}</span>
+                {showRisk && (c.risk?.length ? c.risk : ["docs"]).map((t) => (
+                  <Badge key={t} tone={RISK_TONE[t] ?? "fg"}>{t}</Badge>
+                ))}
+              </div>
               <div className="mt-0.5 font-mono text-[10px] text-muted">
                 {href ? (
                   <a
@@ -172,6 +188,7 @@ export function ChangelogPage({ watch }: { watch: LiveWatch | null }) {
             items={pending}
             empty="Behind, but no pending commit list yet — refresh shortly."
             repoUrl={b?.repo_url}
+            showRisk
           />
         </Panel>
       )}

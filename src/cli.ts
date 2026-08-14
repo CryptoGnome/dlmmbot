@@ -170,8 +170,13 @@ async function main(): Promise<void> {
     }
     case "halt": {
       const haltPath = resolve(process.cwd(), "HALT");
-      if (existsSync(haltPath)) { unlinkSync(haltPath); console.log("HALT cleared — farmer may run again"); }
-      else { writeFileSync(haltPath, new Date().toISOString()); console.log("HALT requested — running farmer will close all positions and stop"); }
+      if (existsSync(haltPath)) {
+        unlinkSync(haltPath);
+        console.log("HALT cleared — farmer resumes on the next tick (or restart if it already exited)");
+      } else {
+        writeFileSync(haltPath, new Date().toISOString());
+        console.log("HALT requested — running farmer will close all positions and idle until cleared");
+      }
       break;
     }
     default:

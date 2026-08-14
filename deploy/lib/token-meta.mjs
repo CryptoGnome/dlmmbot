@@ -87,7 +87,79 @@ async function fetchJupMeta(mint) {
     symbol: typeof a.symbol === "string" ? a.symbol : null,
     name: typeof a.name === "string" ? a.name : null,
     icon_url: typeof a.icon === "string" ? a.icon : null,
+    source: "jupiter",
   };
+}
+
+/** Pump.fun frontend API — often has image_uri for memes Jupiter hasn't indexed. */
+async function fetchPumpMeta(mint) {
+  const res = await fetch(
+    `https://frontend-api-v3.pump.fun/coins/${encodeURIComponent(mint)}`,
+    {
+      signal: AbortSignal.timeout(8_000),
+      headers: { Accept: "application/json", "User-Agent": "dlmmbot/0.1" },
+    },
+  );
+  if (!res.ok) return null;
+  const a = await res.json();
+  if (!a || typeof a !== "object") return null;
+  const icon = typeof a.image_uri === "string" ? a.image_uri
+    : (typeof a.imageUri === "string" ? a.imageUri : null);
+  return {
+    symbol: typeof a.symbol === "string" ? a.symbol : null,
+    name: typeof a.name === "string" ? a.name : null,
+    icon_url: icon,
+    source: "pump",
+  };
+}
+
+/** DexScreener pair info — broad coverage + CDN logos. */
+async function fetchDexMeta(mint) {
+  const res = await fetch(
+    `https://api.dexscreener.com/latest/dex/tokens/${encodeURIComponent(mint)}`,
+    { signal: AbortSignal.timeout(8_000) },
+  );
+  if (!res.ok) return null;
+  const body = await res.json();
+  const pairs = Array.isArray(body?.pairs) ? body.pairs : [];
+  const sol = pairs.find((p) => p?.chainId === "solana") ?? pairs[0];
+  if (!sol) return null;
+  const base = sol.baseToken?.address === mint ? sol.baseToken : sol.quoteToken;
+  const icon = typeof sol.info?.imageUrl === "string" ? sol.info.imageUrl : null;
+  return {
+    symbol: typeof base?.symbol === "string" ? base.symbol : null,
+    name: typeof base?.name === "string" ? base.name : null,
+    icon_url: icon,
+    source: "dexscreener",
+  };
+}
+
+function mergeMeta(parts) {
+  let symbol = null;
+  let name = null;
+  let icon_url = null;
+  let source = null;
+  for (const p of parts) {
+    if (!p) continue;
+    if (!symbol && p.symbol) symbol = p.symbol;
+    if (!name && p.name) name = p.name;
+    if (!icon_url && p.icon_url) {
+      icon_url = p.icon_url;
+      source = p.source ?? null;
+    }
+  }
+  if (!symbol && !name && !icon_url) return null;
+  return { symbol, name, icon_url, source };
+}
+
+/** Jupiter → Pump.fun → DexScreener until we have an icon (or exhaust). */
+export async function fetchTokenMeta(mint) {
+  const jup = await fetchJupMeta(mint).catch(() => null);
+  if (jup?.icon_url) return jup;
+  const pump = await fetchPumpMeta(mint).catch(() => null);
+  if (pump?.icon_url) return mergeMeta([jup, pump]);
+  const dex = await fetchDexMeta(mint).catch(() => null);
+  return mergeMeta([jup, pump, dex]);
 }
 
 /**
@@ -119,7 +191,7 @@ export function scheduleTokenMetaBackfill(root, mints) {
       }
       for (const mint of todo) {
         try {
-          const meta = await fetchJupMeta(mint);
+          const meta = await fetchTokenMeta(mint);
           if (meta) upsertTokenMetaRow(db, mint, meta);
         } catch { /* soft */ }
         await new Promise((r) => setTimeout(r, BACKFILL_GAP_MS));

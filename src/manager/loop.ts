@@ -1165,14 +1165,28 @@ export async function runLoop(): Promise<void> {
   startSmartFlow();
   let lastScan = 0;
   let lastSweep = 0;
+  let haltCloseDone = false;
 
   for (;;) {
     const tickStart = Date.now();
     const pollMs = config().manage.poll_s * 1000;
     if (haltRequested()) {
-      console.log("[farmer] HALT file present — closing all positions and stopping");
-      for (const pos of loadOpenPositions()) await closeAndReport(exec, pos, "manual", config().exec.exit_slippage_bps, "close", "manual HALT");
-      return;
+      // Idle (don't exit) so PM2/Railway don't restart-loop while HALT is set.
+      if (!haltCloseDone) {
+        console.log("[farmer] HALT — closing open positions, then idling until HALT is cleared");
+        for (const pos of loadOpenPositions()) {
+          await closeAndReport(exec, pos, "manual", config().exec.exit_slippage_bps, "close", "manual HALT");
+        }
+        haltCloseDone = true;
+        await alert("watchdog", "HALT active — positions closed; bot idle until Resume").catch(() => {});
+      }
+      await writeHeartbeat(exec, 0);
+      await new Promise((r) => setTimeout(r, Math.min(pollMs, 5_000)));
+      continue;
+    }
+    if (haltCloseDone) {
+      console.log("[farmer] HALT cleared — resuming manage/entry loop");
+      haltCloseDone = false;
     }
     // Probe first and outside the shared try: watchdogCheck used to sit after
     // managePositions inside one try, so a throw from config() or

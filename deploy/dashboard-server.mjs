@@ -22,6 +22,7 @@ import {
   approveDeploy, readDeployPrefs, writeDeployPrefs,
 } from "./lib/deploy-prefs.mjs";
 import { insertError } from "./lib/error-log.mjs";
+import { requestHalt, clearHalt, readHaltState } from "./lib/halt.mjs";
 import { execSync } from "node:child_process";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -398,6 +399,33 @@ const server = createServer(async (req, res) => {
         note: "Wallet unlocked into .env for the bot. Restart/redeploy to pick up the live key.",
         status: setupStatus(readEnvMasked(root)),
       });
+    } catch (e) {
+      sendJson(res, 400, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/halt" && req.method === "GET") {
+    try {
+      sendJson(res, 200, readHaltState(root));
+    } catch (e) {
+      sendJson(res, 500, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/halt" && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      const confirm = typeof body?.confirm === "string" ? body.confirm : "";
+      if (!token || confirm !== token) {
+        sendJson(res, 403, { error: "re-enter dash token to halt/resume" });
+        return;
+      }
+      const action = body?.action === "resume" ? "resume" : "halt";
+      const state = action === "resume" ? clearHalt(root) : requestHalt(root);
+      watchCache = { at: 0, data: null, building: null };
+      sendJson(res, 200, { ok: true, ...state });
     } catch (e) {
       sendJson(res, 400, { error: e.message ?? String(e) });
     }

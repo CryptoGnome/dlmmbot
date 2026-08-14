@@ -4,6 +4,10 @@ export interface LiveWatch {
   ts: number;
   at: string;
   host: string;
+  ops?: {
+    halted?: boolean;
+    halt_at?: string | null;
+  };
   build: {
     version?: string;
     branch?: string;
@@ -22,7 +26,14 @@ export interface LiveWatch {
     running?: string | null;
     fetched_at?: number | null;
     recent?: Array<{ sha: string | null; subject: string; at: string | null; ts: number | null }>;
-    pending?: Array<{ sha: string | null; subject: string; at: string | null; ts: number | null }>;
+    pending?: Array<{
+      sha: string | null;
+      subject: string;
+      at: string | null;
+      ts: number | null;
+      /** strategy | deps | deploy | core | dash | docs */
+      risk?: string[];
+    }>;
     /** PM2 auto-deploy on by default; off = approve from Changes. */
     auto_update?: boolean;
     approve_sha?: string | null;
