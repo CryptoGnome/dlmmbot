@@ -9,11 +9,13 @@ Packs of Bot settings knobs (same paths as **Settings → Bot settings**). Apply
 
 | Kind | Where it lives | Who sees it |
 |---|---|---|
-| **Official** | Shipped in the bot (`Conservative` / `Balanced` / `Aggressive`) | Everyone |
+| **Official** | Shipped in the bot (`Conservative` / `Balanced` / `Aggressive` / `Research Base`) | Everyone |
 | **My profiles** | Your data volume (`data/profiles/`) | Only your bot |
 | **Community** | GitHub gallery under `profiles/community/` | Everyone after a PR merges |
 
 Open **Settings → Profiles**. The Wiki → **Settings profiles** has the short operator tour.
+
+**Research Base** pins the STRATEGY §11 live-book keep list plus playbook features (quarter-Kelly, BidAsk −40/−50%, follow + tranche + majors + displacement, research cluster brake). It is not on the Conservative→Aggressive risk ladder — it is the research default when you want “what the ledger said works.”
 
 ## Apply a pack
 

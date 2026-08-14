@@ -39,7 +39,7 @@ GMGN API key: https://gmgn.ai/ai (optional — see docs/setup/api-keys)
 - Token symbols show Jupiter / Pump.fun / DexScreener icons (cached in SQLite + browser)
 - Header ON/OFF (soft pause) + HALT (close-all); Changes shows risk tags on pending commits
 - Auto-update on by default (PM2); header Auto switch (next to build pill) can require Approve on Changes before pull
-- **Settings profiles:** official Conservative / Balanced / Aggressive; local saves on the volume; community gallery. Share guide: https://dlmmbot.com/setup/profiles (browser fork + PR; works on Railway)
+- **Settings profiles:** official Conservative / Balanced / Aggressive / Research Base; local saves on the volume; community gallery. Share guide: https://dlmmbot.com/setup/profiles (browser fork + PR; works on Railway)
 - First-run setup wizard: RPC, encrypted wallet (create or Phantom import with password retype + one-time backup), paper/live mode
 - Live requires both `FARMER_MODE=live` and `[exec].mode = "live"`
 - **Usage fee:** see https://dlmmbot.com/setup/fees — 1% of live wins buys/burns GNME (existing CryptoGnome mining-game token; not a new bot token)
