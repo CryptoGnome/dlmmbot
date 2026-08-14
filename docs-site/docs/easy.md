@@ -44,7 +44,7 @@ Without this, every redeploy wipes SQLite, Settings, and the wallet. You’ll al
 There is **no** “Volumes” tab on the service by itself in the current Railway UI. Add the volume from the **project canvas**:
 
 1. Open your Railway **project** (the canvas with your `dlmmbot` service card).
-2. Click the **`+` Create** button (top right / canvas), **or** right‑click empty canvas space, **or** `⌘K` / `Ctrl+K` → search **Volume**.
+2. Click the **`+ Add`** button (top of the canvas), **or** right‑click empty canvas space, **or** `⌘K` / `Ctrl+K` → search **Volume**.
 3. Choose **Volume**.
 4. When prompted, **attach it to your bot service** (the GitHub deploy card — not a new empty service).
 5. Set **Mount path** exactly to:
@@ -144,5 +144,5 @@ Hobby (~$5) plus usage after trial credits — a volume needs a paid tier. Own h
 | --- | --- |
 | Native module build fail | Node 20; check `better-sqlite3` logs |
 | Dash unauthorized | Confirm Railway `DASH_TOKEN` matches what you paste / `?token=` |
-| History / Settings wiped | Project canvas → `+` → **Volume** → attach to service → mount **`/app/data`**, then redeploy (logs must show `volume mount=`) |
+| History / Settings wiped | Project canvas → **`+ Add`** → **Volume** → attach to service → mount **`/app/data`**, then redeploy (logs must show `volume mount=`) |
 | Healthcheck failing | Wait for first build; path is `/health` |
