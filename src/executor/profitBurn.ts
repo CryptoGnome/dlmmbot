@@ -106,7 +106,18 @@ export async function executeProfitBurn(opts: {
   if (!built) return null;
 
   const signature = await opts.connection.sendRawTransaction(built.tx.serialize(), { maxRetries: 3 });
-  await opts.connection.confirmTransaction(signature, "confirmed");
+  let confirmed = true;
+  try {
+    await opts.connection.confirmTransaction(signature, "confirmed");
+  } catch (e) {
+    // The tx IS broadcast and may still land. A throw here used to propagate
+    // before the caller zeroed the pot, so the next flush re-bought and
+    // re-burned the same pot — a double-spend with a single ledger row. Return
+    // normally so the pot is zeroed: the failure mode becomes "maybe burned
+    // once" instead of "definitely burned twice".
+    confirmed = false;
+    console.error(`[profit_burn] confirm failed for ${signature} — tx may still land:`, (e as Error).message.split("\n")[0]);
+  }
 
   const burned = dust + built.minOutRaw;
   getDb().prepare(
@@ -115,7 +126,8 @@ export async function executeProfitBurn(opts: {
     now(),
     opts.spendSol,
     `pos#${opts.positionId} ${opts.symbol} pnl=+${opts.measuredPnlSol.toFixed(6)} ` +
-      `burned≥${burned.toString()} of ${mint.toBase58()} sig=${signature}`,
+      `burned≥${burned.toString()} of ${mint.toBase58()} sig=${signature}` +
+      (confirmed ? "" : " (confirm failed — tx broadcast, may still land)"),
   );
 
   return { spentSol: opts.spendSol, burnedRaw: burned.toString(), signature };
