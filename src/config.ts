@@ -12,6 +12,8 @@ import { parse } from "smol-toml";
   if (!process.env.FARMER_CONFIG_PATH) process.env.FARMER_CONFIG_PATH = join(data, "config.toml");
   if (!process.env.FARMER_ENV_PATH) process.env.FARMER_ENV_PATH = join(data, ".env");
   if (!process.env.FARMER_DB_PATH) process.env.FARMER_DB_PATH = join(data, "farmer.db");
+  if (!process.env.FARMER_PAUSE_PATH) process.env.FARMER_PAUSE_PATH = join(data, "PAUSE");
+  if (!process.env.FARMER_HALT_PATH) process.env.FARMER_HALT_PATH = join(data, "HALT");
   const cfg = process.env.FARMER_CONFIG_PATH;
   if (cfg && !existsSync(cfg)) {
     const tmpl = resolve(root, "config.toml");
@@ -291,6 +293,34 @@ export function startConfigWatcher(): void {
       console.error("[config] reload failed, keeping previous config:", e);
     }
   });
+}
+
+/**
+ * Volume `.env` FARMER_MODE (Settings / wizard) overrides boot-time process env
+ * (Railway defaults). Without this, a spawned `FARMER_MODE=paper` sticks forever
+ * and paper→live from the dashboard never takes effect.
+ */
+export function syncFarmerModeFromDisk(): void {
+  const envFile = process.env.FARMER_ENV_PATH;
+  if (!envFile) return;
+  try {
+    const text = readFileSync(envFile, "utf8");
+    for (const line of text.split(/\r?\n/)) {
+      if (line.trimStart().startsWith("#")) continue;
+      const m = /^\s*FARMER_MODE\s*=\s*(.*)$/.exec(line);
+      if (!m) continue;
+      let v = (m[1] ?? "").trim();
+      if (
+        (v.startsWith('"') && v.endsWith('"'))
+        || (v.startsWith("'") && v.endsWith("'"))
+      ) {
+        v = v.slice(1, -1);
+      }
+      v = v.trim().toLowerCase();
+      if (v === "live" || v === "paper") process.env.FARMER_MODE = v;
+      break;
+    }
+  } catch { /* missing .env is fine */ }
 }
 
 export function env(): Env {

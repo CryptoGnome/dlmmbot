@@ -147,10 +147,10 @@ export function SetupWizard({
     setBusy(true);
     setErr(null);
     try {
+      if (!confirm.trim()) throw new Error("re-enter your dash token");
       await patchConfig({ "exec.mode": mode });
-      if (confirm.trim()) {
-        await patchSecrets(confirm, { FARMER_MODE: mode });
-      }
+      await patchSecrets(confirm, { FARMER_MODE: mode });
+      setStatus((s) => ({ ...s, farmerMode: mode }));
       goNext();
     } catch (e) {
       setErr((e as Error).message);
@@ -530,6 +530,11 @@ export function SetupWizard({
                   </button>
                 ))}
               </div>
+              {mode === "live" && (
+                <p className="border border-warn/50 bg-warn/5 px-3 py-2 text-[11px] text-warn">
+                  Live needs both switches. The farmer restarts once to load the live executor — header shows LIVE after that.
+                </p>
+              )}
               <button
                 type="button"
                 className="btn-primary inline-flex items-center gap-1.5"
@@ -544,7 +549,8 @@ export function SetupWizard({
           {step === "done" && (
             <div className="space-y-3">
               <p className="text-[13px] text-muted">
-                Core is set. Tune size, risk, and pool filters anytime under{" "}
+                Core is set. The trading engine stays <span className="text-warn">OFF</span> until you flip it
+                ON in the header. Tune size, risk, and pool filters under{" "}
                 <span className="text-ok">Settings</span>. Re-run wallet unlock there after redeploys
                 (or set <code className="text-accent">WALLET_PASSPHRASE</code> on Railway).
               </p>
@@ -558,7 +564,8 @@ export function SetupWizard({
                     : "missing"}
                   {status.wallet.unlocked ? " (unlocked)" : status.wallet.encrypted ? " (locked)" : ""}
                 </li>
-                <li>Mode · {mode}</li>
+                <li>Mode · {mode}{mode === "live" ? " (farmer restarts to apply)" : ""}</li>
+                <li>Engine · OFF — turn ON in the header when ready</li>
               </ul>
               <button
                 type="button"

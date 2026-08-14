@@ -17,8 +17,8 @@ When a human asks you to install DLMM Bot:
 2. Prefer Railway easy path unless they ask for VPS/local.
 3. Fork `CryptoGnome/dlmmbot`, then deploy **their fork** as one Railway service (Railway only lists repos they can access).
 4. Attach volume at `/app/data`, generate a public domain, set a strong `DASH_TOKEN` Railway variable (≥24 random chars), open dashboard with `?token=…`.
-5. Guide the human through the wizard: accept Terms; skip pasting RPC/Jupiter/GMGN if already set as Railway variables (wizard detects them); create/import burner; stay paper.
-6. Do not commit secrets, do not use a main wallet, do not enable live unless they explicitly request it (needs both env + config live switches).
+5. Guide the human through the wizard: accept Terms; skip pasting RPC/Jupiter/GMGN if already set as Railway variables (wizard detects them); create/import burner; stay paper unless they explicitly ask for live. After setup the engine stays OFF — human flips Engine ON in the header.
+6. Do not commit secrets, do not use a main wallet, do not enable live unless they explicitly request it (needs both env + config live switches; farmer restarts once to apply).
 
 Paste prompt humans can give you:
 

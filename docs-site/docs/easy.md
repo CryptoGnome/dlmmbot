@@ -49,6 +49,8 @@ Open the domain. Log in with the `DASH_TOKEN` you set as a Railway variable (`?t
 
 First login opens a wizard: **accept the Terms & risk waiver**, then only the steps still missing (RPC, Jupiter, **burner wallet**, paper/live). If you already set `RPC_URL` / `JUPITER_API_KEY` / `GMGN_API_KEY` as Railway variables (and redeployed), the wizard detects them and skips those prompts — paste only to replace. Writes go to `/app/data` — the git checkout stays clean.
 
+After Finish, the trading engine stays **OFF** (header toggle). Flip it ON when you want paper (or live) ticks. Choosing **live** in the wizard (or Settings) restarts the farmer once so the header shows LIVE.
+
 | Key | Required | Get it |
 | --- | --- | --- |
 | `RPC_URL` | Yes | [Helius](https://dashboard.helius.dev/signup) mainnet URL |

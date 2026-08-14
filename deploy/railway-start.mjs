@@ -85,6 +85,24 @@ if (process.env.WALLET_PASSPHRASE && !process.env.WALLET_PRIVATE_KEY) {
 
 console.log(`[railway] mode=${process.env.FARMER_MODE} dash_port=${process.env.DASH_PORT}`);
 
+// Fresh installs: trading engine OFF until the operator finishes setup and
+// flips Engine ON. PAUSE lives on the volume so redeploys keep it.
+try {
+  const { readSetupState } = await import("./lib/wallet-crypto.mjs");
+  const { requestPause, readPauseState } = await import("./lib/pause.mjs");
+  const setup = readSetupState();
+  if (!setup.completed && !setup.skipped) {
+    const pause = requestPause(root);
+    console.log(`[railway] engine OFF (setup incomplete) — ${pause.path}`);
+  } else if (!readPauseState(root).paused) {
+    console.log("[railway] engine ON (no PAUSE file)");
+  } else {
+    console.log("[railway] engine OFF (PAUSE on volume)");
+  }
+} catch (e) {
+  console.warn(`[railway] pause bootstrap skipped: ${e.message ?? e}`);
+}
+
 const kids = [];
 function run(label, args) {
   const child = spawn(process.execPath, args, {

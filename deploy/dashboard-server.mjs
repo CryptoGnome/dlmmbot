@@ -458,7 +458,15 @@ const server = createServer(async (req, res) => {
         skipped: !!body?.skipped,
         completedAt: new Date().toISOString(),
       });
-      sendJson(res, 200, { ok: true, setup: state, ...setupStatus(readEnvMasked(root)) });
+      // Always leave engine OFF after setup — operator turns it on deliberately.
+      const pause = requestPause(root);
+      sendJson(res, 200, {
+        ok: true,
+        setup: state,
+        ...setupStatus(readEnvMasked(root)),
+        paused: pause.paused,
+        note: pause.note,
+      });
     } catch (e) {
       sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
     }

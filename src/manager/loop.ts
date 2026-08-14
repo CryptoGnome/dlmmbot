@@ -1,7 +1,7 @@
 import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { config, currentMode, isLive } from "../config.js";
+import { dirname, resolve } from "node:path";
+import { config, currentMode, isLive, syncFarmerModeFromDisk } from "../config.js";
 import { reconcileLive } from "./reconcile.js";
 import { alert, type AlertKind } from "../alerts.js";
 import { blacklist, getDb, now, recordCreatorRug, recordDecision, REALIZED_PNL_SQL, logError, installProcessErrorHooks } from "../db/db.js";
@@ -33,10 +33,25 @@ import { vetToken } from "../vetting/vet.js";
 // holder-watch), P1–P5, escape hatch, follow, micro/majors sleeves, residual
 // sweep, heartbeat. Second tranche: dual-range BidAsk below primary (score gate).
 
-const HALT_FILE = resolve(process.cwd(), "HALT");
-const PAUSE_FILE = resolve(process.cwd(), "PAUSE");
-const LOCK_FILE = resolve(process.cwd(), "data", "farmer.lock");
-const BUSY_FILE = resolve(process.cwd(), "data", "busy.flag");
+function dataDir(): string {
+  return process.env.FARMER_DB_PATH
+    ? dirname(resolve(process.env.FARMER_DB_PATH))
+    : resolve(process.cwd(), "data");
+}
+
+function controlPaths(kind: "PAUSE" | "HALT"): string[] {
+  const envKey = kind === "PAUSE" ? "FARMER_PAUSE_PATH" : "FARMER_HALT_PATH";
+  const primary = process.env[envKey] || resolve(dataDir(), kind);
+  const legacy = resolve(process.cwd(), kind);
+  return primary === legacy ? [primary] : [primary, legacy];
+}
+
+function controlPresent(kind: "PAUSE" | "HALT"): boolean {
+  return controlPaths(kind).some((p) => existsSync(p));
+}
+
+const LOCK_FILE = resolve(dataDir(), "farmer.lock");
+const BUSY_FILE = resolve(dataDir(), "busy.flag");
 
 // Busy flag around executor-critical sections (multi-tx opens/closes). The
 // auto-deploy watcher waits up to 120s for this file to vanish before
@@ -368,12 +383,12 @@ async function rugcheckFlipped(posId: number, mint: string): Promise<boolean> {
 }
 
 export function haltRequested(): boolean {
-  return existsSync(HALT_FILE);
+  return controlPresent("HALT");
 }
 
 /** Soft pause: no manage/entry/sweep; leave positions open. */
 export function pauseRequested(): boolean {
-  return existsSync(PAUSE_FILE);
+  return controlPresent("PAUSE");
 }
 
 /**
@@ -383,7 +398,7 @@ export function pauseRequested(): boolean {
  * lock; stale locks (dead PID) are reclaimed.
  */
 function acquireInstanceLock(): void {
-  mkdirSync(resolve(process.cwd(), "data"), { recursive: true });
+  mkdirSync(dataDir(), { recursive: true });
   const claim = () => writeFileSync(LOCK_FILE, String(process.pid), { flag: "wx" });
   try {
     claim(); // wx = atomic create-or-fail; the old exists→read→write window let two simultaneous starters both pass
@@ -1299,6 +1314,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
 export async function runLoop(): Promise<void> {
   installProcessErrorHooks("farmer");
   acquireInstanceLock();
+  syncFarmerModeFromDisk();
   let exec: Executor;
   if (isLive()) {
     const { LiveExecutor } = await import("../executor/live.js");
@@ -1354,6 +1370,15 @@ export async function runLoop(): Promise<void> {
 
   for (;;) {
     const tickStart = Date.now();
+    // Settings/wizard write FARMER_MODE to the volume .env; paper↔live also
+    // needs a different Executor subclass — clean exit and let PM2/Railway
+    // respawn onto the matching one.
+    syncFarmerModeFromDisk();
+    const wantMode = isLive() ? "live" : "paper";
+    if (wantMode !== exec.mode) {
+      console.log(`[farmer] mode gate is ${wantMode} but executor is ${exec.mode} — restarting`);
+      process.exit(0);
+    }
     const pollMs = config().manage.poll_s * 1000;
     if (haltRequested()) {
       // Idle (don't exit) so PM2/Railway don't restart-loop while HALT is set.
