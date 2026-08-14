@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   parseTokenSecurity,
   parseGmgnResetMs,
+  isGmgnRateLimitText,
   gmgnRouteWeight,
   gmgnBucketId,
   gmgnTokenBudgetOk,
@@ -54,6 +55,13 @@ describe("gmgn rate-limit helpers", () => {
       .toBe(1_700_000_060_000);
     expect(parseGmgnResetMs("X-RateLimit-Reset: 1700000099", now)).toBe(1_700_000_099_000);
     expect(parseGmgnResetMs("nope", now)).toBeNull();
+  });
+
+  it("ignores bare 429 (npm noise) but catches GMGN RATE_LIMIT payloads", () => {
+    expect(isGmgnRateLimitText("npm ERR! code E429")).toBe(false);
+    expect(isGmgnRateLimitText("HTTP 429 Too Many Requests")).toBe(false);
+    expect(isGmgnRateLimitText('{"error":"RATE_LIMIT_BANNED","reset_at":1}')).toBe(true);
+    expect(isGmgnRateLimitText("HTTP 429 rate limit exceeded")).toBe(true);
   });
 
   it("maps CLI args to per-module buckets", () => {

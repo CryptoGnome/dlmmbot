@@ -125,7 +125,7 @@ export function presentError(input: {
       label: "GMGN rate limited",
       kind: "degraded",
       level: "warn",
-      hint: "Optional trending/vetting paused until reset — Meteora scanning continues. Each retry during cooldown extends the ban. Common cause: staging + production sharing one GMGN_API_KEY.",
+      hint: "Optional trending/vetting paused until reset — Meteora scanning continues. Client pacing cannot see GMGN’s real remaining bucket (or another consumer on the same key). Do not retry during cooldown — that extends the ban.",
     };
   }
 
