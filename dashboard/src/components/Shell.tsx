@@ -1,9 +1,12 @@
 import type { LiveWatch } from "@/lib/types";
 import type { LiveStatus } from "@/lib/api";
-import type { ReactNode } from "react";
-import { BookText, CircleDot, ExternalLink } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { BookText, Check, CircleDot, Copy, ExternalLink, Wallet } from "lucide-react";
 import { HaltToggle } from "@/components/HaltControl";
 import { GithubMark, Icon, PauseCircle, tabIcon, Unplug, Zap } from "@/lib/icons";
+import { copyText } from "@/lib/errorReport";
+import { toast } from "@/lib/toast";
+import { cn } from "@/lib/utils";
 
 export type TabId = "overview" | "book" | "analytics" | "activity" | "errors" | "research" | "wiki" | "changes" | "settings";
 
@@ -121,6 +124,92 @@ function DocsLink({ className }: { className?: string }) {
   );
 }
 
+function shortPk(pk: string) {
+  return pk.length > 12 ? `${pk.slice(0, 4)}…${pk.slice(-4)}` : pk;
+}
+
+function WalletPubkeyButton({ pubkey }: { pubkey: string }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  async function copy() {
+    const ok = await copyText(pubkey);
+    setCopied(ok);
+    toast({
+      title: ok ? "Wallet copied" : "Copy failed",
+      detail: ok ? shortPk(pubkey) : "Clipboard blocked",
+      tone: ok ? "ok" : "danger",
+      kind: "event",
+    });
+    if (ok) window.setTimeout(() => setCopied(false), 1500);
+  }
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          "inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10px] tracking-widest uppercase",
+          open ? "border-accent/70 text-accent" : "border-grid text-dim hover:border-hover hover:text-hover",
+        )}
+        title="Bot wallet address"
+        aria-expanded={open}
+        aria-haspopup="dialog"
+      >
+        <Icon icon={Wallet} size={11} />
+        {shortPk(pubkey)}
+      </button>
+      {open && (
+        <div
+          role="dialog"
+          aria-label="Bot wallet address"
+          className="absolute right-0 z-40 mt-1 w-[min(22rem,calc(100vw-1.5rem))] border border-grid bg-panel p-2.5 shadow-lg"
+        >
+          <div className="mb-1.5 text-[10px] tracking-wider text-dim uppercase">Bot wallet</div>
+          <p className="break-all font-mono text-[11px] leading-snug text-fg">{pubkey}</p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 border border-accent/50 px-2 py-1 text-[10px] tracking-wider text-accent uppercase hover:border-hover hover:text-hover"
+              onClick={() => void copy()}
+            >
+              <Icon icon={copied ? Check : Copy} size={10} />
+              {copied ? "Copied" : "Copy"}
+            </button>
+            <a
+              href={`https://solscan.io/account/${pubkey}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 border border-grid px-2 py-1 text-[10px] tracking-wider text-muted no-underline uppercase hover:text-hover"
+            >
+              Solscan
+              <Icon icon={ExternalLink} size={9} className="opacity-60" />
+            </a>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Shell({
   tab, onTab, watch, live, stale, children,
 }: {
@@ -222,14 +311,19 @@ export function Shell({
               <BuildPill build={watch.build} onOpenChanges={() => onTab("changes")} />
             )}
           </div>
-          {watch?.host ? (
-            <div
-              className="max-w-[12rem] truncate text-[10px] tracking-wider text-dim uppercase"
-              title={`host ${watch.host}`}
-            >
-              {watch.host}
-            </div>
-          ) : null}
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            {watch?.wallet_pubkey ? (
+              <WalletPubkeyButton pubkey={watch.wallet_pubkey} />
+            ) : null}
+            {watch?.host ? (
+              <div
+                className="max-w-[12rem] truncate text-[10px] tracking-wider text-dim uppercase"
+                title={`host ${watch.host}`}
+              >
+                {watch.host}
+              </div>
+            ) : null}
+          </div>
         </header>
 
         <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-grid px-2 py-1.5 md:hidden no-scrollbar">

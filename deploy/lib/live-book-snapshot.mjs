@@ -15,10 +15,30 @@ import {
 } from "./token-meta.mjs";
 import { readHaltState } from "./halt.mjs";
 import { readPauseState } from "./pause.mjs";
+import { readWalletMeta } from "./wallet-crypto.mjs";
 
 const execAsync = promisify(exec);
 
 const require = createRequire(import.meta.url);
+
+/** Bot trading wallet pubkey for dash header / Solscan links (never the secret). */
+export function resolveWalletPubkey() {
+  try {
+    const metaPk = readWalletMeta()?.publicKey;
+    if (metaPk) return metaPk;
+  } catch { /* */ }
+  if (process.env.WALLET_PUBKEY) return process.env.WALLET_PUBKEY;
+  if (process.env.PUBLIC_WALLET) return process.env.PUBLIC_WALLET;
+  if (process.env.WALLET_PRIVATE_KEY) {
+    try {
+      const { Keypair } = require("@solana/web3.js");
+      const bs58mod = require("bs58");
+      const bs58 = bs58mod.default ?? bs58mod;
+      return Keypair.fromSecretKey(bs58.decode(process.env.WALLET_PRIVATE_KEY)).publicKey.toBase58();
+    } catch { /* */ }
+  }
+  return null;
+}
 
 export const REALIZED_PNL = `
   CASE WHEN close_return_sol IS NOT NULL
@@ -1027,11 +1047,10 @@ export function buildLiveBookSnapshot(root) {
         : null,
     };
 
+    const walletPubkey = resolveWalletPubkey();
     // Meteora Data API — LP deposit/withdraw/fee PnL (what app.meteora.ag/portfolio shows).
     // Distinct from our wallet-measured book (includes rent + post-exit swap slippage).
-    const meteora = fetchMeteoraPortfolio(process.env.WALLET_PUBKEY
-      ?? process.env.PUBLIC_WALLET
-      ?? "9DTThTbggnp2P2ZGLFRfN1A3j5JUsXez1dRJak3TixB2");
+    const meteora = fetchMeteoraPortfolio(walletPubkey);
 
     const recentErrors = listRecentErrors(db, 80);
     const metaMints = [
@@ -1055,6 +1074,7 @@ export function buildLiveBookSnapshot(root) {
       ts: now,
       at: new Date(now * 1000).toISOString(),
       host: git(root, "hostname") ?? "local",
+      wallet_pubkey: walletPubkey,
       ops: {
         paused: pause.paused,
         pause_at: pause.pause_at,

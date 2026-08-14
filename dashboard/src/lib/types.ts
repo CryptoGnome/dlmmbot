@@ -4,6 +4,8 @@ export interface LiveWatch {
   ts: number;
   at: string;
   host: string;
+  /** Bot burner wallet (base58). Public address only. */
+  wallet_pubkey?: string | null;
   ops?: {
     /** Soft pause — no trades; positions stay open. */
     paused?: boolean;
