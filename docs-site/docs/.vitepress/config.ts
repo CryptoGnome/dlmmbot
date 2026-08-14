@@ -36,6 +36,7 @@ export default defineConfig({
     nav: [
       { text: "Home", link: "https://dlmmbot.com/" },
       { text: "Easy (Railway)", link: "/easy" },
+      { text: "For agents", link: "/agents" },
       { text: "API keys", link: "/api-keys" },
       { text: "How it works", link: "/how-it-works" },
       { text: "Strategy", link: "/strategy" },
@@ -51,6 +52,7 @@ export default defineConfig({
           { text: "Choose a path", link: "/" },
           { text: "Easy — Railway", link: "/easy" },
           { text: "Advanced — local / VPS", link: "/advanced" },
+          { text: "For AI agents", link: "/agents" },
           { text: "API keys", link: "/api-keys" },
           { text: "Settings profiles", link: "/profiles" },
           { text: "Terms & waiver", link: "/terms" },

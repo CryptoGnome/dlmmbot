@@ -10,6 +10,7 @@ One service. Attach a volume, open the URL, finish secrets in the dashboard.
 <p class="cta-row">
   <a class="doc-btn" href="https://railway.com?referralCode=SCj9lN" target="_blank" rel="noreferrer">Deploy on Railway</a>
   <a class="doc-btn ghost" href="./api-keys">API keys</a>
+  <a class="doc-btn ghost" href="./agents">For AI agents</a>
 </p>
 
 ## Deploy

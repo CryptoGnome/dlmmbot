@@ -769,6 +769,58 @@ code, pre { font-family: var(--mono); font-size: 0.9em; }
 .fee-block h2 { font-size: 1.05rem; margin-bottom: 0.5rem; line-height: 1.3; }
 .fee-block p { color: var(--muted); font-size: 12.5px; line-height: 1.5; }
 
+/* —— Agents —— */
+.agents-section { padding: 4rem 0 3.5rem; border-top: 1px solid var(--grid); }
+.agents-section .section-head { margin-bottom: 1.5rem; }
+.agent-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-bottom: 1.25rem;
+}
+.agent-links a {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.55rem 1rem;
+  border: 1px solid var(--fg);
+  border-radius: 8px;
+  background: var(--fg);
+  color: var(--bg);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+.agent-links a:hover {
+  background: var(--ok);
+  border-color: var(--ok);
+  color: var(--bg);
+}
+.agent-links a.ghost {
+  background: transparent;
+  border-color: var(--grid);
+  color: var(--fg);
+}
+.agent-links a.ghost:hover {
+  border-color: var(--ok);
+  color: var(--ok);
+  background: transparent;
+}
+.agent-prompt {
+  margin: 0;
+  max-width: 40rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--grid);
+  background: var(--panel);
+  color: var(--muted);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
 /* —— CTA band —— */
 .band {
   text-align: center;

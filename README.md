@@ -20,6 +20,7 @@ Automated [Meteora DLMM](https://meteora.ag) liquidity bot for Solana. Scans, ve
 | Website | [dlmmbot.com](https://dlmmbot.com) |
 | Docs | [dlmmbot.com/setup](https://dlmmbot.com/setup/) |
 | Easy setup | [Railway](https://dlmmbot.com/setup/easy) |
+| For AI agents | [Install playbook](https://dlmmbot.com/setup/agents) · [llms.txt](https://dlmmbot.com/llms.txt) |
 | Advanced | [local / VPS / PM2](https://dlmmbot.com/setup/advanced) |
 | Fees | [GNME 1% on live wins](https://dlmmbot.com/setup/fees) |
 

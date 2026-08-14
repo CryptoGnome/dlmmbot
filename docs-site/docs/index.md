@@ -20,6 +20,12 @@ Same bot, same paper/live gates — only the host changes.
   </a>
 </div>
 
+<p class="cta-row">
+  <a class="doc-btn" href="./agents">For AI agents</a>
+  <a class="doc-btn ghost" href="https://dlmmbot.com/llms.txt" target="_blank" rel="noreferrer">llms.txt</a>
+  <a class="doc-btn ghost" href="https://dlmmbot.com/llms-full.txt" target="_blank" rel="noreferrer">llms-full.txt</a>
+</p>
+
 ## Understand the bot
 
 <div class="ref-list">
@@ -36,6 +42,7 @@ Same bot, same paper/live gates — only the host changes.
   <a href="./configuration">Configuration <span>every config.toml key</span></a>
   <a href="./profiles">Settings profiles <span>official, local, community packs</span></a>
   <a href="./terms">Terms &amp; waiver <span>as-is · no liability for losses</span></a>
+  <a href="./agents">For AI agents <span>install playbook + llms.txt</span></a>
   <a href="./cli">CLI <span>scan, status, halt, pause</span></a>
   <a href="./fees">Fees <span>1% GNME burn on live wins</span></a>
   <a href="./faq">FAQ <span>can you lose money? yes</span></a>

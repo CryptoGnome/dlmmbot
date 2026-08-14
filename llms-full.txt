@@ -7,6 +7,28 @@ License: PolyForm Shield 1.0.0 — you may run, study, and modify it for your ow
 Terms / risk waiver: https://dlmmbot.com/setup/terms — https://github.com/CryptoGnome/dlmmbot/blob/main/TERMS.md (setup requires acceptance; as-is; no liability for losses)
 Brand: DLMM Bot (not “Meteora Farmer”)
 
+## Agent install playbook
+
+Canonical human-facing page: https://dlmmbot.com/setup/agents
+
+When a human asks you to install DLMM Bot:
+
+1. Read https://dlmmbot.com/llms.txt then this file.
+2. Prefer Railway easy path unless they ask for VPS/local.
+3. Deploy GitHub repo `CryptoGnome/dlmmbot` (or their fork) as one Railway service.
+4. Attach volume at `/app/data`, generate a public domain, open dashboard with `DASH_TOKEN` from logs or Railway vars.
+5. Guide the human through the wizard: accept Terms, paste Helius RPC + Jupiter key, create/import burner, stay paper.
+6. Do not commit secrets, do not use a main wallet, do not enable live unless they explicitly request it (needs both env + config live switches).
+
+Paste prompt humans can give you:
+
+```
+Install DLMM Bot for me on Railway (easy path).
+Read https://dlmmbot.com/llms.txt and https://dlmmbot.com/llms-full.txt,
+then follow https://dlmmbot.com/setup/agents and https://dlmmbot.com/setup/easy.
+Rules: paper first, burner only, never commit .env/keys, require Terms acceptance, no live unless I ask.
+```
+
 ## What it is
 
 An automated Solana bot for Meteora DLMM liquidity. It scans hot SOL-quoted meme pools (and majors sleeves where configured), vets the non-SOL token, opens a one-sided SOL LP position shaped for the strategy, manages claims/exits by fixed rules, and records PnL in SQLite. A private ops dashboard ships with the bot.
@@ -77,6 +99,7 @@ See https://dlmmbot.com/setup/fees — 1% GNME buy-and-burn on live winning clos
 
 - Site: https://dlmmbot.com
 - Docs hub: https://dlmmbot.com/setup/
+- For AI agents: https://dlmmbot.com/setup/agents
 - Easy: https://dlmmbot.com/setup/easy
 - Advanced: https://dlmmbot.com/setup/advanced
 - API keys: https://dlmmbot.com/setup/api-keys
@@ -89,7 +112,9 @@ See https://dlmmbot.com/setup/fees — 1% GNME buy-and-burn on live winning clos
 - CLI reference: https://dlmmbot.com/setup/cli
 - FAQ: https://dlmmbot.com/setup/faq
 - Fees: https://dlmmbot.com/setup/fees
+- Terms: https://dlmmbot.com/setup/terms
 - Short LLM map: https://dlmmbot.com/llms.txt
+- Full LLM summary: https://dlmmbot.com/llms-full.txt
 - Railway referral: https://railway.com?referralCode=SCj9lN
 - Vultr VPS referral (advanced / local host): https://www.vultr.com/?ref=9917878-9J — suggested plan: 2 vCPU, 4 GB RAM, 80 GB NVMe, Ubuntu 24.04
 

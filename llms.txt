@@ -4,6 +4,7 @@
 
 Site: https://dlmmbot.com
 Docs: https://dlmmbot.com/setup/
+For AI agents (install playbook): https://dlmmbot.com/setup/agents
 GitHub: https://github.com/CryptoGnome/dlmmbot
 License: PolyForm Shield 1.0.0 (https://github.com/CryptoGnome/dlmmbot/blob/main/LICENSE) — run/study/modify for your own use; no competing product
 Terms / risk waiver: https://dlmmbot.com/setup/terms (https://github.com/CryptoGnome/dlmmbot/blob/main/TERMS.md) — required in setup; as-is, no liability for losses
@@ -13,8 +14,17 @@ Helius RPC (recommended): https://www.helius.dev/
 Jupiter API key: https://developers.jup.ag/portal
 GMGN API key: https://gmgn.ai/ai (optional — see docs/setup/api-keys)
 
+## Agent quickstart
+
+1. Read this file, then https://dlmmbot.com/llms-full.txt
+2. Follow https://dlmmbot.com/setup/agents (preferred) and https://dlmmbot.com/setup/easy
+3. Deploy `CryptoGnome/dlmmbot` on Railway → volume `/app/data` → generate domain → open dashboard with `DASH_TOKEN`
+4. Human accepts Terms in wizard; paste Helius `RPC_URL` + Jupiter key; create burner; stay paper unless they explicitly ask for live
+5. Never commit secrets; never use a main wallet; live needs both `FARMER_MODE=live` and `[exec].mode = "live"`
+
 ## Docs
 
+- [For AI agents](https://dlmmbot.com/setup/agents): install playbook, hard rules, paste prompt, llms links
 - [Easy setup (Railway)](https://dlmmbot.com/setup/easy): one service, volume at `/app/data`, public domain, dashboard wizard
 - [Advanced setup](https://dlmmbot.com/setup/advanced): local / VPS / PM2
 - [API keys](https://dlmmbot.com/setup/api-keys): Helius RPC, Jupiter, GMGN signup steps
@@ -27,6 +37,7 @@ GMGN API key: https://gmgn.ai/ai (optional — see docs/setup/api-keys)
 - [CLI reference](https://dlmmbot.com/setup/cli): scan, vet, run, status, halt/pause, force-close, simulate-zap
 - [FAQ](https://dlmmbot.com/setup/faq): honest answers — losses, paper-first, restarts, RPC
 - [Fees](https://dlmmbot.com/setup/fees): GNME usage fee on live winning closes
+- [Terms & waiver](https://dlmmbot.com/setup/terms): operator risk waiver
 - [Full text for agents](https://dlmmbot.com/llms-full.txt): longer product summary
 - [Strategy (repo)](https://github.com/CryptoGnome/dlmmbot/blob/main/STRATEGY.md): exits and risk rules
 - [Release workflow (repo)](https://github.com/CryptoGnome/dlmmbot/blob/main/RELEASE.md): develop → main, semver GitHub Releases

@@ -10,6 +10,7 @@ Your PC or a Linux VPS. Same bot and paper/live gates as Railway. Newcomers: sta
 <p class="cta-row">
   <a class="doc-btn" href="https://www.vultr.com/?ref=9917878-9J" target="_blank" rel="noreferrer">Get a Vultr VPS</a>
   <a class="doc-btn ghost" href="./easy">Easy setup</a>
+  <a class="doc-btn ghost" href="./agents">For AI agents</a>
   <a class="doc-btn ghost" href="./api-keys">API keys</a>
 </p>
 
