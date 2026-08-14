@@ -1,4 +1,4 @@
-import { getDb, now, upsertTokenMeta } from "../db/db.js";
+import { getDb, now, REALIZED_PNL_SQL, upsertTokenMeta } from "../db/db.js";
 import { fetchPool } from "../scanner/meteora.js";
 import { binIdToPrice, priceToBinId } from "../ranges/planner.js";
 import type { ExitReason, Position, RangeShape } from "../types.js";
@@ -217,14 +217,18 @@ export class PaperExecutor implements Executor {
   }
 
   async walletSol(): Promise<number> {
-    // Virtual wallet: start balance + realized PnL + claimed fees - costs.
+    // Virtual wallet = total equity: start + realized PnL of closed rows + the
+    // credits (claims, profit locks) already banked from still-open rows.
+    // The old exit−entry formula ignored profit-lock withdrawals and tx costs
+    // entirely, and post-lock entry_sol shrink made it drift further — feeding
+    // wrong equity into bankroll/breaker.
     const db = getDb();
     const realized = (db.prepare(
-      `SELECT COALESCE(SUM(exit_sol - entry_sol), 0) AS r FROM positions WHERE mode='paper' AND exit_ts IS NOT NULL`
+      `SELECT COALESCE(SUM(${REALIZED_PNL_SQL}), 0) AS r FROM positions WHERE mode='paper' AND exit_ts IS NOT NULL`
     ).get() as { r: number }).r;
-    const fees = (db.prepare(
-      `SELECT COALESCE(SUM(fees_claimed_sol), 0) AS f FROM positions WHERE mode='paper'`
-    ).get() as { f: number }).f;
-    return START_BALANCE_SOL + realized + fees;
+    const openCredits = (db.prepare(
+      `SELECT COALESCE(SUM(withdrawn_sol + fees_measured_sol), 0) AS c FROM positions WHERE mode='paper' AND exit_ts IS NULL`
+    ).get() as { c: number }).c;
+    return START_BALANCE_SOL + realized + openCredits;
   }
 }
