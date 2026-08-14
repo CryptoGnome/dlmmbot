@@ -21,3 +21,7 @@ Pick a path. Same bot, same paper/live gates — only the host changes.
 </div>
 
 Also see [STRATEGY.md](https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md) for exits and sizing logic.
+
+::: info Usage fee
+On each **live** winning close, **1% of measured net profit** buys and burns **GNME** (`BaDjVCpABEVCdt4LT7ivuzA4izBwJCqnDjrLa8XBtT38`). This is a required product fee — not a Settings toggle. Paper mode logs it without spending.
+:::

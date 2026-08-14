@@ -7,7 +7,7 @@ import { alert, type AlertKind } from "../alerts.js";
 import { blacklist, getDb, now, recordDecision, REALIZED_PNL_SQL, logError, installProcessErrorHooks } from "../db/db.js";
 import type { Executor } from "../executor/executor.js";
 import { LiveExecutor } from "../executor/live.js";
-import { executeProfitBurn, profitBurnSpendSol, accrueProfitBurn, readProfitBurnAccrued, writeProfitBurnAccrued } from "../executor/profitBurn.js";
+import { executeProfitBurn, profitBurnSpendSol, accrueProfitBurn, readProfitBurnAccrued, writeProfitBurnAccrued, PROFIT_BURN } from "../executor/profitBurn.js";
 import { PaperExecutor } from "../executor/paper.js";
 import { rollupDaily } from "../pnl/rollup.js";
 import { fetchSummary } from "../vetting/rugcheck.js";
@@ -198,7 +198,7 @@ async function closeAndReport(
 }
 
 /**
- * 1% of measured net profit → Jupiter buy burn-mint → burn immediately.
+ * Fixed 1% product fee: measured net profit → Jupiter buy GNME → burn immediately.
  * Accrual pot only holds leftover if a swap fails (retry on next flush).
  * Skips when measured columns are missing or PnL ≤ 0.
  */
@@ -207,13 +207,11 @@ async function maybeProfitBurn(
   pos: Position,
   measuredPnl: number | null,
 ): Promise<void> {
-  const cfg = config().profit_burn;
-  if (!cfg?.enabled) return;
   if (measuredPnl == null) {
     console.log(`[profit_burn] skip pos#${pos.id}: no measured wallet PnL (legacy/mark-only close)`);
     return;
   }
-  const spend = profitBurnSpendSol(measuredPnl, cfg.profit_frac);
+  const spend = profitBurnSpendSol(measuredPnl, PROFIT_BURN.profit_frac);
   if (spend == null) return;
 
   const accrued = accrueProfitBurn(
@@ -222,7 +220,7 @@ async function maybeProfitBurn(
   );
   console.log(
     `[profit_burn] +${spend.toFixed(6)} SOL from pos#${pos.id} ${pos.symbol} ` +
-      `(${(cfg.profit_frac * 100).toFixed(0)}% of +${measuredPnl.toFixed(4)}) → pot ${accrued.toFixed(6)}`,
+      `(${(PROFIT_BURN.profit_frac * 100).toFixed(0)}% of +${measuredPnl.toFixed(4)}) → pot ${accrued.toFixed(6)}`,
   );
 
   await flushProfitBurn(exec, {
@@ -237,8 +235,6 @@ async function flushProfitBurn(
   exec: Executor,
   ctx?: { measuredPnlSol: number; positionId: number; symbol: string },
 ): Promise<void> {
-  const cfg = config().profit_burn;
-  if (!cfg?.enabled) return;
   const accrued = readProfitBurnAccrued();
   if (!(accrued > 0)) return;
 
@@ -252,7 +248,7 @@ async function flushProfitBurn(
     );
     writeProfitBurnAccrued(0);
     console.log(
-      `[profit_burn] paper: would spend pot ${accrued.toFixed(4)} SOL → burn ${cfg.mint.slice(0, 8)}…`,
+      `[profit_burn] paper: would spend pot ${accrued.toFixed(4)} SOL → burn ${PROFIT_BURN.mint.slice(0, 8)}…`,
     );
     return;
   }
@@ -280,7 +276,7 @@ async function flushProfitBurn(
     "profit_burn",
     `profit burn pot ${result.spentSol.toFixed(4)} SOL` +
       (ctx ? ` (last leg ${ctx.symbol} pos#${ctx.positionId})` : "") +
-      `\nburned → ${cfg.mint}\n${result.signature}`,
+      `\nburned → ${PROFIT_BURN.mint}\n${result.signature}`,
   );
 }
 

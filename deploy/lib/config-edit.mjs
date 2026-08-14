@@ -9,7 +9,7 @@ import { runtimePaths } from "./runtime-paths.mjs";
 const EDITABLE_SECTIONS = new Set([
   "scanner", "gates", "vetting", "timing", "score_caps", "smartflow", "score",
   "entry", "manage", "sizing", "follow", "majors", "rotation", "exec", "gmgn",
-  "watchdog", "apis", "profit_burn",
+  "watchdog", "apis",
 ]);
 
 function configPath(root) {

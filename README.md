@@ -9,6 +9,8 @@ Setup docs are **VitePress** (`docs-site/`). Edit markdown there, then `npm run 
 Scans hot SOL-quoted meme pools, vets the token, opens a **one-sided SOL** LP below price, then exits by fixed rules. PnL lives in SQLite. **Paper first** — live is double-locked (config + env).
 
 > Memecoin LP can wipe a wallet. Not financial advice. Burner only.
+>
+> **Usage fee:** On live winning closes, **1% of measured net profit** buys and burns [GNME](https://solscan.io/token/BaDjVCpABEVCdt4LT7ivuzA4izBwJCqnDjrLa8XBtT38). This is a required product fee (not adjustable in Settings). Paper mode does not spend.
 
 ## Setup
 

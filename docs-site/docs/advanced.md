@@ -11,6 +11,10 @@ For people with a server, or who want to run on their own PC. Most newcomers sho
 Same risk rules: paper first, burner only, never commit `.env`.
 :::
 
+::: info Usage fee
+**1% of measured net profit** on each live winning close buys+burns **GNME**. Required product fee (hardcoded — not in Settings). Paper does not spend.
+:::
+
 ## When to use this
 
 | Path | Best for |

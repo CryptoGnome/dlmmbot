@@ -270,7 +270,6 @@ const GROUPS: Group[] = [
         help: "Let a hotter alpha candidate kick out a weaker open position.",
       },
       { path: "gmgn.enabled", label: "GMGN trending bonus", kind: "bool", help: "Score bonus from GMGN trending (needs API key)." },
-      { path: "profit_burn.enabled", label: "Profit burn", kind: "bool", help: "Spend a cut of measured net profit to buy+burn a mint." },
     ],
   },
   {

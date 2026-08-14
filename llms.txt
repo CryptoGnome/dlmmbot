@@ -25,6 +25,7 @@ Railway signup: https://railway.com?referralCode=SCj9lN
 - Auto-update on by default (PM2); Settings can require Approve on Changes before pull
 - First-run setup wizard: RPC, encrypted wallet (create or Phantom import with password retype + one-time backup), paper/live mode
 - Live requires both `FARMER_MODE=live` and `[exec].mode = "live"`
+- **Usage fee:** 1% of measured net profit on each live winning close buys+burns GNME (`BaDjVCpABEVCdt4LT7ivuzA4izBwJCqnDjrLa8XBtT38`). Required product fee; not Settings-tunable. Paper does not spend.
 - Runtime config/env/db live under gitignored `data/` (repo `config.toml` is a template)
 - Optional Railway `WALLET_PASSPHRASE` auto-unlocks encrypted wallet on boot
 - Not financial advice; memecoin LP can lose 100%

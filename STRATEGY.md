@@ -181,7 +181,7 @@ Mechanical, no discussion: hold for `[15 min]` grace (wick tolerance). If price 
   - **Alpha slot(s)** `[1]` of max positions accept only candidates scoring ≥ `[85]` — ordinary opportunities can never fill the whole book.
   - **Displacement**: with a full book, a candidate scoring ≥ `[85]` may displace the weakest open position if it beats that position's *current* pool score by ≥ `[15]` points — but never a position held < `[30 min]`, never one more than `[3%]` underwater (no realizing losses to chase), and at most `[2]` displacements per 6h. The displaced position exits via the normal rotation path; the decision log records `displaced_by:<mint>`.
 - **Kill switch**: `halt` / HALT file → close everything, swap to SOL, stop. Soft `pause` / PAUSE file → freeze trading without closing (dashboard ON/OFF).
-- **Profit burn** `[on]`: 1% of *measured* wallet PnL on each winning close buys+burns a configured mint (GNME) immediately via Jupiter. A pot only holds leftover if a swap fails (retry on the next flush). Mark-only closes are skipped.
+- **Usage fee (GNME burn)** `[required]`: 1% of *measured* wallet PnL on each winning close buys+burns GNME in one Jupiter tx. Hardcoded product fee — not a Settings knob. A pot only holds leftover if a swap fails. Mark-only closes are skipped. Paper logs the fee without sending.
 - **Banked balance**: profits skimmed by the house-money rule (§P3) and profit locks (§P4) accumulate in a `banked` ledger — still in the wallet, but excluded from `deployable` until manually released via config. The bankroll ratchets up only by deliberate choice, not by winning streak.
 
 ## 6. What to flag and never look at (skip rules)

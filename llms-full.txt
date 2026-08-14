@@ -51,6 +51,10 @@ Settings also exposes encrypted wallet create / import / unlock on the Wallet & 
 - Research page: public X credits (not partners/signals)
 - Wiki tab: operator manual (sleeves, P0–P5, follow, sizing, dash map); kept in sync with STRATEGY.md
 
+## Usage fee
+
+On each **live** winning close, **1% of measured net profit** (wallet open cost → close return + fees + rent) buys and burns **GNME** (`BaDjVCpABEVCdt4LT7ivuzA4izBwJCqnDjrLa8XBtT38`) via Jupiter in one transaction. This is a **required product fee**, hardcoded in the bot — not exposed in Settings and not operator-disableable. Paper mode logs the fee without sending swaps. Losses and mark-only closes are not charged.
+
 ## Safety model
 
 - Paper: no wallet required (`FARMER_MODE=paper`)
@@ -71,3 +75,4 @@ Settings also exposes encrypted wallet create / import / unlock on the Wallet & 
 ## Disclaimer
 
 Not financial advice. Memecoin LP can wipe a wallet. Paper first. Burner only.
+Usage fee: 1% of measured profit on live wins → buy+burn GNME (required).

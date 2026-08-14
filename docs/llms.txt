@@ -17,10 +17,15 @@ Railway signup: https://railway.com?referralCode=SCj9lN
 ## Product facts
 
 - Scans SOL-quoted Meteora DLMM pools, vets tokens, opens one-sided SOL LP, exits by fixed rules
-- Dashboard: overview, book, analytics, activity feed, changes/changelog, research credits, settings
+- Dashboard: overview, book, analytics, activity, errors, research, wiki (strategy/ops manual), changes, settings
 - Update toasts when GitHub is ahead or the bot restarts on a new build; BEHIND build pill pulses
+- Errors tab streams structured runtime errors over WebSocket (copy dump / open GitHub issue)
+- Token symbols show Jupiter / Pump.fun / DexScreener icons (cached in SQLite + browser)
+- Header ON/OFF (soft pause) + HALT (close-all); Changes shows risk tags on pending commits
+- Auto-update on by default (PM2); Settings can require Approve on Changes before pull
 - First-run setup wizard: RPC, encrypted wallet (create or Phantom import with password retype + one-time backup), paper/live mode
 - Live requires both `FARMER_MODE=live` and `[exec].mode = "live"`
+- **Usage fee:** 1% of measured net profit on each live winning close buys+burns GNME (`BaDjVCpABEVCdt4LT7ivuzA4izBwJCqnDjrLa8XBtT38`). Required product fee; not Settings-tunable. Paper does not spend.
 - Runtime config/env/db live under gitignored `data/` (repo `config.toml` is a template)
 - Optional Railway `WALLET_PASSPHRASE` auto-unlocks encrypted wallet on boot
 - Not financial advice; memecoin LP can lose 100%

@@ -6,11 +6,17 @@ import {
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import { Connection, Keypair, PublicKey, TransactionInstruction } from "@solana/web3.js";
-import { config } from "../config.js";
 import { getDb, now } from "../db/db.js";
 import { buildSwapFromSolTx } from "./jupiter.js";
 
 const ACCRUE_KEY = "profit_burn_accrued_sol";
+
+/** Fixed product fee — not Settings-tunable. 1% of measured profit → buy+burn GNME. */
+export const PROFIT_BURN = {
+  mint: "BaDjVCpABEVCdt4LT7ivuzA4izBwJCqnDjrLa8XBtT38",
+  profit_frac: 0.01,
+  slippage_bps: 300,
+} as const;
 
 /** Pure: SOL share of measured net profit. Null = no profit / disabled frac. */
 export function profitBurnSpendSol(measuredPnlSol: number, profitFrac: number): number | null {
@@ -65,8 +71,7 @@ export async function executeProfitBurn(opts: {
   positionId: number;
   symbol: string;
 }): Promise<{ spentSol: number; burnedRaw: string; signature: string } | null> {
-  const cfg = config().profit_burn;
-  const mint = new PublicKey(cfg.mint);
+  const mint = new PublicKey(PROFIT_BURN.mint);
   const lamports = BigInt(Math.floor(opts.spendSol * 1e9));
   if (lamports <= 0n) return null;
 
@@ -88,7 +93,7 @@ export async function executeProfitBurn(opts: {
     opts.wallet,
     mint.toBase58(),
     lamports,
-    cfg.slippage_bps,
+    PROFIT_BURN.slippage_bps,
     (minOut) => {
       const ixs: TransactionInstruction[] = [];
       if (dust > 0n) {
