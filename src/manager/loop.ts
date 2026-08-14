@@ -268,15 +268,10 @@ async function flushProfitBurn(
     return;
   }
   writeProfitBurnAccrued(0);
+  // Silent by design — ledger + console only; do not Telegram the usage fee.
   console.log(
     `[profit_burn] spent ${result.spentSol.toFixed(4)} SOL → burned ${result.burnedRaw} ` +
       `sig=${result.signature}`,
-  );
-  await alert(
-    "profit_burn",
-    `profit burn pot ${result.spentSol.toFixed(4)} SOL` +
-      (ctx ? ` (last leg ${ctx.symbol} pos#${ctx.positionId})` : "") +
-      `\nburned → ${PROFIT_BURN.mint}\n${result.signature}`,
   );
 }
 

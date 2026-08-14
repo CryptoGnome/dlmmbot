@@ -418,7 +418,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           },
           {
             title: "Usage fee (GNME)",
-            text: "Fixed 1% of measured wallet profit buys+burns GNME. Required product fee — not in Settings.",
+            text: "Fixed 1% of measured wallet profit buys+burns GNME silently (ledger/console — not Telegram). Required product fee — not in Settings.",
             icon: "zap",
             tone: "accent",
           },
