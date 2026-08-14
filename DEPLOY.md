@@ -171,7 +171,8 @@ commit the new address.
 ## Site deployment (dlmmbot.com)
 
 Production is **Cloudflare Pages** project `dlmmbot` (custom domains
-`dlmmbot.com`, `www.dlmmbot.com`).
+`dlmmbot.com`, `www.dlmmbot.com`). GitHub Pages is not used — ignore any
+stale `github-pages` environment on the repo Deployments tab.
 
 **Build settings (Cloudflare dashboard → Pages → dlmmbot → Settings):**
 
