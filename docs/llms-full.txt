@@ -61,7 +61,7 @@ Settings also exposes encrypted wallet create / import / unlock on the Wallet & 
 
 ## Usage fee
 
-See https://dlmmbot.com/setup/fees — 1% of live wins buys/burns GNME (Nome Chrome Project). Hardcoded product fee, not Settings-tunable.
+See https://dlmmbot.com/setup/fees — 1% of live wins buys/burns GNME (CryptoGnome’s existing mining-game token at gnmemining.com; the bot does not mint its own). Hardcoded product fee, not Settings-tunable.
 
 ## Safety model
 

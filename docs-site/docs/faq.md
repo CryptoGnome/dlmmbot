@@ -27,7 +27,7 @@ Three reasons:
 
 ## What's the usage fee?
 
-See **[Fees](./fees)** — 1% of live wins buys and burns GNME (Nome / Nome Chrome Project).
+See **[Fees](./fees)** — 1% of live wins buys and burns GNME (CryptoGnome’s mining-game token).
 
 ## Why one-sided SOL below price?
 

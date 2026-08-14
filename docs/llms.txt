@@ -25,7 +25,7 @@ GMGN API key: https://gmgn.ai/ai (optional — see docs/setup/api-keys)
 - [Dashboard guide](https://dlmmbot.com/setup/dashboard): tabs, setup wizard, encrypted wallet, HALT
 - [CLI reference](https://dlmmbot.com/setup/cli): scan, vet, run, status, halt/pause, force-close, simulate-zap
 - [FAQ](https://dlmmbot.com/setup/faq): honest answers — losses, paper-first, restarts, RPC
-- [Fees](https://dlmmbot.com/setup/fees): 1% Nome/GNME burn on live winning closes (Nome Chrome Project)
+- [Fees](https://dlmmbot.com/setup/fees): 1% GNME burn on live wins (supports CryptoGnome’s GNME mining token)
 - [Full text for agents](https://dlmmbot.com/llms-full.txt): longer product summary
 - [Strategy (repo)](https://github.com/CryptoGnome/dlmmbot/blob/main/STRATEGY.md): exits and risk rules
 - [Release workflow (repo)](https://github.com/CryptoGnome/dlmmbot/blob/main/RELEASE.md): develop → main, semver GitHub Releases
@@ -42,7 +42,7 @@ GMGN API key: https://gmgn.ai/ai (optional — see docs/setup/api-keys)
 - **Settings profiles:** official Conservative / Balanced / Aggressive; local saves on the volume; community gallery. Share guide: https://dlmmbot.com/setup/profiles (browser fork + PR; works on Railway)
 - First-run setup wizard: RPC, encrypted wallet (create or Phantom import with password retype + one-time backup), paper/live mode
 - Live requires both `FARMER_MODE=live` and `[exec].mode = "live"`
-- **Usage fee:** see https://dlmmbot.com/setup/fees — 1% of live wins buys/burns GNME (Nome Chrome Project)
+- **Usage fee:** see https://dlmmbot.com/setup/fees — 1% of live wins buys/burns GNME (existing CryptoGnome mining-game token; not a new bot token)
 - Runtime config/env/db live under gitignored `data/` (repo `config.toml` is a template)
 - Optional Railway `WALLET_PASSPHRASE` auto-unlocks encrypted wallet on boot
 - Not financial advice; memecoin LP can lose 100%
