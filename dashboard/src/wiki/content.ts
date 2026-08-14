@@ -504,7 +504,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           { title: "Analytics", text: "Why we made/lost SOL — exits, sleeves, skips.", icon: "calc" },
           { title: "Activity", text: "Play-by-play for the current PAPER/LIVE book only (entries, exits, skips). SOL: green in / win, blue deployed (entries), red only for losses. On-chain rows link to Solscan.", icon: "zap" },
           { title: "Smart flow", text: "GMGN smart-money + KOL tape in the rolling window (~2 min polls). Same signal that adds score bonuses — live via the watch feed.", icon: "chart" },
-          { title: "Errors", text: "Broken stuff with copy/paste for bug reports. Each row has a plain label (Transient / Degraded / Needs attention).", icon: "alert", tone: "danger" },
+          { title: "Errors", text: "Broken stuff with copy/paste for bug reports. Dismiss hides; Clear log deletes rows from the DB. Each row has a plain label (Transient / Degraded / Needs attention).", icon: "alert", tone: "danger" },
           { title: "Report", text: "Bug or enhancement — guided GitHub issue with type/area chips, optional screenshots (paste in GitHub), and auto build context.", icon: "alert" },
           { title: "Research", text: "People we studied — not trade signals.", icon: "book" },
           { title: "Wiki", text: "This guided tour.", icon: "bot" },
@@ -562,7 +562,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           },
           {
             title: "Errors",
-            text: "Structured log in farmer.db (error_log) — not every PM2 line. Shows logError paths: open failures, tick crashes, RPC offline, GMGN rate limits, etc. Filter Degraded for API cooldowns. Copy, GitHub issue, or dismiss. Raw console noise (every retry, mark blip) stays in pm2 logs only.",
+            text: "Structured log in farmer.db (error_log) — not every PM2 line. Shows logError paths: open failures, tick crashes, RPC offline, GMGN rate limits, etc. Filter Degraded for API cooldowns. Copy, GitHub issue, or dismiss (hide). **Clear log** permanently deletes rows so the table doesn’t keep growing.",
             icon: "alert",
           },
         ],

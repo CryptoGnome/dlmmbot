@@ -499,6 +499,23 @@ export async function dismissErrors(opts: { ids?: number[]; all?: boolean }): Pr
   return { ok: !!data.ok, dismissed: Number(data.dismissed) || 0 };
 }
 
+/** Permanently delete error_log rows (all, or dismissed-only). */
+export async function clearErrorLog(opts: { dismissedOnly?: boolean } = {}): Promise<{
+  ok: boolean;
+  cleared: number;
+}> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/errors/clear${q}`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ dismissed_only: !!opts.dismissedOnly }),
+  });
+  const data = await res.json() as { ok?: boolean; cleared?: number; error?: string };
+  if (!res.ok) throw new Error(data.error ?? `clear ${res.status}`);
+  return { ok: !!data.ok, cleared: Number(data.cleared) || 0 };
+}
+
 export type SettingsProfile = {
   schema: number;
   id: string;

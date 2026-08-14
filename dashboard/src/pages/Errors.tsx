@@ -4,13 +4,13 @@ import { Badge, Panel } from "@/components/ui";
 import { Icon } from "@/lib/icons";
 import { shortTime, timeAgo } from "@/lib/utils";
 import { toast } from "@/lib/toast";
-import { dismissErrors } from "@/lib/api";
+import { dismissErrors, clearErrorLog } from "@/lib/api";
 import {
   copyText, errorIssueUrl, formatErrorDump, formatErrorLogDump,
 } from "@/lib/errorReport";
 import { errorPresentation, kindLabel, kindTone } from "@/lib/errorPresent";
 import {
-  Bug, Check, ChevronDown, ChevronRight, Copy, ExternalLink, OctagonX, X,
+  Bug, Check, ChevronDown, ChevronRight, Copy, ExternalLink, OctagonX, Trash2, X,
 } from "lucide-react";
 import { TokenSymbol } from "@/components/TokenSymbol";
 
@@ -237,6 +237,35 @@ export function ErrorsPage({ watch }: { watch: LiveWatch | null }) {
     }
   }
 
+  async function runClear() {
+    if (busy) return;
+    const ok = window.confirm(
+      "Permanently delete ALL rows in the error log?\n\nDismiss only hides them; Clear removes them from the DB so it doesn’t keep growing.",
+    );
+    if (!ok) return;
+    setBusy(true);
+    try {
+      const res = await clearErrorLog();
+      setHidden(new Set(allRaw.map((e) => e.id)));
+      setOpenId(null);
+      toast({
+        title: "Error log cleared",
+        detail: `${res.cleared} rows deleted`,
+        tone: "ok",
+        kind: "event",
+      });
+    } catch (e) {
+      toast({
+        title: "Clear failed",
+        detail: (e as Error).message,
+        tone: "danger",
+        kind: "event",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -274,10 +303,20 @@ export function ErrorsPage({ watch }: { watch: LiveWatch | null }) {
             className="inline-flex items-center gap-1 border border-grid px-2.5 py-1.5 text-[10px] tracking-wider text-muted uppercase hover:border-ok/60 hover:text-ok disabled:opacity-40"
             disabled={!all.length || busy}
             onClick={() => void runDismiss({ all: true })}
-            title="Hide every undismissed error from the live log"
+            title="Hide every undismissed error from the live log (kept in DB)"
           >
             <Icon icon={X} size={11} />
             Dismiss all
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 border border-grid px-2.5 py-1.5 text-[10px] tracking-wider text-muted uppercase hover:border-danger/60 hover:text-danger disabled:opacity-40"
+            disabled={busy}
+            onClick={() => void runClear()}
+            title="Permanently delete all error_log rows from the database"
+          >
+            <Icon icon={Trash2} size={11} />
+            Clear log
           </button>
         </div>
       </div>
