@@ -10,11 +10,11 @@ const execFileP = promisify(execFile);
 // Degrades gracefully: no key or CLI failure -> empty results, scanner
 // continues on Meteora-only discovery.
 //
-// Rate limits (gmgn-cli / GMGN leaky bucket, 2026): rate=10 capacity=10 with
-// per-route weights; OpenAPI also documents ~1 req/s. Overlapping CLI
-// processes were the main 429 source — all calls share one serial queue,
-// honor weight + min gap after each finished call, and park on 429 until
-// X-RateLimit-Reset / reset_at (never spam the cooldown — that extends bans).
+// Rate limits (gmgn-skills / OpenAPI, 2026): leaky bucket rate=20 capacity=20
+// **per module** (market, token, track) — not one global pool. Overlapping
+// CLI processes or two bots on one API key still double load. All calls share
+// one in-process serial queue; each module bucket is paced separately; park on
+// 429 until reset_at (never spam — each retry can extend the ban).
 
 export interface GmgnTrendingToken {
   address: string;
@@ -38,20 +38,26 @@ export interface GmgnPresence {
 }
 
 let cache: { at: number; byMint: Map<string, GmgnPresence> } | null = null;
-const CACHE_MS = 300_000; // 5m — trending is enrichment, not tick-critical
+const CACHE_MS = 600_000; // 10m — trending is enrichment, not tick-critical
 
-/** Documented bucket (gmgn-skills, 2026): rate=20 capacity=20 per route family. */
+/** Documented bucket (gmgn-skills, 2026): rate=20 capacity=20 per module. */
 export const GMGN_BUCKET_RATE = 20;
 export const GMGN_BUCKET_CAP = 20;
-/** Floor gap after a finished call — stay under ~1 req/s on weight-1 routes. */
-const MIN_GAP_MS = 1_100;
+/** Floor gap after a finished call — RPS ≈ 20/W; stay well under on weight-1. */
+const MIN_GAP_MS = 1_250;
+/** Extra spacing after token holders/traders (weight 5) — burst cap floor(20/5). */
+const TOKEN_HEAVY_GAP_MS = 2_000;
 /** GMGN bans are typically 5m when reset_at is missing from the CLI payload. */
 const DEFAULT_BAN_MS = 300_000;
-const SHORT_BAN_WAIT_MS = 5_000;
-/** Reject new jobs during an active ban — never queue work that will extend it. */
-const BAN_REJECT_MS = 250;
+/** Rolling cap — optional/heavy routes shed first (two bots on one key need headroom). */
+const SPEND_WINDOW_MS = 60_000;
+const SPEND_WINDOW_MAX = 36;
+/** Start below full bucket so a cold boot cannot burst 20 weight-1 calls. */
+const BUCKET_START_TOKENS = 8;
 
 let banLoggedUntil = 0;
+let spendWindowStart = 0;
+let spendWindowWeight = 0;
 
 type Job = {
   args: string[];
@@ -62,9 +68,86 @@ type Job = {
 let queue: Job[] = [];
 let pumping = false;
 let bannedUntil = 0;
-let nextSlotAt = 0;
-let tokens = GMGN_BUCKET_CAP;
-let lastRefillAt = Date.now();
+
+export type GmgnBucketId = "market" | "token" | "track";
+
+type BucketState = { tokens: number; lastRefillAt: number; nextSlotAt: number };
+
+const buckets = new Map<GmgnBucketId, BucketState>();
+
+/** GMGN limits market / token / track routes on separate leaky buckets. */
+export function gmgnBucketId(args: string[]): GmgnBucketId {
+  const a = args[0] ?? "";
+  if (a === "market") return "market";
+  if (a === "token") return "token";
+  return "track";
+}
+
+function getBucket(id: GmgnBucketId): BucketState {
+  let b = buckets.get(id);
+  if (!b) {
+    b = { tokens: BUCKET_START_TOKENS, lastRefillAt: Date.now(), nextSlotAt: 0 };
+    buckets.set(id, b);
+  }
+  return b;
+}
+
+function resetSpendWindow(now = Date.now()): void {
+  spendWindowStart = now;
+  spendWindowWeight = 0;
+}
+
+function spendWindowOk(weight: number, now = Date.now()): boolean {
+  if (now - spendWindowStart > SPEND_WINDOW_MS) resetSpendWindow(now);
+  return spendWindowWeight + weight <= SPEND_WINDOW_MAX;
+}
+
+function recordSpend(weight: number, now = Date.now()): void {
+  if (now - spendWindowStart > SPEND_WINDOW_MS) resetSpendWindow(now);
+  spendWindowWeight += weight;
+}
+
+const BAN_ERR = "gmgn cooling down after 429";
+
+function rejectQueued(reason = BAN_ERR): void {
+  while (queue.length) queue.shift()!.reject(new Error(reason));
+}
+
+function enterBan(untilMs: number): void {
+  bannedUntil = Math.max(bannedUntil, untilMs);
+  rejectQueued();
+  logBanOnce();
+}
+
+function refillBucket(id: GmgnBucketId, now = Date.now()): void {
+  const b = getBucket(id);
+  const elapsed = Math.max(0, (now - b.lastRefillAt) / 1000);
+  b.tokens = Math.min(GMGN_BUCKET_CAP, b.tokens + elapsed * GMGN_BUCKET_RATE);
+  b.lastRefillAt = now;
+}
+
+/** Shed load: skip optional weight-5 token calls when the token bucket is busy. */
+export function gmgnTokenBudgetOk(minWeight = 5): boolean {
+  return gmgnSpendOk(minWeight, "token", { optional: true });
+}
+
+/** Pre-flight for optional routes — skip before enqueue when tight. */
+export function gmgnSpendOk(
+  weight: number,
+  bucketId: GmgnBucketId,
+  opts: { optional?: boolean } = {},
+): boolean {
+  if (gmgnIsBanned()) return false;
+  if (!spendWindowOk(weight)) return !opts.optional;
+  refillBucket(bucketId);
+  const pending = queue.filter((j) => gmgnBucketId(j.args) === bucketId);
+  const pendingWeight = pending.reduce((n, j) => n + gmgnRouteWeight(j.args), 0);
+  if (opts.optional) {
+    if (pending.length >= 1 || pendingWeight + weight > GMGN_BUCKET_CAP) return false;
+    if (bucketId === "token" && pending.length >= 2) return false;
+  }
+  return getBucket(bucketId).tokens >= weight;
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -128,74 +211,69 @@ function isRateLimitText(text: string): boolean {
   return /RATE_LIMIT|HTTP\s*429|\b429\b/.test(text);
 }
 
-function refillTokens(now = Date.now()): void {
-  const elapsed = Math.max(0, (now - lastRefillAt) / 1000);
-  tokens = Math.min(GMGN_BUCKET_CAP, tokens + elapsed * GMGN_BUCKET_RATE);
-  lastRefillAt = now;
-}
-
-async function waitForTokens(weight: number): Promise<void> {
+async function waitForBucketTokens(id: GmgnBucketId, weight: number): Promise<void> {
   for (;;) {
-    refillTokens();
-    if (tokens >= weight) {
-      tokens -= weight;
+    refillBucket(id);
+    const b = getBucket(id);
+    if (b.tokens >= weight) {
+      b.tokens -= weight;
       return;
     }
-    const need = weight - tokens;
+    const need = weight - b.tokens;
     await sleep(Math.max(50, Math.ceil((need / GMGN_BUCKET_RATE) * 1000)));
   }
 }
 
 async function runOne(args: string[]): Promise<string> {
+  const bucketId = gmgnBucketId(args);
   const weight = gmgnRouteWeight(args);
-  const now = Date.now();
-  if (now < bannedUntil) {
-    const rem = bannedUntil - now;
-    if (rem <= SHORT_BAN_WAIT_MS) await sleep(rem + 50);
-    else throw new Error("gmgn cooling down after 429");
+  if (gmgnIsBanned()) throw new Error(BAN_ERR);
+
+  while (!spendWindowOk(weight)) {
+    const wait = spendWindowStart + SPEND_WINDOW_MS - Date.now() + 50;
+    if (wait > 8_000) throw new Error("gmgn budget exhausted");
+    await sleep(Math.max(50, wait));
   }
 
-  const gap = Math.max(0, nextSlotAt - Date.now());
+  const b = getBucket(bucketId);
+  const gap = Math.max(0, b.nextSlotAt - Date.now());
   if (gap > 0) await sleep(gap);
-  await waitForTokens(weight);
+  await waitForBucketTokens(bucketId, weight);
 
   try {
-    // Own the cooldown — CLI auto-retry during a ban extends RATE_LIMIT_BANNED.
+    // Own the cooldown — any CLI call during a ban extends RATE_LIMIT_BANNED (+5s each).
     const { stdout, stderr } = await execFileP("npx", ["-y", "gmgn-cli", ...args], {
       shell: true,
       timeout: 30_000,
       maxBuffer: 8 * 1024 * 1024,
       env: {
         ...process.env,
+        GMGN_API_KEY: env().gmgnApiKey ?? process.env.GMGN_API_KEY,
         GMGN_RATE_LIMIT_AUTO_RETRY_MAX_WAIT_MS: "0",
+        GMGN_RATE_LIMIT_AUTO_RETRY: "0",
       },
     });
     const combined = `${stdout}\n${stderr ?? ""}`;
     if (isRateLimitText(combined)) {
-      bannedUntil = Math.max(
-        bannedUntil,
-        parseGmgnResetMs(combined) ?? Date.now() + DEFAULT_BAN_MS,
-      );
-      logBanOnce();
+      enterBan(parseGmgnResetMs(combined) ?? Date.now() + DEFAULT_BAN_MS);
       throw new Error("gmgn 429");
     }
+    recordSpend(weight);
     return stdout;
   } catch (e) {
     const err = e as { stderr?: string; stdout?: string; message?: string };
     const text = `${err.message ?? ""}\n${err.stdout ?? ""}\n${err.stderr ?? ""}${String(e)}`;
     if (isRateLimitText(text)) {
-      bannedUntil = Math.max(
-        bannedUntil,
-        parseGmgnResetMs(text) ?? Date.now() + DEFAULT_BAN_MS,
-      );
-      logBanOnce();
-      throw new Error("gmgn cooling down after 429");
+      enterBan(parseGmgnResetMs(text) ?? Date.now() + DEFAULT_BAN_MS);
+      throw new Error(BAN_ERR);
     }
     throw e;
   } finally {
-    // Space *after* the process exits so calls never overlap on the wire.
     const weightGap = Math.ceil((weight / GMGN_BUCKET_RATE) * 1000);
-    nextSlotAt = Date.now() + Math.max(MIN_GAP_MS, weightGap);
+    const minGap = weight >= 5 && bucketId === "token"
+      ? Math.max(TOKEN_HEAVY_GAP_MS, weightGap)
+      : Math.max(MIN_GAP_MS, weightGap);
+    b.nextSlotAt = Date.now() + minGap;
   }
 }
 
@@ -219,25 +297,29 @@ async function pump(): Promise<void> {
 
 /** Paced, 429-aware GMGN CLI call — the only path any module may use. */
 export async function gmgnCli(args: string[]): Promise<string> {
-  const rem = bannedUntil - Date.now();
-  if (rem > BAN_REJECT_MS) {
-    return Promise.reject(new Error("gmgn cooling down after 429"));
-  }
+  if (gmgnIsBanned()) return Promise.reject(new Error(BAN_ERR));
   return new Promise((resolve, reject) => {
     queue.push({ args, resolve, reject });
     void pump();
   });
 }
 
-/** Test hook — clear queue / ban / bucket. */
+/** Test hook — set module bucket tokens without waiting. */
+export function _setGmgnBucketForTests(id: GmgnBucketId, tokens: number): void {
+  const b = getBucket(id);
+  b.tokens = tokens;
+  b.lastRefillAt = Date.now();
+}
+
+/** Test hook — clear queue / ban / buckets. */
 export function _resetGmgnPaceForTests(): void {
   queue = [];
   pumping = false;
   bannedUntil = 0;
   banLoggedUntil = 0;
-  nextSlotAt = 0;
-  tokens = GMGN_BUCKET_CAP;
-  lastRefillAt = Date.now();
+  spendWindowStart = 0;
+  spendWindowWeight = 0;
+  buckets.clear();
   cache = null;
   secCache.clear();
   tagCache.clear();
@@ -356,7 +438,7 @@ export function parseTokenSecurity(raw: string): GmgnSecurity | null {
 
 /** Token security cross-check. null = unavailable (no key / API failure / unrecognizable payload) — vet.ts records the blind spot. */
 export async function tokenSecurity(mint: string): Promise<GmgnSecurity | null> {
-  if (!env().gmgnApiKey || gmgnIsBanned()) return null;
+  if (!env().gmgnApiKey || !gmgnSpendOk(1, "token")) return null;
   const hit = secCache.get(mint);
   if (hit && Date.now() - hit.at < ENRICH_TTL_MS) return hit.v;
   try {
@@ -380,7 +462,7 @@ export interface TraderTagStats {
 
 /** Behavioral tags on a token's top traders. null = unavailable — degrades silently. */
 export async function tokenTraderTags(mint: string): Promise<TraderTagStats | null> {
-  if (!env().gmgnApiKey || gmgnIsBanned()) return null;
+  if (!env().gmgnApiKey || gmgnIsBanned() || !gmgnTokenBudgetOk(5)) return null;
   const hit = tagCache.get(mint);
   if (hit && Date.now() - hit.at < ENRICH_TTL_MS) return hit.v;
   try {

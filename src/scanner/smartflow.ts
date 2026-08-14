@@ -2,9 +2,8 @@ import { config, env } from "../config.js";
 import { gmgnCli, gmgnIsBanned } from "./gmgn.js";
 
 // Smart-money / KOL flow collector (practitioner research adoption, phase 2).
-// GMGN's track feeds are GLOBAL recent-trade streams (~100 trades / 2 min), so
-// two calls per minute maintain a rolling window covering every token at once;
-// scoring a candidate is a free in-memory lookup — no per-token API calls.
+// GMGN's track feeds are GLOBAL recent-trade streams (~100 trades / 2 min).
+// Alternate smartmoney/kol — one track call per poll keeps load low.
 
 interface FlowTrade {
   hash: string;
@@ -20,6 +19,7 @@ let trades: FlowTrade[] = [];
 let seenTx = new Set<string>();
 let timer: NodeJS.Timeout | null = null;
 let lastPollOk = 0;
+let feedTurn = 0;
 
 function parseList(raw: string): Array<Record<string, unknown>> {
   const j = JSON.parse(raw) as Record<string, unknown>;
@@ -30,28 +30,29 @@ function parseList(raw: string): Array<Record<string, unknown>> {
 
 async function pollOnce(): Promise<void> {
   if (gmgnIsBanned()) return;
-  for (const feed of ["smartmoney", "kol"] as const) {
-    try {
-      const raw = await gmgnCli(["track", feed, "--chain", "sol", "--limit", "200", "--raw"]);
-      for (const t of parseList(raw)) {
-        const hash = String(t.transaction_hash ?? "");
-        if (!hash || seenTx.has(hash)) continue;
-        seenTx.add(hash);
-        const info = (t.maker_info ?? {}) as Record<string, unknown>;
-        trades.push({
-          hash,
-          token: String(t.base_address ?? ""),
-          maker: String(t.maker ?? ""),
-          side: t.side === "sell" ? "sell" : "buy",
-          usd: Number(t.amount_usd ?? 0),
-          ts: Number(t.timestamp ?? 0),
-          kol: feed === "kol" ? String((info.twitter_username as string) || (info.name as string) || "kol") : null,
-        });
-      }
-      lastPollOk = Date.now();
-    } catch {
-      /* rate-limited or API down — the window just gets sparser; scoring degrades to no bonus */
+  const feeds = ["smartmoney", "kol"] as const;
+  const feed = feeds[feedTurn % feeds.length]!;
+  feedTurn += 1;
+  try {
+    const raw = await gmgnCli(["track", feed, "--chain", "sol", "--limit", "200", "--raw"]);
+    for (const t of parseList(raw)) {
+      const hash = String(t.transaction_hash ?? "");
+      if (!hash || seenTx.has(hash)) continue;
+      seenTx.add(hash);
+      const info = (t.maker_info ?? {}) as Record<string, unknown>;
+      trades.push({
+        hash,
+        token: String(t.base_address ?? ""),
+        maker: String(t.maker ?? ""),
+        side: t.side === "sell" ? "sell" : "buy",
+        usd: Number(t.amount_usd ?? 0),
+        ts: Number(t.timestamp ?? 0),
+        kol: feed === "kol" ? String((info.twitter_username as string) || (info.name as string) || "kol") : null,
+      });
     }
+    lastPollOk = Date.now();
+  } catch {
+    /* rate-limited or API down — the window just gets sparser; scoring degrades to no bonus */
   }
   const cutoff = Math.floor(Date.now() / 1000) - config().smartflow.window_min * 60;
   trades = trades.filter((t) => t.ts >= cutoff);
@@ -62,8 +63,8 @@ async function pollOnce(): Promise<void> {
 export function startSmartFlow(): void {
   if (!env().gmgnApiKey || timer) return;
   void pollOnce();
-  timer = setInterval(() => void pollOnce(), 60_000);
-  console.log("[smartflow] smart-money/KOL collector started (2 calls/min, 30m window)");
+  timer = setInterval(() => void pollOnce(), 120_000);
+  console.log("[smartflow] smart-money/KOL collector started (1 track call/120s, 30m window)");
 }
 
 export interface FlowSummary {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, lazy, Suspense } from "react";
 import { cachedHistory, cachedWatch, connectLive, fetchSetupStatus } from "@/lib/api";
 import type { HistorySnap, LiveWatch, RangeKey } from "@/lib/types";
 import { clockTime, tokenFromUrl } from "@/lib/utils";
@@ -17,7 +17,11 @@ import { ReportBugPage } from "@/pages/ReportBug";
 import { ResearchPage } from "@/pages/Research";
 import { WikiPage } from "@/pages/Wiki";
 import { ChangelogPage } from "@/pages/Changelog";
-import { SettingsPage } from "@/pages/Settings";
+import { LoadingState } from "@/components/ui";
+
+const SettingsPage = lazy(() =>
+  import("@/pages/Settings").then((m) => ({ default: m.SettingsPage })),
+);
 
 export default function App() {
   const [tab, setTab] = useState<TabId>(() =>
@@ -184,7 +188,11 @@ export default function App() {
         {tab === "research" && <ResearchPage />}
         {tab === "wiki" && <WikiPage />}
         {tab === "changes" && <ChangelogPage watch={watch} />}
-        {tab === "settings" && <SettingsPage />}
+        {tab === "settings" && (
+          <Suspense fallback={<LoadingState label="Loading settings…" />}>
+            <SettingsPage />
+          </Suspense>
+        )}
 
         <footer className="px-1 pb-2 text-[10px] text-dim">
           Live watch · WS every ~3s · marks every poll (~15s) · updated {updated ? clockTime(updated) : "—"} ET

@@ -176,9 +176,10 @@ export async function vetToken(mint: string, poolCreatedAtMs: number | null): Pr
   }
 
   // --- GMGN cross-check layer (degrades silently on API failure) ---
-  const [gmgnSec, traderTags, jup] = await Promise.all([
-    tokenSecurity(mint), tokenTraderTags(mint), jupAsset(mint),
-  ]);
+  const gmgnSec = await tokenSecurity(mint);
+  const traderTags = config().vetting.gmgn_trader_tags_enabled && gmgnSec
+    ? await tokenTraderTags(mint) : null;
+  const jup = await jupAsset(mint);
   if (gmgnSec) {
     facts.gmgnHoneypot = gmgnSec.honeypot;
     facts.gmgnSellTaxPct = gmgnSec.sellTaxPct;

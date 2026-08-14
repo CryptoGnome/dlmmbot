@@ -1,5 +1,5 @@
 import { config, env } from "../config.js";
-import { gmgnCli, gmgnIsBanned } from "../scanner/gmgn.js";
+import { gmgnCli, gmgnIsBanned, gmgnTokenBudgetOk } from "../scanner/gmgn.js";
 
 // P0 wallet-dump / new-whale triggers (STRATEGY.md §4) via GMGN holder polling.
 // Top holders snapshotted every holder_poll_s; confirm-then-fire against the
@@ -12,7 +12,8 @@ export interface HolderTrigger {
 
 interface Snapshot {
   at: number;
-  pct: Map<string, number>; // holder address -> % of supply (pools/AMMs excluded)
+  pct: Map<string, number>;
+  nextPollAt: number;
 }
 
 const snapshots = new Map<number, Snapshot>();
@@ -24,7 +25,7 @@ export function clearHolderWatch(posId: number): void {
 }
 
 async function fetchHolderPct(mint: string): Promise<Map<string, number> | null> {
-  if (gmgnIsBanned()) return null;
+  if (gmgnIsBanned() || !gmgnTokenBudgetOk(5)) return null;
   try {
     const raw = await gmgnCli(["token", "holders", "--chain", "sol", "--address", mint, "--limit", "20", "--raw"]);
     const j = JSON.parse(raw) as Record<string, unknown>;
@@ -87,23 +88,31 @@ async function holderCheckInner(posId: number, mint: string): Promise<HolderTrig
   if (!env().gmgnApiKey) return null;
   const m = config().manage;
   const prev = snapshots.get(posId);
-  if (prev && Date.now() - prev.at < m.holder_poll_s * 1000) return null;
+  const pollMs = m.holder_poll_s * 1000;
+
+  if (!prev) {
+    // Stagger first poll across positions so N open slots don't stampede one tick.
+    const phase = (posId % 6) * Math.floor(pollMs / 6);
+    snapshots.set(posId, { at: 0, pct: new Map(), nextPollAt: Date.now() + phase });
+    return null;
+  }
+  if (Date.now() < prev.nextPollAt) return null;
 
   const cur = await fetchHolderPct(mint);
   if (!cur) return null;
-  if (!prev) {
-    snapshots.set(posId, { at: Date.now(), pct: cur });
+  if (prev.at === 0 || prev.pct.size === 0) {
+    snapshots.set(posId, { at: Date.now(), pct: cur, nextPollAt: Date.now() + pollMs });
     return null;
   }
 
   const cand = findTrigger(prev.pct, cur, m.safety_wallet_dump_pct, m.safety_new_whale_pct);
   if (!cand) {
-    snapshots.set(posId, { at: Date.now(), pct: cur });
+    snapshots.set(posId, { at: Date.now(), pct: cur, nextPollAt: Date.now() + pollMs });
     return null;
   }
 
-  const confirm = await fetchHolderPct(mint);
-  snapshots.set(posId, { at: Date.now(), pct: confirm ?? cur });
+  const confirm = gmgnTokenBudgetOk(5) ? await fetchHolderPct(mint) : null;
+  snapshots.set(posId, { at: Date.now(), pct: confirm ?? cur, nextPollAt: Date.now() + pollMs });
   if (!confirm) return null;
   return confirmHolderTrigger(
     prev.pct, cur, confirm, m.safety_wallet_dump_pct, m.safety_new_whale_pct,

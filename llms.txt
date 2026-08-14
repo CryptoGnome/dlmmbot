@@ -27,7 +27,7 @@ GMGN API key: https://gmgn.ai/ai (optional — see docs/setup/api-keys)
 - [For AI agents](https://dlmmbot.com/setup/agents): install playbook, hard rules, paste prompt, llms links
 - [Easy setup (Railway)](https://dlmmbot.com/setup/easy): one service, volume at `/app/data`, public domain, dashboard wizard
 - [Advanced setup](https://dlmmbot.com/setup/advanced): local / VPS / PM2
-- [API keys](https://dlmmbot.com/setup/api-keys): Helius RPC, Jupiter, GMGN signup steps (GMGN calls are serialized + paced; 429 cools down until reset)
+- [API keys](https://dlmmbot.com/setup/api-keys): Helius RPC, Jupiter, GMGN signup steps (per-module pacing; 429 parks until reset — one key per bot instance)
 - [Settings profiles](https://dlmmbot.com/setup/profiles): official / local / community packs + share via browser PR
 - [How it works](https://dlmmbot.com/setup/how-it-works): pipeline for newcomers — scan/vet/enter/manage/exit, sleeves, follow mode
 - [Strategy reference](https://dlmmbot.com/setup/strategy): pool/token gates, P0–P5 exit ladder, follow mode, blacklist
@@ -45,7 +45,7 @@ GMGN API key: https://gmgn.ai/ai (optional — see docs/setup/api-keys)
 ## Product facts
 
 - Scans SOL-quoted Meteora DLMM pools, vets tokens, opens one-sided SOL LP, exits by fixed rules
-- Dashboard: overview, book, analytics, activity, errors, research, wiki (strategy/ops manual), changes, settings
+- Dashboard: overview, book, analytics, activity, errors, research, wiki (strategy/ops manual), changes, settings (majors allowlist ticker search on Meteora)
 - Update toasts when GitHub is ahead or the bot restarts on a new build; BEHIND build pill pulses
 - Errors tab streams structured runtime errors over WebSocket (copy dump / open GitHub issue)
 - Token symbols show Jupiter / Pump.fun / DexScreener icons (cached in SQLite + browser)

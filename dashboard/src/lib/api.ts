@@ -3,8 +3,10 @@ import { tokenFromUrl } from "./utils";
 
 const WATCH_KEY = "dlmm_dash_watch";
 const HIST_PREFIX = "dlmm_dash_hist_";
+const SETTINGS_KEY = "dlmm_dash_settings";
 const LEGACY_WATCH_KEY = "meteora_dash_watch";
 const LEGACY_HIST_PREFIX = "meteora_dash_hist_";
+const LEGACY_SETTINGS_KEY = "meteora_dash_settings";
 
 type Envelope<T> = { at: number; data: T };
 
@@ -43,6 +45,48 @@ export function cachedHistory(range: RangeKey): HistorySnap | null {
   return read<HistorySnap>(HIST_PREFIX + range)?.data
     ?? read<HistorySnap>(LEGACY_HIST_PREFIX + range)?.data
     ?? null;
+}
+
+export type SettingsBundle = {
+  config: FlatConfig;
+  env: EnvRow[];
+  setup: SetupStatus;
+};
+
+export function cachedSettings(): SettingsBundle | null {
+  return read<SettingsBundle>(SETTINGS_KEY)?.data
+    ?? read<SettingsBundle>(LEGACY_SETTINGS_KEY)?.data
+    ?? null;
+}
+
+function cacheSettings(bundle: SettingsBundle): void {
+  write(SETTINGS_KEY, bundle);
+}
+
+export function refreshSettingsCache(patch: Partial<SettingsBundle>): void {
+  const cur = cachedSettings();
+  if (!cur) return;
+  cacheSettings({ ...cur, ...patch });
+}
+
+/** One round-trip for Settings boot (config + env + setup). Falls back on older dash servers. */
+export async function fetchSettingsBootstrap(): Promise<SettingsBundle> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  try {
+    const res = await fetch(`/api/settings${q}`, { headers: authHeaders() });
+    if (res.ok) {
+      const data = await res.json() as SettingsBundle;
+      cacheSettings(data);
+      return data;
+    }
+  } catch { /* older server — fall through */ }
+  const [config, env, setup] = await Promise.all([
+    fetchConfig(), fetchEnv(), fetchSetupStatus(),
+  ]);
+  const bundle = { config, env, setup };
+  cacheSettings(bundle);
+  return bundle;
 }
 
 export async function fetchWatch(): Promise<LiveWatch> {
@@ -91,6 +135,39 @@ export async function patchConfig(updates: Record<string, unknown>): Promise<{
   const data = await res.json() as { applied?: string[]; config?: FlatConfig; error?: string };
   if (!res.ok) throw new Error(data.error ?? `config patch ${res.status}`);
   return { applied: data.applied ?? [], config: data.config ?? {} };
+}
+
+export type MajorsSearchHit = {
+  symbol: string;
+  poolCount: number;
+  onAllowlist: boolean;
+  best: {
+    address: string;
+    name: string;
+    quote: string;
+    tvlUsd: number;
+    feeTvl24hPct: number;
+    vol30mUsd: number;
+    ageDays: number | null;
+    gateFails: string[];
+    statusTone: "ok" | "warn" | "dim";
+    statusText: string;
+    ready: boolean;
+  };
+};
+
+export async function searchMajorsSymbols(q: string, limit = 12): Promise<{
+  query: string;
+  hits: MajorsSearchHit[];
+  cachedAt: number | null;
+}> {
+  const t = tokenFromUrl();
+  const params = new URLSearchParams({ q, limit: String(limit) });
+  if (t) params.set("token", t);
+  const res = await fetch(`/api/majors/search?${params}`, { headers: authHeaders() });
+  const data = await res.json() as { hits?: MajorsSearchHit[]; query?: string; cachedAt?: number | null; error?: string };
+  if (!res.ok) throw new Error(data.error ?? `majors search ${res.status}`);
+  return { query: data.query ?? q, hits: data.hits ?? [], cachedAt: data.cachedAt ?? null };
 }
 
 export type EnvRow = {

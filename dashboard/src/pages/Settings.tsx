@@ -1,22 +1,27 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, lazy, Suspense, type ReactNode } from "react";
 import {
-  fetchConfig, fetchEnv, fetchSetupStatus,
+  fetchSettingsBootstrap, cachedSettings, refreshSettingsCache,
   patchConfig, patchSecrets, unlockSecrets, unlockWallet,
   type EnvRow, type FlatConfig, type SetupStatus,
 } from "@/lib/api";
-import { Badge, LoadingState, Panel } from "@/components/ui";
+import { Badge, LoadingState, Panel, Spinner } from "@/components/ui";
 import { Icon } from "@/lib/icons";
 import { toast } from "@/lib/toast";
 import { WalletCreateModal } from "@/components/WalletCreateModal";
-import { ProfilesPanel } from "@/components/ProfilesPanel";
+import { MajorsAllowlistPicker } from "@/components/MajorsAllowlistPicker";
 import { walletPresence } from "@/lib/walletStatus";
 import {
   Settings as SettingsIcon, Save, RefreshCw, Lock, Unlock, KeyRound, Wallet,
 } from "lucide-react";
 
+const ProfilesPanel = lazy(() =>
+  import("@/components/ProfilesPanel").then((m) => ({ default: m.ProfilesPanel })),
+);
+
 type Field =
   | { path: string; label: string; help?: string; kind: "bool" }
   | { path: string; label: string; help?: string; kind: "text" }
+  | { path: string; label: string; help?: string; kind: "majors_allowlist" }
   | { path: string; label: string; help?: string; kind: "select"; options: { value: string; label: string }[] }
   | { path: string; label: string; help?: string; kind: "int"; min: number; max: number; step?: number; suffix?: string }
   | { path: string; label: string; help?: string; kind: "sol"; min: number; max: number; step: number }
@@ -507,7 +512,7 @@ const GROUPS: Group[] = [
     fields: [
       { path: "majors.enabled", label: "Enabled", kind: "bool" },
       { path: "majors.max_slots", label: "Max majors slots", kind: "int", min: 0, max: 3 },
-      { path: "majors.symbol_allowlist", label: "Allowlist", kind: "text", help: "Comma-separated, e.g. PUMP, ANSEM, JUP." },
+      { path: "majors.symbol_allowlist", label: "Allowlist", kind: "majors_allowlist" },
     ],
   },
   {
@@ -652,7 +657,7 @@ function fmtSol(n: number): string {
 
 function coerce(raw: string, sample: unknown, f: Field): unknown {
   if (f.kind === "bool" || typeof sample === "boolean") return raw === "true" || raw === "1";
-  if (f.kind === "text" || Array.isArray(sample)) {
+  if (f.kind === "text" || f.kind === "majors_allowlist" || Array.isArray(sample)) {
     if (Array.isArray(sample) || raw.includes(",")) {
       return raw.split(",").map((s) => s.trim()).filter(Boolean);
     }
@@ -712,21 +717,86 @@ function fieldGridClass(cols: 2 | 3 | 4 = 3) {
   return "grid grid-cols-1 gap-2 md:grid-cols-3";
 }
 
+function draftFromConfig(c: FlatConfig | null | undefined): Record<string, string> {
+  if (!c) return {};
+  const d: Record<string, string> = {};
+  for (const path of PUBLIC_PATHS) {
+    if (path in c) d[path] = wireStr(c[path]);
+  }
+  return d;
+}
+
+function applySettingsBundle(
+  bundle: { config: FlatConfig; env: EnvRow[]; setup: SetupStatus },
+  setConfig: (c: FlatConfig) => void,
+  setDraft: (d: Record<string, string>) => void,
+  setEnv: (e: EnvRow[]) => void,
+  setSetup: (s: SetupStatus) => void,
+  setWalletTab?: (t: "create" | "import" | "unlock") => void,
+) {
+  setConfig(bundle.config);
+  setDraft(draftFromConfig(bundle.config));
+  setEnv(bundle.env);
+  setSetup(bundle.setup);
+  if (bundle.setup.wallet.encrypted) setWalletTab?.("unlock");
+}
+
+/** Defer heavy field grids until the section scrolls near view. */
+function LazySettingsGroup({
+  eager,
+  title,
+  badge,
+  blurb,
+  children,
+}: {
+  eager?: boolean;
+  title: string;
+  badge?: ReactNode;
+  blurb?: string;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [show, setShow] = useState(!!eager);
+
+  useEffect(() => {
+    if (show) return;
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry?.isIntersecting) setShow(true); },
+      { rootMargin: "280px 0px" },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [show]);
+
+  return (
+    <div ref={ref} className={show ? undefined : "min-h-[6.5rem]"}>
+      <Panel title={title} right={badge}>
+        {blurb && <p className="mb-3 text-[11px] text-dim">{blurb}</p>}
+        {show ? children : <LoadingState compact label={`Loading ${title}…`} />}
+      </Panel>
+    </div>
+  );
+}
+
 export function SettingsPage() {
-  const [config, setConfig] = useState<FlatConfig | null>(null);
-  const [draft, setDraft] = useState<Record<string, string>>({});
-  const [env, setEnv] = useState<EnvRow[]>([]);
+  const boot = cachedSettings();
+  const [config, setConfig] = useState<FlatConfig | null>(() => boot?.config ?? null);
+  const [draft, setDraft] = useState<Record<string, string>>(() => draftFromConfig(boot?.config));
+  const [env, setEnv] = useState<EnvRow[]>(() => boot?.env ?? []);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [ready, setReady] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [configReady, setConfigReady] = useState(() => !!boot?.config);
+  const [walletReady, setWalletReady] = useState(() => !!boot?.setup);
   const [secretsOpen, setSecretsOpen] = useState(false);
   const [secretsUnlocked, setSecretsUnlocked] = useState(false);
   const [confirmToken, setConfirmToken] = useState("");
   const [secretDraft, setSecretDraft] = useState<Record<string, string>>({});
   const [secretsSaving, setSecretsSaving] = useState(false);
-  const [setup, setSetup] = useState<SetupStatus | null>(null);
+  const [setup, setSetup] = useState<SetupStatus | null>(() => boot?.setup ?? null);
   const [walletTab, setWalletTab] = useState<"create" | "import" | "unlock">("create");
   const [walletConfirm, setWalletConfirm] = useState("");
   const [walletPass, setWalletPass] = useState("");
@@ -738,31 +808,22 @@ export function SettingsPage() {
   /** When wallet is already ready, hide create/import/unlock until user asks to replace. */
   const [walletReplaceOpen, setWalletReplaceOpen] = useState(false);
 
-  const load = async () => {
-    setLoading(true);
+  const load = async (opts?: { quiet?: boolean }) => {
+    if (!opts?.quiet) setLoading(true);
     setErr(null);
     try {
-      const [c, e, s] = await Promise.all([
-        fetchConfig(), fetchEnv(), fetchSetupStatus(),
-      ]);
-      setConfig(c);
-      const d: Record<string, string> = {};
-      for (const path of PUBLIC_PATHS) {
-        if (path in c) d[path] = wireStr(c[path]);
-      }
-      setDraft(d);
-      setEnv(e);
-      setSetup(s);
-      if (s.wallet.encrypted) setWalletTab("unlock");
+      const bundle = await fetchSettingsBootstrap();
+      applySettingsBundle(bundle, setConfig, setDraft, setEnv, setSetup, setWalletTab);
+      setConfigReady(true);
+      setWalletReady(true);
     } catch (e) {
       setErr((e as Error).message ?? String(e));
     } finally {
       setLoading(false);
-      setReady(true);
     }
   };
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load({ quiet: !!boot?.config }); }, []);
 
   const safeEnv = useMemo(() => env.filter((r) => !r.secret), [env]);
   const secretEnv = useMemo(() => env.filter((r) => r.editable), [env]);
@@ -831,6 +892,7 @@ export function SettingsPage() {
       }
       const result = await patchSecrets(confirmToken, updates);
       setEnv(result.env);
+      refreshSettingsCache({ env: result.env });
       setSecretDraft({});
       setMsg(`${result.note ?? "Saved."} Updated: ${result.applied.join(", ") || "none"}.`);
       toast({
@@ -863,6 +925,7 @@ export function SettingsPage() {
       }
       const result = await patchConfig(updates);
       setConfig(result.config);
+      refreshSettingsCache({ config: result.config });
       const d: Record<string, string> = {};
       for (const path of PUBLIC_PATHS) {
         if (path in result.config) d[path] = wireStr(result.config[path]);
@@ -941,6 +1004,18 @@ export function SettingsPage() {
       );
     }
 
+    if (f.kind === "majors_allowlist") {
+      return (
+        <MajorsAllowlistPicker
+          key={f.path}
+          value={wire}
+          saved={wireStr(config[f.path])}
+          changed={changed}
+          onChange={(next) => setPath(f.path, next)}
+        />
+      );
+    }
+
     const ui = toUi(f, wire);
     let display = String(ui);
     let hint: string | undefined;
@@ -980,6 +1055,21 @@ export function SettingsPage() {
     : "fg";
   const walletBadgeLabel = presence.label;
 
+  const floatingSave =
+    pageTab === "bot"
+      ? {
+          show: configReady && dirtyCount > 0,
+          label: saving ? "Saving…" : `Save ${dirtyCount}`,
+          disabled: saving || !configReady,
+          onClick: () => void save(),
+        }
+      : {
+          show: walletReady && secretsUnlocked && secretDirty,
+          label: secretsSaving ? "Saving…" : "Save keys",
+          disabled: secretsSaving || !secretDirty,
+          onClick: () => void saveSecrets(),
+        };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -995,8 +1085,19 @@ export function SettingsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {loading && configReady && (
+            <span className="inline-flex items-center gap-1.5 text-[10px] text-dim">
+              <Spinner size={12} label="Refreshing settings" />
+              Refreshing…
+            </span>
+          )}
           {pageTab === "bot" && (
-            <button type="button" className="btn-primary inline-flex items-center gap-1.5" disabled={!dirtyCount || saving} onClick={() => void save()}>
+            <button
+              type="button"
+              className="btn-primary inline-flex items-center gap-1.5"
+              disabled={!configReady || !dirtyCount || saving}
+              onClick={() => void save()}
+            >
               <Icon icon={Save} size={12} />
               {saving ? "Saving…" : dirtyCount ? `Save ${dirtyCount}` : "Saved"}
             </button>
@@ -1020,7 +1121,6 @@ export function SettingsPage() {
             pageTab === "bot" ? "bg-ok/15 text-ok" : "text-dim hover:text-muted"
           }`}
           onClick={() => setPageTab("bot")}
-          disabled={!ready}
         >
           <Icon icon={SettingsIcon} size={12} />
           Bot settings
@@ -1032,7 +1132,6 @@ export function SettingsPage() {
             pageTab === "wallet" ? "bg-ok/15 text-ok" : "text-dim hover:text-muted"
           }`}
           onClick={() => setPageTab("wallet")}
-          disabled={!ready}
         >
           <Icon icon={Wallet} size={12} />
           Wallet & secrets
@@ -1044,78 +1143,90 @@ export function SettingsPage() {
 
       {err && <div className="border border-danger/60 bg-panel px-3 py-2 text-danger text-[11px]">{err}</div>}
       {msg && <div className="border border-ok/60 bg-panel px-3 py-2 text-ok text-[11px]">{msg}</div>}
-      {!ready && <LoadingState label="Loading settings…" />}
+      {!configReady && pageTab === "bot" && <LoadingState label="Loading bot settings…" />}
 
-      {ready && pageTab === "bot" && (
-        <ProfilesPanel
-          onApplied={(next) => {
-            setConfig(next);
-            const d: Record<string, string> = {};
-            for (const path of PUBLIC_PATHS) {
-              if (path in next) d[path] = wireStr(next[path]);
-            }
-            setDraft(d);
-            setMsg("Applied profile. Bot hot-reloads within ~2s.");
-          }}
-        />
+      {configReady && pageTab === "bot" && (
+        <Suspense fallback={<Panel title="Profiles"><LoadingState compact label="Loading profiles…" /></Panel>}>
+          <ProfilesPanel
+            onApplied={(next) => {
+              setConfig(next);
+              refreshSettingsCache({ config: next });
+              setDraft(draftFromConfig(next));
+              setMsg("Applied profile. Bot hot-reloads within ~2s.");
+            }}
+          />
+        </Suspense>
       )}
 
-      {ready && pageTab === "bot" && visibleGroups.map((g) => (
-        <Panel key={g.title} title={g.title} right={<Badge tone="accent">{g.fields.filter((f) => f.path in (config ?? {})).length}</Badge>}>
-          {g.blurb && <p className="mb-3 text-[11px] text-dim">{g.blurb}</p>}
-          {g.layout === "gates" ? (
-            <div className="space-y-2">
-              {chunkGateRows(g.fields).map((row, idx) => {
-                if (row.kind === "gate") {
-                  return (
-                    <div
-                      key={`${row.gate.path}-${idx}`}
-                      className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(13rem,0.85fr)_1.35fr]"
-                    >
-                      {renderField(row.gate)}
-                      <div className="grid h-full min-w-0 grid-cols-1 gap-2">
-                        {row.knobs.map(renderField)}
-                      </div>
-                    </div>
-                  );
-                }
+      {configReady && pageTab === "bot" && visibleGroups.map((g, idx) => {
+        const badge = <Badge tone="accent">{g.fields.filter((f) => f.path in (config ?? {})).length}</Badge>;
+        const body = g.layout === "gates" ? (
+          <div className="space-y-2">
+            {chunkGateRows(g.fields).map((row, rowIdx) => {
+              if (row.kind === "gate") {
                 return (
-                  <div key={`row-${idx}`} className={fieldGridClass(2)}>
-                    {row.fields.map(renderField)}
+                  <div
+                    key={`${row.gate.path}-${rowIdx}`}
+                    className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(13rem,0.85fr)_1.35fr]"
+                  >
+                    {renderField(row.gate)}
+                    <div className="grid h-full min-w-0 grid-cols-1 gap-2">
+                      {row.knobs.map(renderField)}
+                    </div>
                   </div>
                 );
-              })}
-            </div>
-          ) : g.layout === "sleeves" && g.sleeves ? (
-            <div className="space-y-3">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                {g.sleeves.map((s) => (
-                  <div key={s.title} className="flex min-w-0 flex-col gap-2 border border-grid bg-panel/40 p-2.5">
-                    <div className="border-b border-grid pb-2">
-                      <h3 className="text-[11px] font-medium text-fg">{s.title}</h3>
-                      {s.blurb && <p className="mt-0.5 text-[9px] leading-snug text-dim">{s.blurb}</p>}
-                    </div>
-                    <div className="flex flex-col gap-2">{s.fields.map(renderField)}</div>
-                  </div>
-                ))}
-              </div>
-              {g.fields.length > g.sleeves.reduce((n, s) => n + s.fields.length, 0) && (
-                <div className={fieldGridClass(3)}>
-                  {g.fields
-                    .filter((f) => !g.sleeves!.some((s) => s.fields.some((sf) => sf.path === f.path)))
-                    .map(renderField)}
+              }
+              return (
+                <div key={`row-${rowIdx}`} className={fieldGridClass(2)}>
+                  {row.fields.map(renderField)}
                 </div>
-              )}
+              );
+            })}
+          </div>
+        ) : g.layout === "sleeves" && g.sleeves ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {g.sleeves.map((s) => (
+                <div key={s.title} className="flex min-w-0 flex-col gap-2 border border-grid bg-panel/40 p-2.5">
+                  <div className="border-b border-grid pb-2">
+                    <h3 className="text-[11px] font-medium text-fg">{s.title}</h3>
+                    {s.blurb && <p className="mt-0.5 text-[9px] leading-snug text-dim">{s.blurb}</p>}
+                  </div>
+                  <div className="flex flex-col gap-2">{s.fields.map(renderField)}</div>
+                </div>
+              ))}
             </div>
-          ) : (
-            <div className={fieldGridClass(g.cols)}>
-              {g.fields.map(renderField)}
-            </div>
-          )}
-        </Panel>
-      ))}
+            {g.fields.length > g.sleeves.reduce((n, s) => n + s.fields.length, 0) && (
+              <div className={fieldGridClass(3)}>
+                {g.fields
+                  .filter((f) => !g.sleeves!.some((s) => s.fields.some((sf) => sf.path === f.path)))
+                  .map(renderField)}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className={fieldGridClass(g.cols)}>
+            {g.fields.map(renderField)}
+          </div>
+        );
+        return (
+          <LazySettingsGroup
+            key={g.title}
+            eager={idx < 2}
+            title={g.title}
+            badge={badge}
+            blurb={g.blurb}
+          >
+            {body}
+          </LazySettingsGroup>
+        );
+      })}
 
-      {ready && pageTab === "wallet" && (
+      {pageTab === "wallet" && !walletReady && (
+        <LoadingState compact label="Loading wallet & keys…" />
+      )}
+
+      {walletReady && pageTab === "wallet" && (
       <>
       {(() => {
         const rpcOk = secretEnv.find((r) => r.key === "RPC_URL")?.set
@@ -1518,6 +1629,25 @@ export function SettingsPage() {
         )}
       </Panel>
       </>
+      )}
+
+      {floatingSave.show && (
+        <div
+          className="fixed bottom-4 left-1/2 z-[55] flex -translate-x-1/2 items-center gap-3 border border-accent/50 bg-panel px-3 py-2 shadow-[0_8px_32px_rgba(0,0,0,0.45)] sm:gap-4 sm:px-4 sm:py-2.5"
+          role="status"
+          aria-live="polite"
+        >
+          <span className="hidden text-[11px] text-muted sm:inline">Unsaved changes</span>
+          <button
+            type="button"
+            className="btn-primary inline-flex items-center gap-1.5 whitespace-nowrap"
+            disabled={floatingSave.disabled}
+            onClick={floatingSave.onClick}
+          >
+            <Icon icon={Save} size={12} />
+            {floatingSave.label}
+          </button>
+        </div>
       )}
     </div>
   );
