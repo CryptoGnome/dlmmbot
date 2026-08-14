@@ -24,11 +24,9 @@ CREATE TABLE IF NOT EXISTS error_log (
   pool TEXT,
   build TEXT,
   host TEXT,
-  pid INTEGER,
-  dismissed INTEGER NOT NULL DEFAULT 0
+  pid INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_error_log_ts ON error_log(ts DESC);
-CREATE INDEX IF NOT EXISTS idx_error_log_active ON error_log(dismissed, ts DESC);
 `;
 
 let cachedBuild;
@@ -55,6 +53,7 @@ export function ensureErrorLog(db) {
   try {
     db.exec(SCHEMA);
     try { db.exec("ALTER TABLE error_log ADD COLUMN dismissed INTEGER NOT NULL DEFAULT 0"); } catch { /* */ }
+    try { db.exec("CREATE INDEX IF NOT EXISTS idx_error_log_active ON error_log(dismissed, ts DESC)"); } catch { /* */ }
   } catch { /* readonly or missing */ }
 }
 
@@ -174,8 +173,8 @@ export function insertError(root, input) {
     }
     const info = db.prepare(
       `INSERT INTO error_log
-        (ts, level, source, code, message, stack, detail_json, position_id, symbol, mint, pool, build, host, pid, dismissed)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+        (ts, level, source, code, message, stack, detail_json, position_id, symbol, mint, pool, build, host, pid)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       Math.floor(Date.now() / 1000),
       level,

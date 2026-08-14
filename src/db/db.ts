@@ -196,11 +196,9 @@ CREATE TABLE IF NOT EXISTS error_log (
   pool TEXT,
   build TEXT,
   host TEXT,
-  pid INTEGER,
-  dismissed INTEGER NOT NULL DEFAULT 0
+  pid INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_error_log_ts ON error_log(ts DESC);
-CREATE INDEX IF NOT EXISTS idx_error_log_active ON error_log(dismissed, ts DESC);
 `;
 
 let db: Database.Database | null = null;
@@ -253,12 +251,13 @@ CREATE TABLE IF NOT EXISTS error_log (
   pool TEXT,
   build TEXT,
   host TEXT,
-  pid INTEGER,
-  dismissed INTEGER NOT NULL DEFAULT 0
+  pid INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_error_log_ts ON error_log(ts DESC);
-CREATE INDEX IF NOT EXISTS idx_error_log_active ON error_log(dismissed, ts DESC);
 `);
+  // Add dismissed AFTER create — CREATE INDEX on a new column must not run in the
+  // same IF NOT EXISTS batch as the table (existing DBs skip CREATE TABLE and then
+  // blow up on the index). That crash surfaced as "reconcile failed: no such column".
   try {
     database.exec("ALTER TABLE error_log ADD COLUMN dismissed INTEGER NOT NULL DEFAULT 0");
   } catch { /* column already exists */ }
