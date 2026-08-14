@@ -91,13 +91,15 @@ Useful ops: [Dashboard guide](./dashboard), [CLI](./cli) (`status`, `halt`, `pau
 
 ## Going live (only if explicitly requested)
 
-1. Paper looked sane; burner funded
-2. Helius + Jupiter set
-3. Set **both** `FARMER_MODE=live` and `[exec] mode = "live"`
-4. Restart / redeploy
-5. One process per wallet
+1. Create or import a **burner** in the dashboard (wizard or Settings → Wallet & secrets); never a main wallet
+2. Fund that public address with SOL (start small; leave reserve for rent — see [Risk](./risk))
+3. Unlock the wallet (or set `WALLET_PASSPHRASE` on Railway)
+4. Paper looked sane; Helius + Jupiter set
+5. Set **both** `FARMER_MODE=live` and `[exec] mode = "live"`
+6. Restart / redeploy
+7. One process per wallet
 
-See [Risk & sizing](./risk). Usage fee on live wins: [Fees](./fees).
+Details: [Easy → Going live](./easy#going-live). Usage fee on live wins: [Fees](./fees).
 
 ## Machine-readable indexes
 

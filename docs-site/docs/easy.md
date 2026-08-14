@@ -35,7 +35,7 @@ Open the domain. If `DASH_TOKEN` isn’t a Railway variable yet, copy `[railway]
 
 ## Finish in Settings
 
-First login opens a wizard: **accept the Terms & risk waiver**, then RPC, Jupiter key, encrypted burner wallet, paper/live. Writes go to `/app/data` — the git checkout stays clean.
+First login opens a wizard: **accept the Terms & risk waiver**, then RPC, Jupiter key, **burner wallet**, paper/live. Writes go to `/app/data` — the git checkout stays clean.
 
 | Key | Required | Get it |
 | --- | --- | --- |
@@ -43,16 +43,53 @@ First login opens a wizard: **accept the Terms & risk waiver**, then RPC, Jupite
 | `JUPITER_API_KEY` | Before live | [Jupiter Portal](https://developers.jup.ag/portal) |
 | `GMGN_API_KEY` | Optional | [gmgn.ai/ai](https://gmgn.ai/ai) |
 
+On the wallet step (or later under **Settings → Wallet & secrets**):
+
+1. **Create new** (recommended) — dashboard generates a fresh Solana keypair, you set a passphrase, retype it, and save the one-time backup somewhere safe offline.
+2. Or **Import Phantom** — paste a **burner** base58 private key only (never your main wallet). Same passphrase encryption.
+
+Either way the key is stored encrypted as `wallet.enc.json` on the volume. Stay in **paper** until you’re comfortable. Optional: set `WALLET_PASSPHRASE` on Railway to auto-unlock on boot.
+
 <p class="cta-row">
   <a class="doc-btn ghost" href="./api-keys">Full key signup</a>
+  <a class="doc-btn ghost" href="./dashboard">Dashboard / wallet</a>
   <a class="doc-btn ghost" href="./profiles">Settings profiles</a>
 </p>
 
-Stay in paper until you’re comfortable. Optional: set `WALLET_PASSPHRASE` on Railway to auto-unlock on boot.
-
 ## Going live
 
-Needs **both** `FARMER_MODE=live` (Railway variable or Settings) **and** `[exec] mode = "live"` in config. One switch alone stays paper. Restart/redeploy after both are set. One farmer process per wallet.
+Paper first. When you’re ready for real SOL:
+
+### 1. Burner wallet
+
+If you skipped the wallet in the wizard: **Settings → Wallet & secrets → Create** (or Import a dedicated burner). Confirm the public address shown in the dash (header chip / Settings).
+
+### 2. Fund it
+
+Send **SOL** to that public address from another wallet (Phantom, exchange withdraw, etc.). Start small.
+
+You need enough for:
+
+- Position size(s) you expect to open
+- An operational reserve (~1 SOL + ~10% of bankroll is held back for rent / priority / claims — see [Risk & sizing](./risk))
+- A little headroom for failed tx retries
+
+Paper mode does not need funded SOL. Live will not trade usefully on an empty wallet.
+
+### 3. Unlock
+
+Unlock the encrypted wallet in Settings (or rely on `WALLET_PASSPHRASE` on Railway). The farmer can only sign when the key is unlocked into runtime env.
+
+### 4. Flip both live switches
+
+Needs **both**:
+
+- `FARMER_MODE=live` (Railway variable or Settings → secrets)
+- `[exec] mode = "live"` in Settings / `data/config.toml`
+
+One switch alone stays paper. Restart / redeploy after both are set. **One farmer process per wallet.**
+
+<p class="note bad">Burner only. You can lose 100%. Accept the <a href="./terms">Terms</a> — we are not liable for losses.</p>
 
 ## Cost
 
