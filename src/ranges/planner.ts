@@ -50,8 +50,20 @@ function buildPlan(
     bottomPricePct: (binIdToPrice(minBinId, binStep, decimalsX) / currentPrice - 1) * 100,
     shape: "bidask",
     fibAnchor,
-    estBinRentSol: Math.ceil(binCount / BINS_PER_ARRAY_EST) * BIN_ARRAY_RENT_SOL,
+    estBinRentSol: binArraysSpanned(minBinId, maxBinId) * BIN_ARRAY_RENT_SOL,
   };
+}
+
+/**
+ * Bin arrays actually touched by [minBinId, maxBinId]. On-chain arrays are
+ * fixed 70-bin segments aligned at floor(binId/70)*70 — so a 70-bin range
+ * spans TWO arrays unless it happens to start on an array boundary (~1 in 70).
+ * The old ceil(binCount/70) systematically under-charged the common case, and
+ * binRent skips the on-chain quote exactly when the estimate fits the soft
+ * budget — the gate was blind precisely where the estimate was wrong.
+ */
+export function binArraysSpanned(minBinId: number, maxBinId: number): number {
+  return Math.floor(maxBinId / BINS_PER_ARRAY_EST) - Math.floor(minBinId / BINS_PER_ARRAY_EST) + 1;
 }
 
 /**
@@ -70,8 +82,10 @@ export function fitPlanToRentBudget(
   if (plan.estBinRentSol <= budgetSol) return plan;
   const maxArrays = Math.floor(budgetSol / BIN_ARRAY_RENT_SOL + 1e-12);
   if (maxArrays < 1) return null;
-  const maxBins = maxArrays * BINS_PER_ARRAY_EST;
-  const minBinForRent = plan.maxBinId - maxBins + 1;
+  // Aligned inversion of binArraysSpanned: the lowest minBinId that keeps the
+  // range within maxArrays fixed 70-bin segments is the first bin of the
+  // lowest allowed array.
+  const minBinForRent = (Math.floor(plan.maxBinId / BINS_PER_ARRAY_EST) - maxArrays + 1) * BINS_PER_ARRAY_EST;
   const minBinForDepth = priceToBinId(currentPrice * (1 - minDownPct / 100), binStep, decimalsX);
   // Higher minBinId = shallower. Rent forces minBinForRent; depth requires
   // minBinId <= minBinForDepth. Impossible when rent floor is above depth floor.

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { priceToBinId, binIdToPrice, planRange, planFollowRange, planTrancheRange, fitPlanToRentBudget } from "./planner.js";
+import { priceToBinId, binIdToPrice, binArraysSpanned, planRange, planFollowRange, planTrancheRange, fitPlanToRentBudget } from "./planner.js";
 import { installConfig, restoreConfig } from "../test/config.js";
 
 describe("planner bin math", () => {
@@ -105,12 +105,25 @@ describe("planner bin math", () => {
       minBinId: deepMin, maxBinId, binCount: 201, positionAccounts: 3,
       bottomPricePct: -60, shape: "bidask" as const, fibAnchor: null, estBinRentSol: 0.225,
     };
-    const fitted = fitPlanToRentBudget(fat, 0.075, price, binStep, decimalsX, 40);
-    expect(fitted).not.toBeNull();
-    expect(fitted!.estBinRentSol).toBeLessThanOrEqual(0.075);
-    expect(fitted!.binCount).toBeLessThanOrEqual(70);
-    expect(fitted!.maxBinId).toBe(maxBinId);
-    expect(fitted!.bottomPricePct).toBeLessThanOrEqual(-39);
+    // maxBinId ≈ 0 sits exactly on an on-chain array boundary: every bin below
+    // it lives in the next 70-bin array down, so a 40%-deep range can never
+    // fit ONE aligned array here. The old unaligned ceil(binCount/70) claimed
+    // it could — and live opens paid double the estimated rent.
+    const one = fitPlanToRentBudget(fat, 0.075, price, binStep, decimalsX, 40);
+    expect(one).toBeNull();
+    const two = fitPlanToRentBudget(fat, 0.15, price, binStep, decimalsX, 40);
+    expect(two).not.toBeNull();
+    expect(two!.estBinRentSol).toBeLessThanOrEqual(0.15);
+    expect(two!.maxBinId).toBe(maxBinId);
+    expect(two!.bottomPricePct).toBeLessThanOrEqual(-39);
+  });
+
+  it("binArraysSpanned counts aligned 70-bin segments, not bin count / 70", () => {
+    expect(binArraysSpanned(0, 69)).toBe(1);    // exactly one aligned array
+    expect(binArraysSpanned(1, 70)).toBe(2);    // same width, off by one → two
+    expect(binArraysSpanned(-51, 0)).toBe(2);   // negative ids straddle -1 and 0
+    expect(binArraysSpanned(-70, -1)).toBe(1);  // fully inside array -1
+    expect(binArraysSpanned(5, 5)).toBe(1);
   });
 
   it("fitPlanToRentBudget is a no-op when rent already fits", () => {

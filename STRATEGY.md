@@ -208,7 +208,7 @@ Tables:
 
 ## 8. Modes, ops, observability
 
-- **`paper` (default)**: full pipeline runs, "positions" are simulated against live pool/bin data (fees estimated from actual per-bin fee growth), identical DB records flagged `paper`. Promotion gate to live: `[≥ 7 days]` paper run with positive net SOL PnL after simulated costs.
+- **`paper` (default)**: full pipeline runs, "positions" are simulated against live pool/bin data (fees estimated from actual per-bin fee growth), identical DB records flagged `paper`. Promotion gate to live: `[≥ 7 days]` paper run with positive net SOL PnL after simulated costs — consecutive **calendar** days; a day with no data (bot down) breaks the streak.
 - **`live`**: requires explicit config flag + env var both set. Wallet keypair path from env; scanner processes never see the key (executor is a separate process with an internal queue).
 - **Dashboard**: local web page (single Express route) — open positions with live state, PnL curves, decision log, blacklist; plus `status` CLI.
 - **Alerts** `[optional]`: Telegram bot on P0/P1 exits, circuit breaker, low-SOL warning, process crash (systemd/PM2 restart + notify).

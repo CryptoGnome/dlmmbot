@@ -61,8 +61,8 @@ export async function rollupDaily(mode: "paper" | "live", unrealizedSol: number)
   db.prepare(
     `INSERT INTO pnl_daily (day, mode, realized_sol, unrealized_sol, fees_sol, costs_sol, sol_usd)
      VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(day) DO UPDATE SET
-       mode = excluded.mode, realized_sol = excluded.realized_sol,
+     ON CONFLICT(day, mode) DO UPDATE SET
+       realized_sol = excluded.realized_sol,
        unrealized_sol = excluded.unrealized_sol, fees_sol = excluded.fees_sol,
        costs_sol = excluded.costs_sol, sol_usd = excluded.sol_usd`
   ).run(day, mode, realized, unrealizedSol, fees, costs, usd);
@@ -91,8 +91,17 @@ export function promotionStatus(): PromotionStatus {
     days.push({ day: r.day, realized: r.realized_sol, unrealizedDelta, profitable });
     prevUnrealized = r.unrealized_sol;
   }
+  // Consecutive CALENDAR days, not consecutive rows: a day with no row (bot
+  // down) breaks the streak — 7 profitable row-days spread over a month must
+  // not satisfy "7 consecutive profitable days".
   let consecutive = 0;
-  for (let i = days.length - 1; i >= 0 && days[i]!.profitable; i--) consecutive++;
+  for (let i = days.length - 1; i >= 0 && days[i]!.profitable; i--) {
+    if (i < days.length - 1) {
+      const gapDays = (Date.parse(`${days[i + 1]!.day}T00:00:00Z`) - Date.parse(`${days[i]!.day}T00:00:00Z`)) / 86_400_000;
+      if (gapDays !== 1) break;
+    }
+    consecutive++;
+  }
   return {
     requiredDays: required,
     trackedDays: days.length,
