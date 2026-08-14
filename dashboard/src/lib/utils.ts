@@ -25,4 +25,9 @@ export function tokenFromUrl(): string {
   return sessionStorage.getItem("dash_token") ?? "";
 }
 
+/** Session dash token for authenticated writes — already proven via ?token= / login. */
+export function sessionDashToken(): string {
+  return tokenFromUrl().trim();
+}
+
 export { fmtSol, fmtUsd, fmtUsdCompact, fmtPct, fmtRet, gmgnUrl, exitLabel, gateLabel, shortTime, timeAgo, clockTime, slotsSummary } from "./format";

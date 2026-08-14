@@ -9,6 +9,7 @@ import {
 } from "@/lib/api";
 import { Badge } from "@/components/ui";
 import { Icon } from "@/lib/icons";
+import { sessionDashToken } from "@/lib/utils";
 import { WalletCreateModal } from "@/components/WalletCreateModal";
 import {
   ArrowRight, KeyRound, Shield, Sparkles, Wallet,
@@ -47,7 +48,6 @@ export function SetupWizard({
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const [confirm, setConfirm] = useState("");
   const [termsOk, setTermsOk] = useState(
     !!initial.setup.termsVersion && initial.setup.termsVersion === initial.termsVersion,
   );
@@ -62,11 +62,17 @@ export function SetupWizard({
     initial.farmerMode === "live" ? "live" : "paper",
   );
 
+  const dash = sessionDashToken();
   const idx = STEPS.findIndex((s) => s.id === step);
   const walletReady = walletIsReady(status);
   const apisReady = status.hasRpc && status.hasJupiterApiKey;
   const rpcOk = status.hasRpc || !!rpc.trim();
   const jupiterOk = status.hasJupiterApiKey || !!jupiter.trim();
+
+  const requireDash = () => {
+    if (!dash) throw new Error("open the dashboard with ?token=… first");
+    return dash;
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -93,11 +99,11 @@ export function SetupWizard({
     setBusy(true);
     setErr(null);
     try {
-      if (!confirm.trim()) throw new Error("re-enter your dash token");
+      const token = requireDash();
       if (!termsOk) throw new Error("accept the Terms of Service to continue");
       let next = status;
       if (status.needsTerms || status.setup.termsVersion !== termsVersion) {
-        next = await acceptTerms({ confirm: confirm.trim(), version: termsVersion });
+        next = await acceptTerms({ confirm: token, version: termsVersion });
         setStatus(next);
       }
       setStep(stepAfterWelcome(next));
@@ -112,7 +118,7 @@ export function SetupWizard({
     setBusy(true);
     setErr(null);
     try {
-      if (!confirm.trim()) throw new Error("re-enter your dash token");
+      const token = requireDash();
       const rpcVal = rpc.trim();
       const jupVal = jupiter.trim();
       const gmgnVal = gmgn.trim();
@@ -126,7 +132,7 @@ export function SetupWizard({
       if (jupVal) secrets.JUPITER_API_KEY = jupVal;
       if (gmgnVal) secrets.GMGN_API_KEY = gmgnVal;
       if (Object.keys(secrets).length) {
-        await patchSecrets(confirm, secrets);
+        await patchSecrets(token, secrets);
       }
       const next: SetupStatus = {
         ...status,
@@ -147,9 +153,9 @@ export function SetupWizard({
     setBusy(true);
     setErr(null);
     try {
-      if (!confirm.trim()) throw new Error("re-enter your dash token");
+      const token = requireDash();
       await patchConfig({ "exec.mode": mode });
-      await patchSecrets(confirm, { FARMER_MODE: mode });
+      await patchSecrets(token, { FARMER_MODE: mode });
       setStatus((s) => ({ ...s, farmerMode: mode }));
       goNext();
     } catch (e) {
@@ -210,7 +216,7 @@ export function SetupWizard({
                 Paper mode first — live later when you’re ready.
               </p>
               <ul className="space-y-1 text-[11px] text-dim">
-                <li className="flex items-center gap-2"><Icon icon={Shield} size={12} className="text-ok" /> Dash token gates secret writes</li>
+                <li className="flex items-center gap-2"><Icon icon={Shield} size={12} className="text-ok" /> You’re already signed in with your dash token</li>
                 <li className="flex items-center gap-2"><Icon icon={KeyRound} size={12} className="text-ok" /> Wallet encrypted at rest</li>
                 <li className="flex items-center gap-2"><Icon icon={Wallet} size={12} className="text-ok" /> Burner only — never your main</li>
               </ul>
@@ -264,27 +270,17 @@ export function SetupWizard({
                 </label>
               </div>
 
-              <div className="space-y-2">
-                <label className="block space-y-1">
-                  <span className="text-[11px] text-muted">Confirm dash token</span>
-                  <input
-                    className="input-field"
-                    type="password"
-                    autoComplete="off"
-                    value={confirm}
-                    onChange={(e) => setConfirm(e.target.value)}
-                    placeholder="same token as the URL"
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="btn-primary inline-flex items-center gap-1.5"
-                  disabled={busy || !confirm.trim() || !termsOk}
-                  onClick={() => void startWizard()}
-                >
-                  {busy ? "Saving…" : <>Continue <Icon icon={ArrowRight} size={12} /></>}
-                </button>
-              </div>
+              <button
+                type="button"
+                className="btn-primary inline-flex items-center gap-1.5"
+                disabled={busy || !dash || !termsOk}
+                onClick={() => void startWizard()}
+              >
+                {busy ? "Saving…" : <>Continue <Icon icon={ArrowRight} size={12} /></>}
+              </button>
+              {!dash && (
+                <p className="text-[11px] text-danger">Open with <code className="text-accent">?token=…</code> first.</p>
+              )}
             </div>
           )}
 
@@ -472,8 +468,8 @@ export function SetupWizard({
                     type="button"
                     className="btn-primary inline-flex items-center gap-1.5"
                     onClick={() => {
-                      if (!confirm.trim()) {
-                        setErr("re-enter your dash token on the Welcome step first");
+                      if (!dash) {
+                        setErr("open the dashboard with ?token=… first");
                         return;
                       }
                       setWalletModal(walletTab);
@@ -584,7 +580,7 @@ export function SetupWizard({
         <WalletCreateModal
           mode={walletModal}
           overwrite={!!status.wallet.encrypted}
-          initialDashToken={confirm}
+          initialDashToken={dash}
           unlockAfter
           onCancel={() => setWalletModal(null)}
           onDone={({ status: next }) => {

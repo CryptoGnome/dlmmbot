@@ -6,6 +6,7 @@ import {
   type SetupStatus,
 } from "@/lib/api";
 import { Icon } from "@/lib/icons";
+import { sessionDashToken } from "@/lib/utils";
 import {
   AlertTriangle, ArrowLeft, ArrowRight, Check, Copy, KeyRound, Shield, X,
 } from "lucide-react";
@@ -90,7 +91,9 @@ export function WalletCreateModal({
   const [pass2, setPass2] = useState("");
   const [retype, setRetype] = useState("");
   const [secret, setSecret] = useState("");
-  const [dash, setDash] = useState(initialDashToken);
+  const [dash, setDash] = useState(() => initialDashToken || sessionDashToken());
+  const hasSessionDash = !!dash.trim();
+  const afterAuthStep = (): Step => (hasSessionDash ? "review" : "dash");
   const [doUnlock, setDoUnlock] = useState(unlockAfter);
 
   const [secretOnce, setSecretOnce] = useState<string | null>(null);
@@ -132,7 +135,7 @@ export function WalletCreateModal({
     setErr(null);
     setStep("working");
     try {
-      if (!dash.trim()) throw new Error("re-enter your dash token");
+      if (!dash.trim()) throw new Error("open the dashboard with ?token=… first");
       if (pass !== retype) throw new Error("password retype does not match");
       if (mode === "import" && !secret.trim()) throw new Error("paste the Phantom private key");
 
@@ -399,6 +402,16 @@ export function WalletCreateModal({
                 <li>· Unlock after: {doUnlock ? "yes" : "no — unlock later"}</li>
                 {overwrite && <li className="text-warn">· Replaces existing encrypted wallet</li>}
               </ul>
+              {hasSessionDash && (
+                <label className="flex items-center gap-2 text-[12px] text-muted">
+                  <input
+                    type="checkbox"
+                    checked={doUnlock}
+                    onChange={(e) => setDoUnlock(e.target.checked)}
+                  />
+                  Unlock into .env now (needed for live trading)
+                </label>
+              )}
               <p className="text-[11px] text-dim">
                 Last chance to cancel. After this, remember the password and (for create) save the one-time private key backup.
               </p>
@@ -480,7 +493,7 @@ export function WalletCreateModal({
                 else if (step === "retype") go("password");
                 else if (step === "importKey") go("retype");
                 else if (step === "dash") go(mode === "import" ? "importKey" : "retype");
-                else if (step === "review") go("dash");
+                else if (step === "review") go(hasSessionDash ? (mode === "import" ? "importKey" : "retype") : "dash");
               }}
             >
               <Icon icon={ArrowLeft} size={12} />
@@ -511,7 +524,7 @@ export function WalletCreateModal({
               type="button"
               className="btn-primary inline-flex items-center gap-1.5"
               disabled={!retypeOk}
-              onClick={() => go(mode === "import" ? "importKey" : "dash")}
+              onClick={() => go(mode === "import" ? "importKey" : afterAuthStep())}
             >
               Next <Icon icon={ArrowRight} size={12} />
             </button>
@@ -521,7 +534,7 @@ export function WalletCreateModal({
               type="button"
               className="btn-primary inline-flex items-center gap-1.5"
               disabled={secret.trim().length < 32}
-              onClick={() => go("dash")}
+              onClick={() => go(afterAuthStep())}
             >
               Next <Icon icon={ArrowRight} size={12} />
             </button>
