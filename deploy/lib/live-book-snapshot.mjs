@@ -5,8 +5,8 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createRequire } from "node:module";
-import { exec, execSync } from "node:child_process";
-import { promisify } from "node:util";
+import { execFileSync } from "node:child_process";
+import { hostname } from "node:os";
 import { runtimePaths } from "./runtime-paths.mjs";
 import { readDeployPrefs, shouldAutoDeploy } from "./deploy-prefs.mjs";
 import { listRecentErrors, errorStats } from "./error-log.mjs";
@@ -17,18 +17,29 @@ import { readHaltState } from "./halt.mjs";
 import { readPauseState } from "./pause.mjs";
 import { readWalletMeta } from "./wallet-crypto.mjs";
 
-const execAsync = promisify(exec);
-
 const require = createRequire(import.meta.url);
+
+/** Solana pubkeys are base58, 32–44 chars. Reject anything else before use. */
+const BASE58_PUBKEY_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+
+/** First env var whose value is a well-formed base58 pubkey (defense in depth —
+ * these are operator-writable via the Settings secrets panel). */
+function envPubkey(...names) {
+  for (const name of names) {
+    const v = (process.env[name] ?? "").trim();
+    if (v && BASE58_PUBKEY_RE.test(v)) return v;
+  }
+  return null;
+}
 
 /** Bot trading wallet pubkey for dash header / Solscan links (never the secret). */
 export function resolveWalletPubkey() {
   try {
     const metaPk = readWalletMeta()?.publicKey;
-    if (metaPk) return metaPk;
+    if (metaPk && BASE58_PUBKEY_RE.test(String(metaPk))) return metaPk;
   } catch { /* */ }
-  if (process.env.WALLET_PUBKEY) return process.env.WALLET_PUBKEY;
-  if (process.env.PUBLIC_WALLET) return process.env.PUBLIC_WALLET;
+  const envPk = envPubkey("WALLET_PUBKEY", "PUBLIC_WALLET");
+  if (envPk) return envPk;
   if (process.env.WALLET_PRIVATE_KEY) {
     try {
       const { Keypair } = require("@solana/web3.js");
@@ -67,7 +78,7 @@ function buildReclaimAtaIndex(db) {
     const bs58mod = require("bs58");
     const bs58 = bs58mod.default ?? bs58mod;
 
-    let ownerStr = process.env.WALLET_PUBKEY || process.env.PUBLIC_WALLET || null;
+    let ownerStr = envPubkey("WALLET_PUBKEY", "PUBLIC_WALLET");
     if (!ownerStr && process.env.WALLET_PRIVATE_KEY) {
       ownerStr = Keypair.fromSecretKey(bs58.decode(process.env.WALLET_PRIVATE_KEY)).publicKey.toBase58();
     }
@@ -103,21 +114,28 @@ function buildReclaimAtaIndex(db) {
   return map;
 }
 
-function git(root, cmd) {
+/** Run git with an argv array — no shell, so values can never be interpreted. */
+function git(root, args) {
   try {
-    return execSync(cmd, { cwd: root, encoding: "utf8" }).trim();
+    return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
   } catch {
     return null;
   }
 }
 
-function gitOk(root, cmd) {
+function gitOk(root, args) {
   try {
-    execSync(cmd, { cwd: root, encoding: "utf8", stdio: "ignore" });
+    execFileSync("git", args, { cwd: root, stdio: "ignore" });
     return true;
   } catch {
     return false;
   }
+}
+
+/** Branch names come from env — restrict to sane git ref characters (and never a leading "-"). */
+export function safeBranch(raw) {
+  const b = (raw ?? "").trim();
+  return /^[A-Za-z0-9][\w./-]*$/.test(b) ? b : "master";
 }
 
 /** Throttle GitHub fetches so the 3s watch loop does not hammer origin. */
@@ -130,29 +148,29 @@ const ORIGIN_FETCH_MS = Number(process.env.DASH_GIT_POLL_MS || 30_000);
  * sync: current | behind | ahead | diverged | unknown
  */
 function buildGitInfo(root) {
-  const branch = process.env.DEPLOY_BRANCH || "master";
+  const branch = safeBranch(process.env.DEPLOY_BRANCH);
   const nowMs = Date.now();
   if (nowMs - lastOriginFetchAt >= ORIGIN_FETCH_MS) {
     lastOriginFetchAt = nowMs;
-    lastOriginFetchOk = gitOk(root, `git fetch origin ${branch} --quiet`);
+    lastOriginFetchOk = gitOk(root, ["fetch", "origin", branch, "--quiet"]);
   }
 
-  const headFull = git(root, "git rev-parse HEAD");
-  const head = git(root, "git rev-parse --short HEAD");
-  const message = git(root, "git log -1 --pretty=%s");
-  const describe = git(root, "git describe --always --dirty") || head;
+  const headFull = git(root, ["rev-parse", "HEAD"]);
+  const head = git(root, ["rev-parse", "--short", "HEAD"]);
+  const message = git(root, ["log", "-1", "--pretty=%s"]);
+  const describe = git(root, ["describe", "--always", "--dirty"]) || head;
   // Ignore untracked clutter from SCP/deploy — only tracked diffs are "dirty".
-  const dirty = !!(git(root, "git status --porcelain --untracked-files=no"));
-  const originFull = git(root, `git rev-parse refs/remotes/origin/${branch}`);
+  const dirty = !!(git(root, ["status", "--porcelain", "--untracked-files=no"]));
+  const originFull = git(root, ["rev-parse", `refs/remotes/origin/${branch}`]);
   const origin = originFull
-    ? (git(root, `git rev-parse --short refs/remotes/origin/${branch}`) || originFull.slice(0, 7))
+    ? (git(root, ["rev-parse", "--short", `refs/remotes/origin/${branch}`]) || originFull.slice(0, 7))
     : null;
 
   let sync = "unknown";
   if (headFull && originFull) {
     if (headFull === originFull) sync = "current";
-    else if (gitOk(root, `git merge-base --is-ancestor ${headFull} ${originFull}`)) sync = "behind";
-    else if (gitOk(root, `git merge-base --is-ancestor ${originFull} ${headFull}`)) sync = "ahead";
+    else if (gitOk(root, ["merge-base", "--is-ancestor", headFull, originFull])) sync = "behind";
+    else if (gitOk(root, ["merge-base", "--is-ancestor", originFull, headFull])) sync = "ahead";
     else sync = "diverged";
   }
 
@@ -187,8 +205,8 @@ function buildGitInfo(root) {
 
   /** Classify commit files so Changes can show risk chips for manual approve. */
   function riskTagsForSha(sha) {
-    if (!sha) return [];
-    const files = (git(root, `git diff-tree --no-commit-id --name-only -r ${sha}`) || "")
+    if (!sha || !/^[0-9a-f]{4,40}$/i.test(sha)) return [];
+    const files = (git(root, ["diff-tree", "--no-commit-id", "--name-only", "-r", sha]) || "")
       .split("\n").filter(Boolean);
     const tags = new Set();
     for (const f of files) {
@@ -208,12 +226,12 @@ function buildGitInfo(root) {
     return order.filter((t) => tags.has(t));
   }
 
-  const recent = parseLog(git(root, "git log -20 --pretty=format:%h%x09%ct%x09%s"));
+  const recent = parseLog(git(root, ["log", "-20", "--pretty=format:%h%x09%ct%x09%s"]));
   let pending = [];
   let behindCount = 0;
   if (sync === "behind" && originFull) {
-    behindCount = Number(git(root, `git rev-list --count HEAD..${originFull}`)) || 0;
-    pending = parseLog(git(root, `git log HEAD..${originFull} -20 --pretty=format:%h%x09%ct%x09%s`))
+    behindCount = Number(git(root, ["rev-list", "--count", `HEAD..${originFull}`])) || 0;
+    pending = parseLog(git(root, ["log", `HEAD..${originFull}`, "-20", "--pretty=format:%h%x09%ct%x09%s"]))
       .map((c) => ({ ...c, risk: riskTagsForSha(c.sha) }));
   }
 
@@ -264,8 +282,18 @@ function tomlBool(toml, key) {
 let meteoraCache = { at: 0, wallet: null, data: null, pending: null };
 const METEORA_TTL_MS = Number(process.env.DASH_METEORA_TTL_MS || 120_000);
 
+async function fetchMeteoraJson(path) {
+  const res = await fetch(`https://dlmm.datapi.meteora.ag${path}`, {
+    signal: AbortSignal.timeout(4_000),
+    headers: { accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`meteora datapi ${res.status}`);
+  return res.json();
+}
+
 function fetchMeteoraPortfolio(wallet) {
-  if (!wallet) return null;
+  // Never build a URL from an unvalidated wallet string (env-writable via Settings).
+  if (!wallet || !BASE58_PUBKEY_RE.test(wallet)) return null;
   const now = Date.now();
   const hit = meteoraCache.wallet === wallet ? meteoraCache.data : null;
   const fresh = hit && now - meteoraCache.at < METEORA_TTL_MS;
@@ -275,18 +303,11 @@ function fetchMeteoraPortfolio(wallet) {
     meteoraCache.wallet = wallet;
     meteoraCache.pending = (async () => {
       try {
-        const [totalRes, openRes] = await Promise.all([
-          execAsync(
-            `curl -sS --max-time 4 "https://dlmm.datapi.meteora.ag/portfolio/total?user=${wallet}"`,
-            { encoding: "utf8" },
-          ),
-          execAsync(
-            `curl -sS --max-time 4 "https://dlmm.datapi.meteora.ag/portfolio/open?user=${wallet}&page_size=20"`,
-            { encoding: "utf8" },
-          ),
+        const user = encodeURIComponent(wallet);
+        const [total, open] = await Promise.all([
+          fetchMeteoraJson(`/portfolio/total?user=${user}`),
+          fetchMeteoraJson(`/portfolio/open?user=${user}&page_size=20`),
         ]);
-        const total = JSON.parse(totalRes.stdout);
-        const open = JSON.parse(openRes.stdout);
         meteoraCache = {
           at: Date.now(),
           wallet,
@@ -327,9 +348,9 @@ export function buildLiveBookSnapshot(root) {
     const dayAgo = now - 86_400;
     const weekAgo = now - 7 * 86_400;
 
-    const fixSha = git(root, "git rev-parse --verify 1b1514b") ? "1b1514b" : null;
+    const fixSha = git(root, ["rev-parse", "--verify", "1b1514b"]) ? "1b1514b" : null;
     const fixTs = fixSha
-      ? Number(git(root, `git show -s --format=%ct ${fixSha}`)) || (now - 86_400)
+      ? Number(git(root, ["show", "-s", "--format=%ct", fixSha])) || (now - 86_400)
       : now - 86_400;
 
     const toml = readFileSync(runtimePaths(root).configPath, "utf8");
@@ -1073,7 +1094,7 @@ export function buildLiveBookSnapshot(root) {
     return {
       ts: now,
       at: new Date(now * 1000).toISOString(),
-      host: git(root, "hostname") ?? "local",
+      host: (() => { try { return hostname() || "local"; } catch { return "local"; } })(),
       wallet_pubkey: walletPubkey,
       ops: {
         paused: pause.paused,

@@ -8,11 +8,15 @@ import { dirname, resolve } from "node:path";
 import { Keypair } from "@solana/web3.js";
 import bs58 from "bs58";
 
-const N = 2 ** 14; // ~16MB; fits Node default scrypt maxmem
+// scrypt cost for NEW blobs. Old blobs store their own N/r/p and still unlock
+// (decryptSecret derives with the params persisted in the blob).
+const N = 2 ** 17; // ~128MB memory-hard — slows offline passphrase cracking
 const R = 8;
 const P = 1;
 const KEY_LEN = 32;
-const MAXMEM = 64 * 1024 * 1024;
+// Must exceed 128 * N * r bytes for the largest params we derive with.
+const MAXMEM = 256 * 1024 * 1024;
+const MIN_PASSPHRASE = 10;
 
 function walletPath() {
   const base = process.env.FARMER_ENV_PATH
@@ -34,8 +38,8 @@ function deriveKey(passphrase, salt, params = { N, r: R, p: P }) {
 }
 
 export function encryptSecret(plain, passphrase) {
-  if (!passphrase || passphrase.length < 8) {
-    throw new Error("passphrase must be at least 8 characters");
+  if (!passphrase || passphrase.length < MIN_PASSPHRASE) {
+    throw new Error(`passphrase must be at least ${MIN_PASSPHRASE} characters`);
   }
   const salt = randomBytes(16);
   const iv = randomBytes(12);

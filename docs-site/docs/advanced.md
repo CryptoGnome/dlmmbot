@@ -92,7 +92,11 @@ npm run dash:build && npm run dash
 ```bash
 DASH_TOKEN=pick-a-long-random-password
 DASH_PORT=8787
+# optional: bind loopback only (default 0.0.0.0) — reach it via SSH tunnel
+DASH_HOST=127.0.0.1
 ```
+
+The dash server speaks plain HTTP — it logs a startup warning when bound to a non-loopback interface. Keep it on a trusted LAN or behind HTTPS (see [Dashboard from outside](#dashboard-from-outside)).
 
 ```bash
 npm run dash:build
