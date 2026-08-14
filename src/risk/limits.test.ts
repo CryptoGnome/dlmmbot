@@ -74,6 +74,30 @@ describe("clusterBrakeTripped", () => {
     expect(clusterBrakeTripped()).toBeNull();
   });
 
+  it("fires on a cluster spread wider than pause_h (regression: oldest-exit anchor)", () => {
+    // Live config runs pause_h < window_h. The old code anchored the pause on
+    // the OLDEST exit of the cluster, so 4 exits spread over 3h with a 2h
+    // pause never paused at all. Anchor must be the newest exit.
+    installConfig((c) => {
+      c.sizing.cluster_brake_exits = 4;
+      c.sizing.cluster_brake_window_h = 6;
+      c.sizing.cluster_brake_pause_h = 2;
+      c.sizing.cluster_brake_loss_pct = 10;
+    });
+    const t = now();
+    for (const agoS of [3 * 3600, 2 * 3600, 30 * 60, 60]) {
+      insertClosedPosition({
+        entrySol: 0.3, exitSol: 0.2, openCostSol: 0.3, closeReturnSol: 0.2,
+        exitReason: "P1_stop", exitTs: t - agoS,
+      });
+    }
+    const hit = clusterBrakeTripped();
+    expect(hit).not.toBeNull();
+    expect(hit!.count).toBe(4);
+    // Pause runs from the newest exit (60s ago), so ~119 minutes remain.
+    expect(hit!.remainingMin).toBeGreaterThan(100);
+  });
+
   it("respects cluster_brake_cleared_at operator clear", () => {
     const t = now();
     insertClosedPosition({

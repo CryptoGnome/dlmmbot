@@ -191,8 +191,12 @@ export function clusterBrakeTripped(): { count: number; remainingMin: number } |
      ORDER BY exit_ts DESC`
   ).all(since, currentMode(), -lossFrac) as Array<{ exit_ts: number }>;
   if (rows.length < s.cluster_brake_exits) return null;
-  // Pause measured from the Nth-most-recent hard exit (the one that tripped).
-  const tripTs = rows[s.cluster_brake_exits - 1]!.exit_ts;
+  // Pause measured from the NEWEST exit. Anchoring on the Nth-most-recent
+  // (oldest of the cluster) made the brake inert whenever pause_h < window_h:
+  // four exits spread over 3h with a 2h pause gave elapsed >= pause at the
+  // moment the 4th exit landed — no pause at all, in exactly the spread-out
+  // dump the brake was added for after Aug 12.
+  const tripTs = rows[0]!.exit_ts;
   const elapsed = now() - tripTs;
   if (elapsed >= pauseS) return null;
   return { count: rows.length, remainingMin: Math.ceil((pauseS - elapsed) / 60) };

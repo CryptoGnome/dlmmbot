@@ -406,13 +406,13 @@ export const WIKI_SECTIONS: WikiSection[] = [
           },
           {
             title: "Circuit + cluster",
-            text: "Bad day % or a cluster of hard stops → pause new entries for a cool-down.",
+            text: "Bad day % or a cluster of hard stops → pause new entries for a cool-down (measured from the newest hard exit). Applies to follow-mode legs too.",
             icon: "pause",
             tone: "warn",
           },
           {
             title: "HALT",
-            text: "Big red stop: close everything, idle until Resume. Header HALT button (separate from ON/OFF).",
+            text: "Big red stop: close everything, idle until Resume. If a close fails (RPC trouble), the rest still close and the failed one retries every few seconds until the book is empty — you get a Telegram note while it's stuck.",
             icon: "alert",
             tone: "danger",
           },
