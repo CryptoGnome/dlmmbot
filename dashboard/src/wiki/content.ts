@@ -551,6 +551,11 @@ export const WIKI_SECTIONS: WikiSection[] = [
             icon: "lock",
           },
           {
+            title: "Dashboard reload toast",
+            text: "After a deploy that rebuilds the SPA, a sticky toast appears if this browser tab is still on the old UI — click Reload (or hard-refresh). Bot-only deploys do not prompt.",
+            icon: "refresh",
+          },
+          {
             title: "Halt",
             text: "Header red HALT button → confirm with dash token → closes opens and idles until Resume.",
             icon: "alert",

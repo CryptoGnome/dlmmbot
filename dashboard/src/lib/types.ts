@@ -45,6 +45,8 @@ export interface LiveWatch {
       /** strategy | deps | deploy | core | dash | docs */
       risk?: string[];
     }>;
+    /** Fingerprint of dashboard/dist — client prompts Reload when this changes. */
+    ui_build?: string | null;
     /** Recent GitHub releases (tag + operator summary) for Changes. */
     releases?: Array<{
       tag: string;

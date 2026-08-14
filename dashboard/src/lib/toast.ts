@@ -2,15 +2,21 @@
 
 export type ToastTone = "ok" | "danger" | "warn" | "accent" | "muted";
 
+export type ToastAction = {
+  label: string;
+  onClick?: () => void;
+};
+
 export type ToastInput = {
   title: string;
   detail?: string;
   tone?: ToastTone;
-  /** Override base lifetime (ms). */
+  /** Override base lifetime (ms). Use 0 for sticky (no auto-dismiss). */
   ttlMs?: number;
   /** Dedup key — same id replaces existing. */
   id?: string;
   kind?: string;
+  action?: ToastAction;
 };
 
 export type ToastItem = {
@@ -19,6 +25,7 @@ export type ToastItem = {
   detail?: string;
   tone: ToastTone;
   kind?: string;
+  action?: ToastAction;
   createdAt: number;
   expiresAt: number;
   leaving: boolean;
@@ -41,7 +48,7 @@ function emit() {
 }
 
 function underPressure(now = Date.now()) {
-  const active = toasts.filter((t) => !t.leaving).length;
+  const active = toasts.filter((t) => !t.leaving && t.expiresAt !== Infinity).length;
   return active >= MAX_VISIBLE || now < busyUntil;
 }
 
@@ -53,6 +60,7 @@ function clearTimer(id: string) {
 
 function scheduleExpiry(id: string, at: number) {
   clearTimer(id);
+  if (!Number.isFinite(at)) return;
   const wait = Math.max(0, at - Date.now());
   timers.set(
     id,
@@ -92,11 +100,14 @@ export function subscribeToasts(fn: () => void): () => void {
 
 export function toast(input: ToastInput): string {
   const now = Date.now();
-  const busy = underPressure(now);
+  const sticky = input.ttlMs === 0;
+  const busy = !sticky && underPressure(now);
   if (busy) busyUntil = now + BUSY_WINDOW;
 
-  const ttl = input.ttlMs ?? (busy ? BUSY_TTL : BASE_TTL);
   const id = input.id ?? `t${++seq}`;
+  const expiresAt = sticky
+    ? Infinity
+    : now + (input.ttlMs ?? (busy ? BUSY_TTL : BASE_TTL));
 
   const existing = toasts.find((t) => t.id === id && !t.leaving);
   if (existing) {
@@ -104,19 +115,19 @@ export function toast(input: ToastInput): string {
     existing.detail = input.detail;
     existing.tone = input.tone ?? existing.tone;
     existing.kind = input.kind ?? existing.kind;
-    existing.expiresAt = now + ttl;
+    existing.action = input.action ?? existing.action;
+    existing.expiresAt = expiresAt;
     scheduleExpiry(id, existing.expiresAt);
     emit();
     return id;
   }
 
-  // Cap visible: drop oldest immediately (fast fade), don't grow a pile.
   const active = toasts.filter((t) => !t.leaving);
   if (active.length >= MAX_VISIBLE) {
-    forceLeave(active[0]!.id);
-    // Remaining toasts expire sooner under pressure.
+    const drop = active.find((t) => t.expiresAt !== Infinity) ?? active[0];
+    if (drop) forceLeave(drop.id);
     for (const t of toasts) {
-      if (t.leaving) continue;
+      if (t.leaving || t.expiresAt === Infinity) continue;
       t.expiresAt = Math.min(t.expiresAt, now + BUSY_TTL);
       scheduleExpiry(t.id, t.expiresAt);
     }
@@ -128,12 +139,12 @@ export function toast(input: ToastInput): string {
     detail: input.detail,
     tone: input.tone ?? "muted",
     kind: input.kind,
+    action: input.action,
     createdAt: now,
-    expiresAt: now + ttl,
+    expiresAt,
     leaving: false,
   };
   toasts = [...toasts.filter((t) => !t.leaving || t.id !== id), item];
-  // Keep at most MAX + 1 leaving for animation.
   const living = toasts.filter((t) => !t.leaving);
   const leaving = toasts.filter((t) => t.leaving).slice(-1);
   toasts = [...leaving, ...living].slice(-MAX_VISIBLE - 1);

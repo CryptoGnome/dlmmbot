@@ -152,7 +152,15 @@ function sendFile(res, path) {
   try {
     const data = readFileSync(path);
     const type = MIME[extname(path)] ?? "application/octet-stream";
-    res.writeHead(200, { "Content-Type": type, "Cache-Control": "no-cache" });
+    const rel = String(path).replace(/\\/g, "/");
+    const isIndex = /\/index\.html$/i.test(rel);
+    const isHashedAsset = /\/assets\/[^/]+-[A-Za-z0-9_-]{6,}\.[A-Za-z0-9]+$/i.test(rel);
+    const cache = isIndex
+      ? "no-store"
+      : isHashedAsset
+        ? "public, max-age=31536000, immutable"
+        : "no-cache";
+    res.writeHead(200, { "Content-Type": type, "Cache-Control": cache });
     res.end(data);
   } catch {
     res.writeHead(404).end("not found");
