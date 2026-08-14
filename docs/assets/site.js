@@ -138,26 +138,25 @@ function initHeroMock(root, staticOnly = false) {
   const balEl = document.getElementById("mock-bal");
   const openEl = document.getElementById("mock-open");
   const p24El = document.getElementById("mock-24h");
+  const allEl = document.getElementById("mock-all");
   const slotsEl = document.getElementById("mock-slots");
   const closesEl = document.getElementById("mock-closes");
   const hbEl = document.getElementById("mock-hb");
   const sparkLine = document.getElementById("mock-spark-line");
+  const sparkArea = document.getElementById("mock-spark-area");
+  const sparkBars = document.getElementById("mock-spark-bars");
   const nav = document.getElementById("mock-nav");
-  const posEls = [...root.querySelectorAll(".mock-pos")];
 
   const state = {
     balance: 12.4,
     openPnl: 0.084,
     pnl24: 0.182,
+    allPnl: 1.24,
     openCount: 3,
     maxSlots: 5,
     closes24: 11,
     hb: 8,
-    chartY: [28, 26, 22, 18, 14, 12, 8],
-    positions: [
-      { sol: 72, tick: 68, pnl: 3.2, badge: "in", cls: "ok" },
-      { sol: 38, tick: 22, pnl: -1.1, badge: "below", cls: "bad" },
-    ],
+    chartY: [48, 46, 44, 40, 38, 34, 32, 28, 24, 22, 18, 16, 14, 10],
   };
 
   const fmtSigned = (n, d = 3) => `${n >= 0 ? "+" : ""}${n.toFixed(d)}`;
@@ -180,49 +179,50 @@ function initHeroMock(root, staticOnly = false) {
       p24El.textContent = fmtSigned(state.pnl24);
       p24El.className = `val ${state.pnl24 >= 0 ? "ok" : "bad"}`;
     }
+    if (allEl) {
+      allEl.textContent = fmtSigned(state.allPnl);
+      allEl.className = `val ${state.allPnl >= 0 ? "ok" : "bad"}`;
+    }
     if (slotsEl) {
       const free = state.maxSlots - state.openCount;
-      slotsEl.textContent = `${state.openCount} of ${state.maxSlots} · ${free} free`;
+      slotsEl.textContent = `${state.openCount} of ${state.maxSlots} slots · ${free} free`;
     }
     if (closesEl) closesEl.textContent = `${state.closes24} closes`;
     if (hbEl) hbEl.textContent = String(state.hb);
   }
 
-  function renderPositions() {
-    posEls.forEach((el, i) => {
-      const p = state.positions[i];
-      if (!p) return;
-      const fill = el.querySelector(".mock-range-fill");
-      const tick = el.querySelector(".mock-range-tick");
-      const pnl = el.querySelector(".mock-pos-pnl");
-      const badge = el.querySelector(".mock-pos-badge");
-      if (fill) fill.style.setProperty("--sol", `${p.sol}%`);
-      if (tick) {
-        tick.style.setProperty("--x", `${p.tick}%`);
-        tick.classList.toggle("warn", p.badge === "below");
-      }
-      if (pnl) {
-        pnl.textContent = `${p.pnl >= 0 ? "+" : ""}${p.pnl.toFixed(1)}%`;
-        pnl.className = `mock-pos-pnl ${p.cls}`;
-      }
-      if (badge) {
-        badge.textContent = p.badge === "in" ? "in range" : "below range";
-        badge.className = `mock-pos-badge ${p.badge}`;
-      }
-    });
-  }
-
   function renderSpark() {
-    if (!sparkLine) return;
-    const pts = state.chartY.map((y, i) => {
-      const x = (i / Math.max(state.chartY.length - 1, 1)) * 120;
-      return `${x.toFixed(1)},${y}`;
+    const ys = state.chartY;
+    const n = ys.length;
+    if (!n) return;
+    const w = 240;
+    const base = 68;
+    const pts = ys.map((y, i) => {
+      const x = (i / Math.max(n - 1, 1)) * w;
+      return [x, y];
     });
-    sparkLine.setAttribute("points", pts.join(" "));
+    const line = pts.map(([x, y]) => `${x.toFixed(1)},${y}`).join(" ");
+    if (sparkLine) sparkLine.setAttribute("points", line);
+    if (sparkArea) {
+      const last = pts[n - 1];
+      sparkArea.setAttribute(
+        "d",
+        `M0,${base} L${line.replace(/ /g, " L")} L${last[0].toFixed(1)},${base} Z`,
+      );
+    }
+    if (sparkBars) {
+      const bw = Math.max(3, (w / n) * 0.35);
+      sparkBars.innerHTML = pts.map(([x, y], i) => {
+        const prev = i === 0 ? y + 4 : pts[i - 1][1];
+        const d = prev - y;
+        const h = Math.min(14, Math.abs(d) * 1.8 + 3);
+        const fill = d >= 0 ? "#00FF85" : "#FF4D6A";
+        return `<rect x="${(x - bw / 2).toFixed(1)}" y="${(base - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${fill}" opacity="0.4"/>`;
+      }).join("");
+    }
   }
 
   renderStats();
-  renderPositions();
   renderSpark();
   if (staticOnly) return;
 
@@ -266,7 +266,10 @@ function initHeroMock(root, staticOnly = false) {
           state.pnl24 += n * 0.15;
           state.openPnl += n * 0.08;
           state.balance += n * 0.05;
-          if (/claim|profit|closed/.test(msg)) state.closes24 += 1;
+          if (/claim|profit|closed/.test(msg)) {
+            state.closes24 += 1;
+            state.allPnl += n * 0.08;
+          }
           flash(p24El, "up");
           flash(openEl, "up");
           flash(balEl, "up");
@@ -294,16 +297,7 @@ function initHeroMock(root, staticOnly = false) {
   setInterval(() => {
     if (document.hidden) return;
     state.hb = 4 + Math.floor(Math.random() * 6);
-    // Drift open marks
-    state.positions[0].sol = Math.max(28, Math.min(88, state.positions[0].sol + (Math.random() - 0.48) * 14));
-    state.positions[0].tick = Math.max(20, Math.min(92, state.positions[0].tick + (Math.random() - 0.5) * 10));
-    state.positions[0].pnl += (Math.random() - 0.42) * 0.6;
-    state.positions[0].pnl = Math.max(-4, Math.min(12, state.positions[0].pnl));
-    state.positions[0].cls = state.positions[0].pnl >= 0 ? "ok" : "bad";
-    state.positions[1].sol = Math.max(15, Math.min(65, state.positions[1].sol + (Math.random() - 0.5) * 8));
-    state.positions[1].pnl += (Math.random() - 0.55) * 0.4;
-    state.openPnl = state.positions.reduce((s, p) => s + p.pnl * 0.012, 0.084);
-    renderPositions();
+    state.openPnl += (Math.random() - 0.42) * 0.008;
     renderStats();
   }, 3200);
 
@@ -312,7 +306,7 @@ function initHeroMock(root, staticOnly = false) {
     if (document.hidden) return;
     const divisor = state.pnl24 > 0.15 ? 0.35 : 0.55;
     const last = state.chartY[state.chartY.length - 1] ?? 20;
-    state.chartY.push(Math.max(4, Math.min(30, last + (Math.random() - divisor) * 3)));
+    state.chartY.push(Math.max(8, Math.min(60, last + (Math.random() - divisor) * 4)));
     if (state.chartY.length > 14) state.chartY.shift();
     renderSpark();
   }, 2800);
