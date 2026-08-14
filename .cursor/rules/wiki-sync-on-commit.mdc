@@ -11,8 +11,9 @@ The ops dashboard **Wiki** tab (`dashboard/src/wiki/content.ts`, rendered by `da
 
 1. Diff the change set. Ask: does this alter scanning, sleeves, entry/exit priorities, follow mode, sizing/risk brakes, HALT, dashboard tab meaning, update/approve flow, or accounting?
 2. If **yes**, update the matching Wiki section(s) in **`dashboard/src/wiki/content.ts`** in the same commit (surgical edits — do not rewrite untouched sections).
-3. If the change is also a public/setup fact, still apply `docs-sync-on-commit.mdc` (site / setup / llms).
-4. If STRATEGY.md is the source of truth for a strategy change, update STRATEGY.md **and** the Wiki section that mirrors it.
+3. Prefer **plain-language first** (simple one-liner + TL;DR + icons/flows/cards/ladder). Keep depth, but lead with what a brand-new operator needs.
+4. If the change is also a public/setup fact, still apply `docs-sync-on-commit.mdc` (site / setup / llms).
+5. If STRATEGY.md is the source of truth for a strategy change, update STRATEGY.md **and** the Wiki section that mirrors it.
 
 ## When Wiki almost always needs a pass
 
