@@ -11,6 +11,14 @@ Railway signup: https://railway.com?referralCode=SCj9lN
 
 - [Easy setup (Railway)](https://dlmmbot.com/setup/easy): one service, volume at `/app/data`, public domain, dashboard wizard
 - [Advanced setup](https://dlmmbot.com/setup/advanced): local / VPS / PM2
+- [Settings profiles](https://dlmmbot.com/setup/profiles): official / local / community packs + share via browser PR
+- [How it works](https://dlmmbot.com/setup/how-it-works): pipeline for newcomers — scan/vet/enter/manage/exit, sleeves, follow mode
+- [Strategy reference](https://dlmmbot.com/setup/strategy): pool/token gates, P0–P5 exit ladder, follow mode, blacklist
+- [Risk & sizing](https://dlmmbot.com/setup/risk): Kelly, circuit/cluster brakes, HALT vs PAUSE, promotion gate
+- [Configuration](https://dlmmbot.com/setup/configuration): every config.toml key with shipped defaults
+- [Dashboard guide](https://dlmmbot.com/setup/dashboard): tabs, setup wizard, encrypted wallet, HALT
+- [CLI reference](https://dlmmbot.com/setup/cli): scan, vet, run, status, halt/pause, force-close, simulate-zap
+- [FAQ](https://dlmmbot.com/setup/faq): honest answers — losses, paper-first, GNME fee, restarts, RPC
 - [Full text for agents](https://dlmmbot.com/llms-full.txt): longer product summary
 - [Strategy (repo)](https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md): exits and risk rules
 

@@ -30,6 +30,7 @@ Scans hot SOL-quoted meme pools, vets the token, opens a **one-sided SOL** LP be
 | Doc | What |
 |---|---|
 | [dlmmbot.com](https://dlmmbot.com) | Marketing site |
+| [dlmmbot.com/setup](https://dlmmbot.com/setup/) | Full docs — setup, [how it works](https://dlmmbot.com/setup/how-it-works), [strategy](https://dlmmbot.com/setup/strategy), [risk](https://dlmmbot.com/setup/risk), [config](https://dlmmbot.com/setup/configuration), [dashboard](https://dlmmbot.com/setup/dashboard), [CLI](https://dlmmbot.com/setup/cli), [FAQ](https://dlmmbot.com/setup/faq) |
 | [STRATEGY.md](STRATEGY.md) | Full strategy / exits |
 | [config.toml](config.toml) | Live knobs (hot-reloaded) |
 | [profiles/](profiles/) | Official + community settings packs ([docs](https://dlmmbot.com/setup/profiles)) |
