@@ -487,8 +487,9 @@ function SliderRow({
 
 function fieldGridClass(cols: 2 | 3 | 4 = 3) {
   if (cols === 2) return "grid grid-cols-1 gap-2 sm:grid-cols-2";
-  if (cols === 4) return "grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4";
-  return "grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3";
+  // Equal-width cells that pack cleanly — avoids flex-wrap stagger.
+  if (cols === 4) return "grid grid-cols-[repeat(auto-fill,minmax(11.5rem,1fr))] gap-2";
+  return "grid grid-cols-[repeat(auto-fill,minmax(13.5rem,1fr))] gap-2";
 }
 
 export function SettingsPage() {
@@ -838,7 +839,7 @@ export function SettingsPage() {
                       className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(13rem,0.85fr)_1.35fr]"
                     >
                       {renderField(row.gate)}
-                      <div className={row.knobs.length > 1 ? "grid grid-cols-1 gap-2 sm:grid-cols-2" : "min-w-0"}>
+                      <div className="grid min-w-0 grid-cols-1 gap-2">
                         {row.knobs.map(renderField)}
                       </div>
                     </div>
