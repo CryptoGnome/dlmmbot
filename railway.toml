@@ -3,6 +3,8 @@
 # Optional vars: DASH_TOKEN (auto-generated if unset), FARMER_MODE=paper (default),
 # RPC_URL, WALLET_PRIVATE_KEY, JUPITER_API_KEY — or set secrets in the dash Settings UI
 # (persisted on the volume).
+# Redeploy tip: set RAILWAY_DEPLOYMENT_DRAINING_SECONDS=5 so SIGTERM can exit 0
+# before SIGKILL (avoids false “Deploy Crashed” emails on every update).
 
 [build]
 builder = "RAILPACK"

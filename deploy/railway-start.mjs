@@ -105,6 +105,8 @@ try {
 }
 
 const kids = [];
+let shuttingDown = false;
+
 function run(label, args) {
   const child = spawn(process.execPath, args, {
     cwd: root,
@@ -112,6 +114,14 @@ function run(label, args) {
     stdio: "inherit",
   });
   child.on("exit", (code, signal) => {
+    // Redeploy: Railway SIGTERM → kids die with code=null. Do NOT exit(1) —
+    // that is what triggers false "Deploy Crashed" emails on every update.
+    if (shuttingDown) {
+      console.log(`[railway] ${label} stopped (${signal || code}) during shutdown`);
+      const stillUp = kids.filter((k) => k.exitCode == null && k.signalCode == null);
+      if (stillUp.length === 0) process.exit(0);
+      return;
+    }
     console.error(`[railway] ${label} exited code=${code} signal=${signal}`);
     for (const k of kids) {
       try { k.kill("SIGTERM"); } catch { /* */ }
@@ -125,11 +135,14 @@ run("dash", [resolve(root, "deploy/dashboard-server.mjs")]);
 run("farmer", [resolve(root, "node_modules/tsx/dist/cli.mjs"), resolve(root, "src/cli.ts"), "run"]);
 
 function shutdown(sig) {
-  console.log(`[railway] ${sig} — shutting down`);
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[railway] ${sig} — shutting down (clean exit, not a crash)`);
   for (const k of kids) {
     try { k.kill("SIGTERM"); } catch { /* */ }
   }
-  setTimeout(() => process.exit(0), 4000).unref();
+  // If kids hang, still exit 0 so Railway does not mark the old deploy as Crashed.
+  setTimeout(() => process.exit(0), 3500).unref();
 }
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
