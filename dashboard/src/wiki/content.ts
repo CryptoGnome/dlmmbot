@@ -418,7 +418,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           },
           {
             title: "Profit burn",
-            text: "1% of measured wallet profit accrues toward buying+burning the configured mint (GNME). Fires when the pot hits min_sol.",
+            text: "1% of measured wallet profit buys+burns the configured mint (GNME) immediately via Jupiter.",
             icon: "zap",
             tone: "accent",
           },
@@ -625,7 +625,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           ["Zap", "Helper that turns leftover tokens into SOL when we exit."],
           ["Escape hatch", "Deep dip, then recovery → reshape the range instead of dying slowly."],
           ["Profit lock", "Bank a slice of a big winner while the rest keeps earning."],
-          ["Profit burn", "1% of measured close profit → accrue → buy+burn mint when pot ≥ min_sol."],
+          ["Profit burn", "1% of measured close profit → buy+burn mint right away (retry pot only if swap fails)."],
           ["Follow", "Careful re-entries after an up-and-out close."],
           ["Cluster brake", "Too many hard stops close together → pause new entries."],
           ["HALT", "Emergency stop file/flag — close book, idle."],

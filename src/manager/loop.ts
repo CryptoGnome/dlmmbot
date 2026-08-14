@@ -198,8 +198,8 @@ async function closeAndReport(
 }
 
 /**
- * 1% of measured net profit → Jupiter buy burn-mint → burn.
- * Sub-min spends accrue until `min_sol`, then one burn fires (paper logs only).
+ * 1% of measured net profit → Jupiter buy burn-mint → burn immediately.
+ * Accrual pot only holds leftover if a swap fails (retry on next flush).
  * Skips when measured columns are missing or PnL ≤ 0.
  */
 async function maybeProfitBurn(
@@ -221,9 +221,8 @@ async function maybeProfitBurn(
     `pos#${pos.id} ${pos.symbol} pnl=+${measuredPnl.toFixed(6)} share=${spend.toFixed(6)}`,
   );
   console.log(
-    `[profit_burn] accrue +${spend.toFixed(6)} SOL from pos#${pos.id} ${pos.symbol} ` +
-      `(${(cfg.profit_frac * 100).toFixed(0)}% of +${measuredPnl.toFixed(4)}) → pot ${accrued.toFixed(6)}` +
-      (accrued < cfg.min_sol ? ` (need ${cfg.min_sol} to burn)` : ""),
+    `[profit_burn] +${spend.toFixed(6)} SOL from pos#${pos.id} ${pos.symbol} ` +
+      `(${(cfg.profit_frac * 100).toFixed(0)}% of +${measuredPnl.toFixed(4)}) → pot ${accrued.toFixed(6)}`,
   );
 
   await flushProfitBurn(exec, {
@@ -233,7 +232,7 @@ async function maybeProfitBurn(
   });
 }
 
-/** If the burn pot is ≥ min_sol, buy+burn now (also used after backfill / between closes). */
+/** Burn the whole accrued pot (any size > 0). Used after closes and on manage ticks. */
 async function flushProfitBurn(
   exec: Executor,
   ctx?: { measuredPnlSol: number; positionId: number; symbol: string },
@@ -241,7 +240,7 @@ async function flushProfitBurn(
   const cfg = config().profit_burn;
   if (!cfg?.enabled) return;
   const accrued = readProfitBurnAccrued();
-  if (accrued < cfg.min_sol) return;
+  if (!(accrued > 0)) return;
 
   if (exec.mode !== "live" || !(exec instanceof LiveExecutor)) {
     getDb().prepare(

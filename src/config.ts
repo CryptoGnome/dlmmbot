@@ -167,8 +167,6 @@ export interface Config {
     mint: string;
     /** Fraction of measured net PnL to spend (0.01 = 1%). */
     profit_frac: number;
-    /** Skip when fee SOL is below this (dust). */
-    min_sol: number;
     slippage_bps: number;
   };
 }
