@@ -44,7 +44,20 @@ function ToastRow({ t }: { t: ToastItem }) {
           {t.title}
         </div>
         {t.detail && (
-          <div className="mt-0.5 truncate text-[10px] leading-snug text-dim">{t.detail}</div>
+          <div className="mt-0.5 text-[10px] leading-snug text-dim">{t.detail}</div>
+        )}
+        {t.action?.onClick && (
+          <button
+            type="button"
+            className="mt-2 inline-flex items-center border border-accent/50 bg-accent/10 px-2 py-1 text-[10px] tracking-wider text-accent uppercase hover:bg-accent/20"
+            onClick={() => {
+              const fn = t.action?.onClick;
+              dismissToast(t.id);
+              fn?.();
+            }}
+          >
+            {t.action.label}
+          </button>
         )}
       </div>
       <button

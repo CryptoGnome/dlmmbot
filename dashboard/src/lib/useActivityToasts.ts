@@ -142,13 +142,14 @@ export function useActivityToasts(
   }, [live]);
 }
 
-/** Notify when GitHub is ahead, disk deploys, or the farmer process restarts on a new build. */
+/** Notify when GitHub is ahead, disk deploys, farmer restarts, or SPA needs Reload. */
 export function useBuildToasts(watch: LiveWatch | null) {
   const primed = useRef(false);
   const syncWas = useRef<string | null>(null);
   const originWas = useRef<string | null>(null);
   const headWas = useRef<string | null>(null);
   const runningWas = useRef<string | null>(null);
+  const uiBoot = useRef<string | null>(null);
 
   useEffect(() => {
     const b = watch?.build;
@@ -158,6 +159,7 @@ export function useBuildToasts(watch: LiveWatch | null) {
     const origin = b.origin ?? null;
     const head = b.head ?? b.describe ?? null;
     const running = b.running ?? null;
+    const ui = b.ui_build ?? null;
 
     if (!primed.current) {
       primed.current = true;
@@ -165,6 +167,7 @@ export function useBuildToasts(watch: LiveWatch | null) {
       originWas.current = origin;
       headWas.current = head;
       runningWas.current = running;
+      uiBoot.current = ui;
       return;
     }
 
@@ -207,6 +210,26 @@ export function useBuildToasts(watch: LiveWatch | null) {
         tone: "ok",
         kind: "event",
         ttlMs: 6_000,
+      });
+    }
+
+    // Server swapped dashboard/dist while this tab still runs the old SPA.
+    if (ui && !uiBoot.current) {
+      uiBoot.current = ui;
+    } else if (ui && uiBoot.current && ui !== uiBoot.current) {
+      toast({
+        id: "ui-reload",
+        title: "Dashboard update ready",
+        detail: "This tab is still on the old UI — reload to pick up the new Changes / features.",
+        tone: "accent",
+        kind: "event",
+        ttlMs: 0,
+        action: {
+          label: "Reload",
+          onClick: () => {
+            window.location.reload();
+          },
+        },
       });
     }
 

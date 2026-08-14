@@ -32,6 +32,7 @@ import {
   scheduleGithubHistory,
 } from "./github-history.mjs";
 import { labelCommits } from "./release-labels.mjs";
+import { readDashUiBuild } from "./dash-ui-build.mjs";
 import { readSmartflowSnapshot } from "./smartflow-snapshot.mjs";
 
 // Re-export for tests / external callers
@@ -342,6 +343,7 @@ function buildGitInfo(root) {
     recent,
     pending,
     releases,
+    ui_build: readDashUiBuild(root),
     auto_update: prefs.autoUpdate,
     approve_sha: prefs.approveSha,
     approved_at: prefs.approvedAt,
@@ -1247,6 +1249,7 @@ export function buildLiveBookSnapshot(root) {
         recent: gitInfo.recent,
         pending: gitInfo.pending,
         releases: gitInfo.releases,
+        ui_build: gitInfo.ui_build,
         auto_update: gitInfo.auto_update,
         approve_sha: gitInfo.approve_sha,
         approved_at: gitInfo.approved_at,
