@@ -1,6 +1,7 @@
 export function fmtSol(n: number | null | undefined, digits?: number): string {
   if (n == null || Number.isNaN(n)) return "—";
-  const d = digits ?? (n !== 0 && Math.abs(n) < 0.01 ? 4 : 3);
+  const a = Math.abs(n);
+  const d = digits ?? (n !== 0 && a < 0.001 ? 5 : n !== 0 && a < 0.01 ? 4 : 3);
   const sign = n > 0 ? "+" : "";
   return `${sign}${n.toFixed(d)} SOL`;
 }

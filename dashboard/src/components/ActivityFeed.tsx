@@ -129,7 +129,7 @@ export function ActivityFeedList({
                   )}
                   title="Open transaction on Solscan"
                 >
-                  {fmtSol(sol, 3)}
+                  {fmtSol(sol)}
                 </a>
               ) : (
                 <span
@@ -140,7 +140,7 @@ export function ActivityFeedList({
                   )}
                   title="SOL flow: green in, blue deployed, red loss"
                 >
-                  {fmtSol(sol, 3)}
+                  {fmtSol(sol)}
                 </span>
               )
             )}
