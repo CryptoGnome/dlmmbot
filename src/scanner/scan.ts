@@ -2,6 +2,7 @@ import { config, SOL_MINT } from "../config.js";
 import { getDb, isBlacklisted, now, recordDecision } from "../db/db.js";
 import type { Candidate } from "../types.js";
 import { poolGates } from "./gates.js";
+import { priceDivergenceGate } from "./priceGate.js";
 import { trendingByMint } from "./gmgn.js";
 import { fetchCandles, sweepPools } from "./meteora.js";
 import { feeMomentumPart, opportunityScore, structurePart, timingPart, turnoverPart } from "./score.js";
@@ -64,6 +65,13 @@ export async function scan(opts: { withTiming?: boolean } = {}): Promise<ScanRes
   for (const p of bestPool.values()) {
     const gateFailures = poolGates(p);
     const symbol = p.name.split("-")[0] ?? p.name;
+
+    // §2.1 price-divergence gate needs a Jupiter call per pool — only for
+    // gate-passers. Fails closed when the quote is unavailable.
+    if (gateFailures.length === 0) {
+      const divergence = await priceDivergenceGate(p.mintX, p.price);
+      if (divergence) gateFailures.push(divergence);
+    }
 
     // Timing needs a candles fetch per pool — only for gate-passers (cheap sweep).
     let timing = 0.5;

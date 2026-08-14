@@ -59,6 +59,8 @@ export interface VetResult {
     tokenAgeMinutes: number | null;
     gmgnSellTaxPct?: number | null;       // GMGN security cross-check
     gmgnHoneypot?: boolean | null;
+    /** True when the honeypot/sell-tax source was blind for this vet (soft note, not a gate). */
+    securityDataUnavailable?: boolean;
     traderRiskShare?: number | null;      // share of top traders tagged bundler/rat_trader/sniper
     traderSmartCount?: number | null;     // smart_degen-tagged wallets among top traders
     jupOrganicScore?: number | null;      // Jupiter datapi enrichment (null = source degraded/unavailable)

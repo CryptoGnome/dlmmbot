@@ -99,7 +99,8 @@ export async function vetToken(mint: string, poolCreatedAtMs: number | null): Pr
   const report = await fetchReport(mint);
   if (report) {
     facts.rugcheckScoreNormalised = report.score_normalised;
-    facts.rugcheckRisks = report.risks.map((r) => ({ name: r.name, score: r.score, level: r.level }));
+    // Guard: partial 200s can omit risks — read as "none reported", don't throw.
+    facts.rugcheckRisks = (report.risks ?? []).map((r) => ({ name: r.name, score: r.score, level: r.level }));
     facts.creatorAddress = report.creator ?? null;
     facts.launchpad = report.launchpad?.platform ?? null;
     facts.holderCount = report.totalHolders;
@@ -108,12 +109,7 @@ export async function vetToken(mint: string, poolCreatedAtMs: number | null): Pr
     if (v.rugcheck_veto_enabled !== false && report.score_normalised >= v.rugcheck_veto_normalised)
       fail("rugcheck_veto", report.score_normalised, `< ${v.rugcheck_veto_normalised}`);
 
-    const rugs = creatorRugCount(report);
-    facts.creatorRugCount = rugs;
-    if (v.creator_rug_enabled !== false && rugs > 0) {
-      fail("creator_rug_history", rugs, "0");
-      if (report.creator) blacklist(report.creator, "creator", `rug history x${rugs}`);
-    }
+    facts.creatorRugCount = creatorRugCount(report);
 
     // RugCheck topHolders already excludes labeled AMMs.
     const holders = report.topHolders ?? [];
@@ -137,23 +133,35 @@ export async function vetToken(mint: string, poolCreatedAtMs: number | null): Pr
       }
     }
   } else {
-    // RugCheck down: RPC concentration + local creator history + cluster scan.
+    // RugCheck down: RPC concentration; creator gates run below either way.
     const conc = concentrationFromShares(rpcShares);
     if (conc) applyHolderGates(conc, facts, fail, v);
+  }
 
-    const knownCreator = (getDb()
+  // FAIL CLOSED (§2.2): if BOTH holder sources are blind (RugCheck down/empty
+  // AND RPC holder resolution failed), we cannot rule out a 60%-whale token —
+  // that's a hard fail, not a silent pass on mint/freeze alone.
+  if (
+    v.holder_gate_enabled !== false &&
+    facts.singleHolderPct === null && facts.top10Pct === null
+  ) {
+    fail("holder_data_unavailable", "no RugCheck report and no RPC holder data", "at least one holder source");
+  }
+
+  // --- Creator one-strike gates (§2.2): our own DB is authoritative, RugCheck adds history ---
+  if (!facts.creatorAddress) {
+    facts.creatorAddress = (getDb()
       .prepare("SELECT creator FROM tokens WHERE mint = ?")
-      .get(mint) as { creator: string | null } | undefined)?.creator;
-    if (knownCreator) {
-      facts.creatorAddress = knownCreator;
-      const rugs = localCreatorRugCount(knownCreator);
-      facts.creatorRugCount = rugs;
-      if (rugs > 0) {
-        if (v.creator_rug_enabled !== false) {
-          fail("creator_rug_history", rugs, "0");
-          blacklist(knownCreator, "creator", `local rug history x${rugs}`);
-        }
-      }
+      .get(mint) as { creator: string | null } | undefined)?.creator ?? null;
+  }
+  if (facts.creatorAddress) {
+    const creatorBl = isBlacklisted(facts.creatorAddress);
+    if (creatorBl) fail("creator_blacklist", creatorBl, "not blacklisted");
+    const rugs = Math.max(facts.creatorRugCount ?? 0, localCreatorRugCount(facts.creatorAddress));
+    facts.creatorRugCount = rugs;
+    if (v.creator_rug_enabled !== false && rugs > 0) {
+      fail("creator_rug_history", rugs, "0");
+      blacklist(facts.creatorAddress, "creator", `rug history x${rugs}`);
     }
   }
 
@@ -178,6 +186,11 @@ export async function vetToken(mint: string, poolCreatedAtMs: number | null): Pr
       if (gmgnSec.honeypot) fail("gmgn_honeypot", "true", "false");
       if (gmgnSec.sellTaxPct > 0) fail("gmgn_sell_tax", `${gmgnSec.sellTaxPct}%`, "0%");
     }
+  } else if (v.gmgn_security_enabled !== false) {
+    // Soft note, not a hard fail: this is the only honeypot/sell-tax check in
+    // the pipeline, so record when it was blind instead of silently reading as
+    // "honeypot=false" (audit #9). Visible in decisions/last_vet_json.
+    facts.securityDataUnavailable = true;
   }
   if (traderTags) {
     facts.traderRiskShare = traderTags.riskShare;
@@ -207,6 +220,11 @@ export async function vetToken(mint: string, poolCreatedAtMs: number | null): Pr
       fail("age_min", `${ageMin.toFixed(0)}m`, `${v.age_min_minutes}m`);
     if (v.age_max_enabled !== false && ageMin > v.age_max_days * 1440)
       fail("age_max", `${(ageMin / 1440).toFixed(1)}d`, `${v.age_max_days}d`);
+  } else if (v.age_min_enabled !== false || v.age_max_enabled !== false) {
+    // FAIL CLOSED: both age sources missing means a 10-minute-old token could
+    // bypass the instant-rug window unnoticed. Skipped only when the operator
+    // disabled BOTH age gates.
+    fail("age_unknown", "no RugCheck detectedAt and no pool createdAt", "a usable age source");
   }
 
   // --- soft score (0-100): holder quality when we have data, penalty when blind ---
@@ -269,7 +287,10 @@ export async function vetToken(mint: string, poolCreatedAtMs: number | null): Pr
   );
 
   const verdict = hard.length === 0 ? "pass" : "fail";
-  if (verdict === "fail" && hard.some((h) => h.gate !== "age_min")) {
+  // Transient fail-closed gates (age_min will pass with time; *_unavailable will
+  // pass when the API recovers) don't earn the 24h token blacklist by themselves.
+  const TRANSIENT_GATES = new Set(["age_min", "age_unknown", "holder_data_unavailable"]);
+  if (verdict === "fail" && hard.some((h) => !TRANSIENT_GATES.has(h.gate))) {
     blacklist(mint, "token", hard.map((h) => h.gate).join(","), 24);
   }
   return { mint, verdict, hardFailures: hard, softScore: soft, facts };
