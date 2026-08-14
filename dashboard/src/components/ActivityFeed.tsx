@@ -15,8 +15,12 @@ function toneClass(tone: FeedItem["tone"]) {
           : "text-muted";
 }
 
-function solClass(n: number) {
-  return n > 0 ? "text-ok" : n < 0 ? "text-danger" : "text-muted";
+function solClass(n: number, kind: FeedItem["kind"]) {
+  if (n > 0) return "text-ok";
+  if (n === 0) return "text-muted";
+  // Red only for realized losses. Entries / claims / other outflows are capital moving — blue.
+  if (kind === "exit") return "text-danger";
+  return "text-accent";
 }
 
 export function ActivityFeedList({
@@ -121,7 +125,7 @@ export function ActivityFeedList({
                   className={cn(
                     "mt-0.5 shrink-0 tabular-nums font-medium no-underline hover:underline",
                     dense ? "text-[11px]" : "text-[12px]",
-                    solClass(sol),
+                    solClass(sol, it.kind),
                   )}
                   title="Open transaction on Solscan"
                 >
@@ -132,9 +136,9 @@ export function ActivityFeedList({
                   className={cn(
                     "mt-0.5 shrink-0 tabular-nums font-medium",
                     dense ? "text-[11px]" : "text-[12px]",
-                    solClass(sol),
+                    solClass(sol, it.kind),
                   )}
-                  title="SOL flow (+in / −out) or exit PnL"
+                  title="SOL flow: green in, blue deployed, red loss"
                 >
                   {fmtSol(sol, 3)}
                 </span>

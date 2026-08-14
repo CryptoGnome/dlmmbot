@@ -483,7 +483,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           { title: "Overview", text: "Money snapshot, open profit with slot occupancy (e.g. 3 of 5 · 2 free), equity chart. Engine ON/OFF + HALT live in the header.", icon: "chart", tone: "accent" },
           { title: "Book", text: "Open positions (slot badge) + recent closes.", icon: "book", tone: "fg" },
           { title: "Analytics", text: "Why we made/lost SOL — exits, sleeves, skips.", icon: "calc", tone: "ok" },
-          { title: "Activity", text: "Live play-by-play of decisions. On-chain rows link to Solscan.", icon: "zap", tone: "accent" },
+          { title: "Activity", text: "Live play-by-play. SOL: green in / win, blue deployed (entries), red only for losses. On-chain rows link to Solscan.", icon: "zap", tone: "accent" },
           { title: "Errors", text: "Broken stuff with copy/paste for bug reports.", icon: "alert", tone: "danger" },
           { title: "Research", text: "People we studied — not trade signals.", icon: "book", tone: "fg" },
           { title: "Wiki", text: "This guided tour.", icon: "bot", tone: "ok" },
