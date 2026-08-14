@@ -303,14 +303,15 @@ tx_retries = 3
 paper_promotion_days = 7
 
 # After each closed position: if MEASURED net PnL > 0 (wallet in/out + fees +
-# rent recoveries − open cost), spend profit_frac of that profit on `mint` via
-# Jupiter and burn the tokens. Mark-only / legacy rows without measured columns
-# are skipped — we will not tax a fake profit number.
+# rent recoveries − open cost), bank profit_frac of that profit toward a burn
+# pot. When the pot reaches min_sol, buy `mint` via Jupiter and burn. Dust wins
+# accrue so small escapes still pay their 1% without wasting Jupiter fees.
+# Mark-only / legacy rows without measured columns are skipped.
 [profit_burn]
 enabled = true
 mint = "BaDjVCpABEVCdt4LT7ivuzA4izBwJCqnDjrLa8XBtT38"
 profit_frac = 0.01               # 1% of measured net profit
-min_sol = 0.001                  # skip dust fees
+min_sol = 0.001                  # fire burn when accrued pot reaches this
 slippage_bps = 300
 
 [watchdog]

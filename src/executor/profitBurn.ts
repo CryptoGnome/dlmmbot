@@ -11,12 +11,38 @@ import { config } from "../config.js";
 import { getDb, now } from "../db/db.js";
 import { swapFromSol } from "./jupiter.js";
 
-/** Pure: SOL to spend from measured net profit. Null = skip. */
-export function profitBurnSpendSol(measuredPnlSol: number, profitFrac: number, minSol: number): number | null {
+const ACCRUE_KEY = "profit_burn_accrued_sol";
+
+/** Pure: SOL share of measured net profit. Null = no profit / disabled frac. */
+export function profitBurnSpendSol(measuredPnlSol: number, profitFrac: number): number | null {
   if (!(measuredPnlSol > 0) || !(profitFrac > 0)) return null;
   const spend = measuredPnlSol * profitFrac;
-  if (!(spend >= minSol)) return null;
-  return spend;
+  return spend > 0 ? spend : null;
+}
+
+export function readProfitBurnAccrued(): number {
+  const row = getDb().prepare("SELECT value FROM meta WHERE key = ?").get(ACCRUE_KEY) as
+    | { value: string }
+    | undefined;
+  const n = row ? Number(row.value) : 0;
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+export function writeProfitBurnAccrued(sol: number): void {
+  const v = Math.max(0, Number.isFinite(sol) ? sol : 0);
+  getDb().prepare(
+    "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+  ).run(ACCRUE_KEY, String(v));
+}
+
+/** Accrue this close's burn share; return new balance. */
+export function accrueProfitBurn(spendSol: number, note: string): number {
+  const next = readProfitBurnAccrued() + spendSol;
+  writeProfitBurnAccrued(next);
+  getDb().prepare(
+    "INSERT INTO ledger (ts, kind, sol, note) VALUES (?, 'profit_burn_accrue', ?, ?)",
+  ).run(now(), spendSol, note);
+  return next;
 }
 
 async function resolveTokenProgram(connection: Connection, mint: PublicKey): Promise<PublicKey> {
@@ -29,7 +55,7 @@ async function resolveTokenProgram(connection: Connection, mint: PublicKey): Pro
 
 /**
  * Spend `spendSol` of wallet SOL → buy burn mint via Jupiter → burn all received.
- * Returns null on skip/failure after logging; never throws into the manage tick.
+ * Returns null when swap fails; throws on burn/tx errors for the caller to log.
  */
 export async function executeProfitBurn(opts: {
   connection: Connection;
@@ -55,7 +81,6 @@ export async function executeProfitBurn(opts: {
 
   const programId = await resolveTokenProgram(opts.connection, mint);
   const ata = getAssociatedTokenAddressSync(mint, opts.wallet.publicKey, false, programId);
-  // Re-read ATA — quote outAmount can differ slightly from fill.
   const acct = await getAccount(opts.connection, ata, "confirmed", programId);
   const amount = acct.amount;
   if (amount <= 0n) throw new Error("profit burn: ATA empty after swap");

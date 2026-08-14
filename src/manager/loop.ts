@@ -7,7 +7,7 @@ import { alert, type AlertKind } from "../alerts.js";
 import { blacklist, getDb, now, recordDecision, REALIZED_PNL_SQL, logError, installProcessErrorHooks } from "../db/db.js";
 import type { Executor } from "../executor/executor.js";
 import { LiveExecutor } from "../executor/live.js";
-import { executeProfitBurn, profitBurnSpendSol } from "../executor/profitBurn.js";
+import { executeProfitBurn, profitBurnSpendSol, accrueProfitBurn, writeProfitBurnAccrued } from "../executor/profitBurn.js";
 import { PaperExecutor } from "../executor/paper.js";
 import { rollupDaily } from "../pnl/rollup.js";
 import { fetchSummary } from "../vetting/rugcheck.js";
@@ -197,7 +197,8 @@ async function closeAndReport(
 }
 
 /**
- * 1% of measured net profit → Jupiter buy burn-mint → burn. Paper logs only.
+ * 1% of measured net profit → Jupiter buy burn-mint → burn.
+ * Sub-min spends accrue until `min_sol`, then one burn fires (paper logs only).
  * Skips when measured columns are missing or PnL ≤ 0.
  */
 async function maybeProfitBurn(
@@ -211,15 +212,28 @@ async function maybeProfitBurn(
     console.log(`[profit_burn] skip pos#${pos.id}: no measured wallet PnL (legacy/mark-only close)`);
     return;
   }
-  const spend = profitBurnSpendSol(measuredPnl, cfg.profit_frac, cfg.min_sol);
+  const spend = profitBurnSpendSol(measuredPnl, cfg.profit_frac);
   if (spend == null) return;
+
+  const accrued = accrueProfitBurn(
+    spend,
+    `pos#${pos.id} ${pos.symbol} pnl=+${measuredPnl.toFixed(6)} share=${spend.toFixed(6)}`,
+  );
+  console.log(
+    `[profit_burn] accrue +${spend.toFixed(6)} SOL from pos#${pos.id} ${pos.symbol} ` +
+      `(${(cfg.profit_frac * 100).toFixed(0)}% of +${measuredPnl.toFixed(4)}) → pot ${accrued.toFixed(6)}` +
+      (accrued < cfg.min_sol ? ` (need ${cfg.min_sol} to burn)` : ""),
+  );
+
+  if (accrued < cfg.min_sol) return;
 
   if (exec.mode !== "live" || !(exec instanceof LiveExecutor)) {
     getDb().prepare(
       "INSERT INTO ledger (ts, kind, sol, note) VALUES (?, 'profit_burn_paper', ?, ?)",
-    ).run(now(), spend, `pos#${pos.id} ${pos.symbol} pnl=+${measuredPnl.toFixed(6)} (paper — not sent)`);
+    ).run(now(), accrued, `pot ${accrued.toFixed(6)} from pos#${pos.id} ${pos.symbol} (paper — not sent)`);
+    writeProfitBurnAccrued(0);
     console.log(
-      `[profit_burn] paper: would spend ${spend.toFixed(4)} SOL (${(cfg.profit_frac * 100).toFixed(0)}% of +${measuredPnl.toFixed(4)}) → burn ${cfg.mint.slice(0, 8)}…`,
+      `[profit_burn] paper: would spend pot ${accrued.toFixed(4)} SOL → burn ${cfg.mint.slice(0, 8)}…`,
     );
     return;
   }
@@ -227,20 +241,27 @@ async function maybeProfitBurn(
   const result = await executeProfitBurn({
     connection: exec.connection,
     wallet: exec.wallet,
-    spendSol: spend,
+    spendSol: accrued,
     measuredPnlSol: measuredPnl,
     positionId: pos.id,
     symbol: pos.symbol,
   });
-  if (!result) return;
+  if (!result) {
+    console.error(
+      `[profit_burn] swap failed with pot ${accrued.toFixed(6)} SOL still accrued — will retry on next winner`,
+    );
+    return;
+  }
+  writeProfitBurnAccrued(0);
   console.log(
     `[profit_burn] spent ${result.spentSol.toFixed(4)} SOL → burned ${result.burnedRaw} ` +
       `swap=${result.swapSig} burn=${result.burnSig}`,
   );
   await alert(
     "profit_burn",
-    `${pos.symbol} pos#${pos.id}: profit burn ${(cfg.profit_frac * 100).toFixed(0)}% of +${measuredPnl.toFixed(4)} SOL\n` +
-      `spent ${result.spentSol.toFixed(4)} SOL → burned → ${cfg.mint}\n` +
+    `${pos.symbol} pos#${pos.id}: profit burn pot ${result.spentSol.toFixed(4)} SOL ` +
+      `(last leg ${(cfg.profit_frac * 100).toFixed(0)}% of +${measuredPnl.toFixed(4)})\n` +
+      `burned → ${cfg.mint}\n` +
       `swap ${result.swapSig}\nburn ${result.burnSig}`,
   );
 }
