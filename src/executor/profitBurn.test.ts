@@ -9,7 +9,7 @@ describe("profitBurnSpendSol", () => {
     expect(profitBurnSpendSol(-0.5, 0.01)).toBeNull();
     expect(profitBurnSpendSol(0, 0.01)).toBeNull();
   });
-  it("returns dust shares (accrual decides when to burn)", () => {
+  it("returns dust shares (burned immediately when pot > 0)", () => {
     expect(profitBurnSpendSol(0.027415, 0.01)).toBeCloseTo(0.00027415, 8);
   });
 });

@@ -1,15 +1,14 @@
 import {
   createBurnInstruction,
-  createCloseAccountInstruction,
   getAccount,
   getAssociatedTokenAddressSync,
   TOKEN_2022_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
-import { Connection, Keypair, PublicKey, Transaction, sendAndConfirmTransaction } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey, TransactionInstruction } from "@solana/web3.js";
 import { config } from "../config.js";
 import { getDb, now } from "../db/db.js";
-import { swapFromSol } from "./jupiter.js";
+import { buildSwapFromSolTx } from "./jupiter.js";
 
 const ACCRUE_KEY = "profit_burn_accrued_sol";
 
@@ -54,8 +53,9 @@ async function resolveTokenProgram(connection: Connection, mint: PublicKey): Pro
 }
 
 /**
- * Spend `spendSol` of wallet SOL → buy burn mint via Jupiter → burn all received.
- * Returns null when swap fails; throws on burn/tx errors for the caller to log.
+ * Spend `spendSol` of wallet SOL → buy burn mint via Jupiter → burn in **one** tx.
+ * Burns any leftover ATA dust first, then the swap's min-out (slippage floor).
+ * Returns null when the swap cannot be built/sent.
  */
 export async function executeProfitBurn(opts: {
   connection: Connection;
@@ -64,48 +64,54 @@ export async function executeProfitBurn(opts: {
   measuredPnlSol: number;
   positionId: number;
   symbol: string;
-}): Promise<{ spentSol: number; burnedRaw: string; swapSig: string; burnSig: string } | null> {
+}): Promise<{ spentSol: number; burnedRaw: string; signature: string } | null> {
   const cfg = config().profit_burn;
   const mint = new PublicKey(cfg.mint);
   const lamports = BigInt(Math.floor(opts.spendSol * 1e9));
   if (lamports <= 0n) return null;
 
-  const swap = await swapFromSol(
+  const programId = await resolveTokenProgram(opts.connection, mint);
+  const ata = getAssociatedTokenAddressSync(mint, opts.wallet.publicKey, false, programId);
+
+  let dust = 0n;
+  try {
+    dust = (await getAccount(opts.connection, ata, "confirmed", programId)).amount;
+  } catch {
+    /* ATA missing — Jupiter setup will create it */
+  }
+
+  // Burn amount must be known at build time; SPL has no "burn all remaining".
+  // Use Jupiter's otherAmountThreshold (guaranteed min out under slippage).
+  // Any leftover dust is burned on the next profit-burn tx.
+  const built = await buildSwapFromSolTx(
     opts.connection,
     opts.wallet,
     mint.toBase58(),
     lamports,
     cfg.slippage_bps,
+    (minOut) => {
+      const ixs: TransactionInstruction[] = [];
+      if (dust > 0n) {
+        ixs.push(createBurnInstruction(ata, mint, opts.wallet.publicKey, dust, [], programId));
+      }
+      ixs.push(createBurnInstruction(ata, mint, opts.wallet.publicKey, minOut, [], programId));
+      return ixs;
+    },
   );
-  if (!swap) return null;
+  if (!built) return null;
 
-  const programId = await resolveTokenProgram(opts.connection, mint);
-  const ata = getAssociatedTokenAddressSync(mint, opts.wallet.publicKey, false, programId);
-  const acct = await getAccount(opts.connection, ata, "confirmed", programId);
-  const amount = acct.amount;
-  if (amount <= 0n) throw new Error("profit burn: ATA empty after swap");
+  const signature = await opts.connection.sendRawTransaction(built.tx.serialize(), { maxRetries: 3 });
+  await opts.connection.confirmTransaction(signature, "confirmed");
 
-  const tx = new Transaction().add(
-    createBurnInstruction(ata, mint, opts.wallet.publicKey, amount, [], programId),
-    createCloseAccountInstruction(ata, opts.wallet.publicKey, opts.wallet.publicKey, [], programId),
-  );
-  const burnSig = await sendAndConfirmTransaction(opts.connection, tx, [opts.wallet], {
-    commitment: "confirmed",
-  });
-
+  const burned = dust + built.minOutRaw;
   getDb().prepare(
     "INSERT INTO ledger (ts, kind, sol, note) VALUES (?, 'profit_burn', ?, ?)",
   ).run(
     now(),
     opts.spendSol,
     `pos#${opts.positionId} ${opts.symbol} pnl=+${opts.measuredPnlSol.toFixed(6)} ` +
-      `burned ${amount.toString()} of ${mint.toBase58()} swap=${swap.signature} burn=${burnSig}`,
+      `burned≥${burned.toString()} of ${mint.toBase58()} sig=${signature}`,
   );
 
-  return {
-    spentSol: opts.spendSol,
-    burnedRaw: amount.toString(),
-    swapSig: swap.signature,
-    burnSig,
-  };
+  return { spentSol: opts.spendSol, burnedRaw: burned.toString(), signature };
 }

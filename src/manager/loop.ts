@@ -274,13 +274,13 @@ async function flushProfitBurn(
   writeProfitBurnAccrued(0);
   console.log(
     `[profit_burn] spent ${result.spentSol.toFixed(4)} SOL → burned ${result.burnedRaw} ` +
-      `swap=${result.swapSig} burn=${result.burnSig}`,
+      `sig=${result.signature}`,
   );
   await alert(
     "profit_burn",
     `profit burn pot ${result.spentSol.toFixed(4)} SOL` +
       (ctx ? ` (last leg ${ctx.symbol} pos#${ctx.positionId})` : "") +
-      `\nburned → ${cfg.mint}\nswap ${result.swapSig}\nburn ${result.burnSig}`,
+      `\nburned → ${cfg.mint}\n${result.signature}`,
   );
 }
 
