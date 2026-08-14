@@ -2,6 +2,7 @@
  * Surgical config.toml edits — update key = value lines in-place so comments survive.
  */
 import { readFileSync, writeFileSync, renameSync } from "node:fs";
+import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { parse } from "smol-toml";
 import { runtimePaths } from "./runtime-paths.mjs";
@@ -121,6 +122,28 @@ function patchSectionKey(text, section, key, value) {
 }
 
 /**
+ * Append `key = value` at the end of an existing `[section]` (before the next
+ * section header, skipping trailing blank lines).
+ */
+function appendSectionKey(text, section, key, value) {
+  const lines = text.split(/\r?\n/);
+  let sectionStart = -1;
+  let insertAt = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const hdr = /^\s*\[([A-Za-z0-9_.]+)\]/.exec(lines[i]);
+    if (!hdr) continue;
+    if (sectionStart >= 0) { insertAt = i; break; }
+    if (hdr[1] === section) sectionStart = i;
+  }
+  if (sectionStart < 0) return { text, found: false };
+  if (insertAt < 0) insertAt = lines.length;
+  let at = insertAt;
+  while (at > sectionStart + 1 && lines[at - 1].trim() === "") at--;
+  lines.splice(at, 0, `${key} = ${formatTomlValue(value)}`);
+  return { text: lines.join("\n"), found: true };
+}
+
+/**
  * @param {string} root
  * @param {Record<string, unknown>} updates dotted keys section.key
  */
@@ -129,6 +152,14 @@ export function applyConfigUpdates(root, updates) {
   let text = readConfigToml(root);
   const missing = [];
   const applied = [];
+  /** Repo template, parsed lazily — the authority on which keys exist at all. */
+  let template = null;
+  const templateHas = (section, key) => {
+    if (template === null) {
+      try { template = parse(readFileSync(join(root, "config.toml"), "utf8")); } catch { template = {}; }
+    }
+    return template?.[section]?.[key] !== undefined;
+  };
 
   for (const [path, value] of Object.entries(updates)) {
     const dot = path.indexOf(".");
@@ -140,8 +171,23 @@ export function applyConfigUpdates(root, updates) {
     const before = text;
     const res = patchSectionKey(text, section, key, value);
     text = res.text;
-    if (!res.found) missing.push(path);
-    else if (text !== before) applied.push(path);
+    if (!res.found) {
+      // The runtime config was seeded before this key existed (data/config.toml
+      // is copied exactly once). If the repo TEMPLATE knows the key, append it
+      // to the section so Settings and profiles can heal an outdated file;
+      // keys the template doesn't know still hard-error (typo protection).
+      if (templateHas(section, key)) {
+        const app = appendSectionKey(text, section, key, value);
+        if (app.found) {
+          text = app.text;
+          applied.push(path);
+          continue;
+        }
+      }
+      missing.push(path);
+    } else if (text !== before) {
+      applied.push(path);
+    }
   }
 
   if (missing.length) throw new Error(`unknown keys: ${missing.join(", ")}`);

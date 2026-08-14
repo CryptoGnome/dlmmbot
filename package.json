@@ -28,7 +28,8 @@
     "typecheck:deploy": "tsc -p tsconfig.deploy.json",
     "build": "tsc",
     "test": "vitest run --coverage",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "validate:profiles": "node scripts/validate-profiles.mjs"
   },
   "engines": {
     "node": ">=20"

@@ -23,6 +23,15 @@ export const PROFILE_ALLOWLIST = new Set([
   "sizing.score_mult_mid",
   "sizing.score_mult_high",
   "sizing.reserve_sol",
+  // Portfolio caps + brakes: without these a "risk tier" only changes gates,
+  // not what happens when the market turns — the levers that actually define
+  // conservative vs aggressive.
+  "sizing.per_token_max_pct",
+  "sizing.circuit_daily_loss_pct",
+  "sizing.cluster_brake_exits",
+  "sizing.cluster_brake_pause_h",
+  "entry.min_down_pct",
+  "entry.max_down_pct",
   "manage.stop_loss_frac",
   "manage.claim_min_sol",
   "manage.profit_lock_enabled",
