@@ -35,6 +35,7 @@ Same bot, same paper/live gates — only the host changes.
   <a href="./dashboard">Dashboard guide <span>tabs, wizard, wallet, HALT</span></a>
   <a href="./configuration">Configuration <span>every config.toml key</span></a>
   <a href="./profiles">Settings profiles <span>official, local, community packs</span></a>
+  <a href="./terms">Terms &amp; waiver <span>as-is · no liability for losses</span></a>
   <a href="./cli">CLI <span>scan, status, halt, pause</span></a>
   <a href="./fees">Fees <span>1% GNME burn on live wins</span></a>
   <a href="./faq">FAQ <span>can you lose money? yes</span></a>

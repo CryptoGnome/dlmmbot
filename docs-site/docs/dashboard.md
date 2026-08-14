@@ -19,11 +19,12 @@ Live window onto the farmer: ledger, settings, wizard, encrypted wallet. On Rail
 
 When RPC and wallet are missing, first login walks through:
 
-1. **Dash token** — Railway logs (`generated DASH_TOKEN=…`) or your `DASH_TOKEN` env var.
-2. **RPC & APIs** — Helius mainnet URL, Jupiter key, optional GMGN.
-3. **Wallet** — create a keypair or import a Phantom base58 key. Encrypted with a passphrase (AES-256-GCM) as `wallet.enc.json` on your volume. Password retype + one-time backup.
-4. **Paper or live** — live still needs the [double lock](./risk#paper-first-the-promotion-gate).
-5. Optionally **unlock** into `.env` (or set `WALLET_PASSPHRASE` on Railway to auto-unlock on boot).
+1. **Terms & risk waiver** — scroll and accept [Terms](./terms) (required; also shown to existing installs that have not accepted yet).
+2. **Dash token** — Railway logs (`generated DASH_TOKEN=…`) or your `DASH_TOKEN` env var.
+3. **RPC & APIs** — Helius mainnet URL, Jupiter key, optional GMGN.
+4. **Wallet** — create a keypair or import a Phantom base58 key. Encrypted with a passphrase (AES-256-GCM) as `wallet.enc.json` on your volume. Password retype + one-time backup.
+5. **Paper or live** — live still needs the [double lock](./risk#paper-first-the-promotion-gate).
+6. Optionally **unlock** into `.env` (or set `WALLET_PASSPHRASE` on Railway to auto-unlock on boot).
 
 <p class="note bad">Fresh burner only — never your main wallet.</p>
 

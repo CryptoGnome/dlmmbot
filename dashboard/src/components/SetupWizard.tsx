@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  acceptTerms,
   completeSetup,
+  fetchTerms,
   patchConfig,
   patchSecrets,
   type SetupStatus,
@@ -35,6 +37,11 @@ export function SetupWizard({
   const [busy, setBusy] = useState(false);
 
   const [confirm, setConfirm] = useState("");
+  const [termsOk, setTermsOk] = useState(
+    !!initial.setup.termsVersion && initial.setup.termsVersion === initial.termsVersion,
+  );
+  const [termsMd, setTermsMd] = useState<string | null>(null);
+  const [termsVersion, setTermsVersion] = useState(initial.termsVersion);
   const [rpc, setRpc] = useState("");
   const [jupiter, setJupiter] = useState("");
   const [gmgn, setGmgn] = useState("");
@@ -45,9 +52,43 @@ export function SetupWizard({
   const idx = STEPS.findIndex((s) => s.id === step);
   const walletReady = !!(status.wallet.encrypted || status.wallet.unlocked || status.wallet.ready);
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const t = await fetchTerms();
+        if (cancelled) return;
+        setTermsMd(t.markdown);
+        setTermsVersion(t.version);
+        setTermsOk((ok) => ok || initial.setup.termsVersion === t.version);
+      } catch {
+        /* welcome still shows checkbox; accept will fail loudly if needed */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [initial.setup.termsVersion]);
+
   const goNext = () => {
     const next = STEPS[Math.min(STEPS.length - 1, idx + 1)];
     if (next) setStep(next.id);
+  };
+
+  const startWizard = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      if (!confirm.trim()) throw new Error("re-enter your dash token");
+      if (!termsOk) throw new Error("accept the Terms of Service to continue");
+      if (status.needsTerms || status.setup.termsVersion !== termsVersion) {
+        const next = await acceptTerms({ confirm: confirm.trim(), version: termsVersion });
+        setStatus(next);
+      }
+      goNext();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const saveApis = async () => {
@@ -148,6 +189,40 @@ export function SetupWizard({
                 <li className="flex items-center gap-2"><Icon icon={KeyRound} size={12} className="text-ok" /> Wallet encrypted at rest</li>
                 <li className="flex items-center gap-2"><Icon icon={Wallet} size={12} className="text-ok" /> Burner only — never your main</li>
               </ul>
+
+              <div className="space-y-2 border border-danger/40 bg-bg p-3">
+                <div className="text-[11px] font-semibold tracking-wider text-danger uppercase">
+                  Terms &amp; risk waiver (v{termsVersion})
+                </div>
+                <p className="text-[11px] leading-relaxed text-muted">
+                  Free software. You can lose 100%. Bugs and third-party failures happen.
+                  We are not liable — you waive claims by accepting.
+                </p>
+                <div className="max-h-40 overflow-y-auto border border-grid p-2 text-[10px] leading-relaxed whitespace-pre-wrap text-dim">
+                  {termsMd ?? "Loading full terms…"}
+                </div>
+                <label className="flex items-start gap-2 text-[11px] text-muted">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={termsOk}
+                    onChange={(e) => setTermsOk(e.target.checked)}
+                  />
+                  <span>
+                    I have read and accept the{" "}
+                    <a
+                      href="https://dlmmbot.com/setup/terms"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-accent underline"
+                    >
+                      Terms of Service &amp; Risk Waiver
+                    </a>
+                    , including no warranty and waiver of liability.
+                  </span>
+                </label>
+              </div>
+
               <div className="space-y-2">
                 <label className="block space-y-1">
                   <span className="text-[11px] text-muted">Confirm dash token</span>
@@ -163,10 +238,10 @@ export function SetupWizard({
                 <button
                   type="button"
                   className="btn-primary inline-flex items-center gap-1.5"
-                  disabled={!confirm.trim()}
-                  onClick={goNext}
+                  disabled={busy || !confirm.trim() || !termsOk}
+                  onClick={() => void startWizard()}
                 >
-                  Continue <Icon icon={ArrowRight} size={12} />
+                  {busy ? "Saving…" : <>Continue <Icon icon={ArrowRight} size={12} /></>}
                 </button>
               </div>
             </div>

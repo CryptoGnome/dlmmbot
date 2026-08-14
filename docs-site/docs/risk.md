@@ -7,7 +7,7 @@ description: How DLMM Bot sizes positions (Kelly) and what stops it from digging
 
 Memecoin LP expectancy comes from **many small fee wins plus rare full losses** on rugs that beat the safety triggers. The vetting engine cannot catch a well-executed slow rug — sizing caps and brakes are the real defense. This page is how the bot decides *how big*, and everything that can stop it.
 
-<p class="note bad">You can lose 100% of the funds under this bot’s control. Burner wallet only, paper first. Not financial advice.</p>
+<p class="note bad">You can lose 100% of the funds under this bot’s control. Burner wallet only, paper first. Not financial advice. See the <a href="./terms">Terms &amp; risk waiver</a> — setup requires acceptance.</p>
 
 ## The bankroll
 

@@ -6,6 +6,7 @@ Site: https://dlmmbot.com
 Docs: https://dlmmbot.com/setup/
 GitHub: https://github.com/CryptoGnome/dlmmbot
 License: PolyForm Shield 1.0.0 (https://github.com/CryptoGnome/dlmmbot/blob/main/LICENSE) — run/study/modify for your own use; no competing product
+Terms / risk waiver: https://dlmmbot.com/setup/terms (https://github.com/CryptoGnome/dlmmbot/blob/main/TERMS.md) — required in setup; as-is, no liability for losses
 Railway signup: https://railway.com?referralCode=SCj9lN
 Vultr VPS signup: https://www.vultr.com/?ref=9917878-9J
 Helius RPC (recommended): https://www.helius.dev/
@@ -40,9 +41,10 @@ GMGN API key: https://gmgn.ai/ai (optional — see docs/setup/api-keys)
 - Header ON/OFF (soft pause) + HALT (close-all); Changes shows risk tags on pending commits
 - Auto-update on by default (PM2); header Auto switch (next to build pill) can require Approve on Changes before pull
 - **Settings profiles:** official Conservative / Balanced / Aggressive; local saves on the volume; community gallery. Share guide: https://dlmmbot.com/setup/profiles (browser fork + PR; works on Railway)
-- First-run setup wizard: RPC, encrypted wallet (create or Phantom import with password retype + one-time backup), paper/live mode
+- First-run setup wizard: accept Terms & risk waiver, RPC, encrypted wallet (create or Phantom import with password retype + one-time backup), paper/live mode
+- Existing installs without an accepted terms version get a blocking Terms prompt
 - Live requires both `FARMER_MODE=live` and `[exec].mode = "live"`
 - **Usage fee:** see https://dlmmbot.com/setup/fees (1% GNME buy-and-burn on live wins only)
 - Runtime config/env/db live under gitignored `data/` (repo `config.toml` is a template)
 - Optional Railway `WALLET_PASSPHRASE` auto-unlocks encrypted wallet on boot
-- Not financial advice; memecoin LP can lose 100%
+- Not financial advice; memecoin LP can lose 100%; Terms waiver required (https://dlmmbot.com/setup/terms)

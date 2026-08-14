@@ -27,6 +27,7 @@ Automated [Meteora DLMM](https://meteora.ag) liquidity bot for Solana. Scans, ve
 
 [PolyForm Shield 1.0.0](LICENSE) — run it, read it, modify it for your own operation. You **cannot** ship a competing bot or hosted copy.
 
-## Disclaimer
+## Disclaimer / waiver
 
-Memecoin LP can wipe a wallet. Not financial advice. Burner only. You can lose 100%.
+Memecoin LP can wipe a wallet. Not financial advice. Burner only. You can lose 100%.  
+By using this software you agree to the [Terms of Service & Risk Waiver](TERMS.md). The setup wizard requires acceptance. We are not liable for losses, bugs, or third-party failures — free software, as-is.

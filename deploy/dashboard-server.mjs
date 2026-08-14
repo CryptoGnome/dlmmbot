@@ -30,8 +30,9 @@ import {
 } from "./lib/config-edit.mjs";
 import {
   generateAndEncrypt, importAndEncrypt, unlockEncryptedWallet,
-  setupStatus, writeSetupState, hasEncryptedWallet,
+  setupStatus, writeSetupState, hasEncryptedWallet, readSetupState,
 } from "./lib/wallet-crypto.mjs";
+import { TERMS_VERSION, loadTermsMarkdown, termsAccepted } from "./lib/terms.mjs";
 import { applyRuntimeEnv } from "./lib/runtime-paths.mjs";
 import {
   approveDeploy, readDeployPrefs, writeDeployPrefs,
@@ -403,8 +404,52 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (url.pathname === "/api/setup/terms" && req.method === "GET") {
+    try {
+      sendJson(res, 200, {
+        version: TERMS_VERSION,
+        markdown: loadTermsMarkdown(root),
+      });
+    } catch (e) {
+      sendJson(res, 500, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/setup/accept-terms" && req.method === "POST") {
+    try {
+      const body = await readBody(req, res);
+      const confirm = typeof body?.confirm === "string" ? body.confirm : "";
+      if (!token || !safeEqual(confirm, token)) {
+        sendJson(res, 403, { error: "re-enter dash token" });
+        return;
+      }
+      const version = typeof body?.version === "string" ? body.version : "";
+      if (version !== TERMS_VERSION) {
+        sendJson(res, 400, { error: "terms version mismatch — refresh the page" });
+        return;
+      }
+      if (!body?.accepted) {
+        sendJson(res, 400, { error: "acceptance required" });
+        return;
+      }
+      const state = writeSetupState({
+        termsVersion: TERMS_VERSION,
+        termsAcceptedAt: new Date().toISOString(),
+      });
+      sendJson(res, 200, { ok: true, setup: state, ...setupStatus(readEnvMasked(root)) });
+    } catch (e) {
+      sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
   if (url.pathname === "/api/setup/complete" && req.method === "POST") {
     try {
+      if (!termsAccepted(readSetupState())) {
+        sendJson(res, 400, { error: "accept the Terms of Service first" });
+        return;
+      }
       const body = await readBody(req, res);
       const state = writeSetupState({
         completed: body?.skipped ? false : true,

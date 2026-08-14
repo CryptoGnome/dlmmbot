@@ -143,12 +143,20 @@ export async function patchSecrets(
 
 export type SetupStatus = {
   needsWizard: boolean;
+  needsTerms: boolean;
+  termsVersion: string;
   coreReady: boolean;
   hasRpc: boolean;
   hasJupiterApiKey: boolean;
   hasGmgnApiKey: boolean;
   farmerMode: string;
-  setup: { completed: boolean; skipped: boolean; completedAt: string | null };
+  setup: {
+    completed: boolean;
+    skipped: boolean;
+    completedAt: string | null;
+    termsVersion: string | null;
+    termsAcceptedAt: string | null;
+  };
   wallet: {
     encrypted: boolean;
     unlocked: boolean;
@@ -167,6 +175,34 @@ export async function fetchSetupStatus(): Promise<SetupStatus> {
   const res = await fetch(`/api/setup/status${q}`, { headers: authHeaders() });
   if (!res.ok) throw new Error(`setup ${res.status}`);
   return await res.json() as SetupStatus;
+}
+
+export async function fetchTerms(): Promise<{ version: string; markdown: string }> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/setup/terms${q}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`terms ${res.status}`);
+  return await res.json() as { version: string; markdown: string };
+}
+
+export async function acceptTerms(opts: {
+  confirm: string;
+  version: string;
+}): Promise<SetupStatus & { ok: boolean }> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/setup/accept-terms${q}`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({
+      confirm: opts.confirm,
+      version: opts.version,
+      accepted: true,
+    }),
+  });
+  const data = await res.json() as SetupStatus & { ok?: boolean; error?: string };
+  if (!res.ok) throw new Error(data.error ?? `accept terms ${res.status}`);
+  return { ...data, ok: !!data.ok };
 }
 
 export async function completeSetup(opts?: { skipped?: boolean }): Promise<SetupStatus & { ok: boolean }> {

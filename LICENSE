@@ -1,6 +1,18 @@
 Required Notice: Copyright CryptoGnome (https://dlmmbot.com)
 Licensor Line of Business: DLMM Bot — automated Meteora DLMM liquidity bot (https://dlmmbot.com)
 
+# Risk waiver (read this)
+
+This software is free and provided **as is**. Memecoin / DeFi LP can wipe a wallet.
+**Not financial advice.** You can lose **100%** of funds under the bot’s control.
+Bugs, third-party failures, and operator mistakes can cause losses.
+
+By using DLMM Bot you agree to the operator **Terms of Service & Risk Waiver**
+in `TERMS.md` (https://github.com/CryptoGnome/dlmmbot/blob/main/TERMS.md),
+including the waiver of claims and limitation of liability. The first-run
+dashboard requires explicit acceptance. The PolyForm **No Liability** section
+below also applies.
+
 # PolyForm Shield License 1.0.0
 
 <https://polyformproject.org/licenses/shield/1.0.0>

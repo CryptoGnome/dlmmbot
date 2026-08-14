@@ -87,9 +87,13 @@ You do. The encrypted wallet (`wallet.enc.json`) lives on **your** volume/host, 
 
 The code is public to **run, study, and modify for your own bot**. The license is **[PolyForm Shield 1.0.0](https://github.com/CryptoGnome/dlmmbot/blob/main/LICENSE)** — you cannot ship a competing product or hosted copy. Full terms are in the repo `LICENSE`.
 
+## Who is liable if I lose money?
+
+**You are.** DLMM Bot is free software provided as-is. The [Terms of Service & Risk Waiver](./terms) (and PolyForm’s No Liability clause) say we are not responsible for trading losses, bugs, or third-party failures. The setup wizard requires acceptance before you continue.
+
 <p class="cta-row">
   <a class="doc-btn" href="./easy">Easy setup</a>
+  <a class="doc-btn ghost" href="./terms">Terms & waiver</a>
   <a class="doc-btn ghost" href="./risk">Risk & sizing</a>
   <a class="doc-btn ghost" href="./how-it-works">How it works</a>
-  <a class="doc-btn ghost" href="./cli">CLI</a>
 </p>

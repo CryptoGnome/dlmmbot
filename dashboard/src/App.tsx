@@ -6,6 +6,7 @@ import { mergeTokenMetaMap } from "@/lib/tokenMetaCache";
 import { useActivityToasts, useBuildToasts, useErrorToasts } from "@/lib/useActivityToasts";
 import { Shell, parseTab, type TabId } from "@/components/Shell";
 import { SetupWizard } from "@/components/SetupWizard";
+import { TermsGate } from "@/components/TermsGate";
 import { ToastHost } from "@/components/ToastHost";
 import { OverviewPage } from "@/pages/Overview";
 import { BookPage } from "@/pages/Book";
@@ -33,6 +34,7 @@ export default function App() {
   const [fromCache, setFromCache] = useState(() => !!(cachedWatch() || cachedHistory("30d")));
   const [live, setLive] = useState<"connecting" | "open" | "closed">("connecting");
   const [wizard, setWizard] = useState<"loading" | "show" | "done">("loading");
+  const [needsTerms, setNeedsTerms] = useState(false);
   const [setupInitial, setSetupInitial] = useState<Awaited<ReturnType<typeof fetchSetupStatus>> | null>(null);
   const hasWatch = useRef(!!cachedWatch());
   const rangeRef = useRef(range);
@@ -72,6 +74,7 @@ export default function App() {
         const s = await fetchSetupStatus();
         if (cancelled) return;
         setSetupInitial(s);
+        setNeedsTerms(!!s.needsTerms);
         setWizard(s.needsWizard ? "show" : "done");
       } catch {
         if (!cancelled) setWizard("done");
@@ -128,10 +131,22 @@ export default function App() {
 
   return (
     <>
+      {needsTerms && setupInitial && wizard !== "show" && (
+        <TermsGate
+          initial={setupInitial}
+          onAccepted={(next) => {
+            setSetupInitial(next);
+            setNeedsTerms(!!next.needsTerms);
+          }}
+        />
+      )}
       {wizard === "show" && setupInitial && (
         <SetupWizard
           initial={setupInitial}
-          onDone={() => setWizard("done")}
+          onDone={() => {
+            setWizard("done");
+            setNeedsTerms(false);
+          }}
         />
       )}
       <ToastHost />

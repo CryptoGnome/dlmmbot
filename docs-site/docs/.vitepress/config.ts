@@ -53,6 +53,7 @@ export default defineConfig({
           { text: "Advanced — local / VPS", link: "/advanced" },
           { text: "API keys", link: "/api-keys" },
           { text: "Settings profiles", link: "/profiles" },
+          { text: "Terms & waiver", link: "/terms" },
         ],
       },
       {

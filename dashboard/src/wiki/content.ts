@@ -502,6 +502,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           "PAPER / LIVE = mode. BRAKE appears when the cluster brake paused entries.",
           "Build pill = release version + deploy branch + git SHA + sync (CURRENT / BEHIND / …). Auto on/off switch sits next to it (host pulls vs Changes → Approve).",
           "Host name (and wallet chip when known) sit on the right.",
+          "First run (and any install that has not accepted yet): Terms of Service & risk waiver must be accepted before setup continues — free software, you can lose 100%, we are not liable.",
         ],
       },
     ],

@@ -34,7 +34,7 @@ Open the domain. If `DASH_TOKEN` isn’t a Railway variable yet, copy `[railway]
 
 ## Finish in Settings
 
-First login opens a wizard: RPC, Jupiter key, encrypted burner wallet, paper/live. Writes go to `/app/data` — the git checkout stays clean.
+First login opens a wizard: **accept the Terms & risk waiver**, then RPC, Jupiter key, encrypted burner wallet, paper/live. Writes go to `/app/data` — the git checkout stays clean.
 
 | Key | Required | Get it |
 | --- | --- | --- |

@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "
 import { dirname, resolve } from "node:path";
 import { Keypair } from "@solana/web3.js";
 import bs58 from "bs58";
+import { TERMS_VERSION, termsAccepted } from "./terms.mjs";
 
 // scrypt cost for NEW blobs. Old blobs store their own N/r/p and still unlock
 // (decryptSecret derives with the params persisted in the blob).
@@ -148,7 +149,13 @@ export function readSetupState() {
   try {
     return JSON.parse(readFileSync(setupPath(), "utf8"));
   } catch {
-    return { completed: false, completedAt: null, skipped: false };
+    return {
+      completed: false,
+      completedAt: null,
+      skipped: false,
+      termsVersion: null,
+      termsAcceptedAt: null,
+    };
   }
 }
 
@@ -173,8 +180,9 @@ export function setupStatus(envMasked) {
   const hasGmgnApiKey = !!byKey.GMGN_API_KEY?.set;
   const mode = byKey.FARMER_MODE?.value || process.env.FARMER_MODE || "paper";
   const coreReady = hasWallet && hasRpc;
-  // Skip wizard for already-configured boxes (volume with RPC + wallet).
+  // Skip full wizard for already-configured boxes (volume with RPC + wallet).
   const needsWizard = !setup.completed && !setup.skipped && !coreReady;
+  const needsTerms = !termsAccepted(setup);
 
   let publicKey = walletMeta?.publicKey || null;
   if (!publicKey) {
@@ -191,7 +199,15 @@ export function setupStatus(envMasked) {
 
   return {
     needsWizard,
-    setup,
+    needsTerms,
+    termsVersion: TERMS_VERSION,
+    setup: {
+      completed: !!setup.completed,
+      skipped: !!setup.skipped,
+      completedAt: setup.completedAt ?? null,
+      termsVersion: setup.termsVersion ?? null,
+      termsAcceptedAt: setup.termsAcceptedAt ?? null,
+    },
     wallet: {
       encrypted,
       unlocked: hasPlainWallet,
