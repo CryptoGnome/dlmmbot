@@ -275,7 +275,7 @@ export function ProfilesPanel({
           <>
         <div className="mb-4">
           <div className="mb-1.5 text-[10px] tracking-[0.14em] text-dim uppercase">Official</div>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             {official.map((p) => (
               <ProfileCard
                 key={p.id}
