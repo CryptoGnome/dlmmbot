@@ -142,6 +142,7 @@ export function ChangelogPage({ watch }: { watch: LiveWatch | null }) {
           <span className={auto ? "text-ok" : "text-warn"}>
             {auto ? "auto-update on" : "manual approve"}
           </span>
+          <span className="text-dim"> (toggle next to the build pill in the header)</span>
         </p>
       </div>
 

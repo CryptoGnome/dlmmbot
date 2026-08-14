@@ -1,5 +1,5 @@
 import type { LiveWatch } from "@/lib/types";
-import type { LiveStatus } from "@/lib/api";
+import { patchDeployPrefs, type LiveStatus } from "@/lib/api";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { BookText, Check, CircleDot, Copy, ExternalLink, Wallet } from "lucide-react";
 import { HaltToggle } from "@/components/HaltControl";
@@ -105,6 +105,81 @@ function BuildPill({ build, onOpenChanges }: {
     >
       {body}
     </a>
+  );
+}
+
+/** Compact header switch — sits next to the GitHub build pill. */
+function AutoUpdateToggle({ autoUpdate }: { autoUpdate: boolean | undefined }) {
+  const [busy, setBusy] = useState(false);
+  const [override, setOverride] = useState<boolean | null>(null);
+  const on = override ?? (autoUpdate !== false);
+
+  useEffect(() => {
+    if (override == null) return;
+    if ((autoUpdate !== false) === override) setOverride(null);
+  }, [autoUpdate, override]);
+
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      disabled={busy}
+      title={
+        on
+          ? "Auto-update ON — host pulls new GitHub commits automatically. Click to require Approve on Changes."
+          : "Auto-update OFF — approve pending commits on Changes. Click to turn auto back on."
+      }
+      onClick={() => {
+        void (async () => {
+          const next = !on;
+          setBusy(true);
+          setOverride(next);
+          try {
+            await patchDeployPrefs({ autoUpdate: next });
+            toast({
+              title: next ? "Auto-update on" : "Auto-update off",
+              detail: next
+                ? "New commits deploy automatically."
+                : "Approve updates from the Changes tab.",
+              tone: next ? "ok" : "warn",
+              kind: "event",
+            });
+          } catch (e) {
+            setOverride(null);
+            toast({
+              title: "Couldn’t save update pref",
+              detail: (e as Error).message,
+              tone: "danger",
+              kind: "fail",
+            });
+          } finally {
+            setBusy(false);
+          }
+        })();
+      }}
+      className={cn(
+        "inline-flex items-center gap-1.5 border bg-transparent px-1.5 py-0.5 text-[10px] tracking-widest uppercase disabled:opacity-50",
+        on ? "border-ok/70 text-ok hover:border-hover hover:text-hover" : "border-warn/70 text-warn hover:border-hover hover:text-hover",
+      )}
+    >
+      Auto
+      <span
+        className={cn(
+          "relative h-3.5 w-6 shrink-0 rounded-full border transition-colors",
+          on ? "border-ok/70 bg-ok/30" : "border-warn/40 bg-panel",
+        )}
+        aria-hidden
+      >
+        <span
+          className={cn(
+            "absolute top-0.5 left-0.5 h-2 w-2 rounded-full bg-fg transition-transform",
+            on ? "translate-x-2.5" : "",
+          )}
+        />
+      </span>
+      {on ? "on" : "off"}
+    </button>
   );
 }
 
@@ -308,7 +383,10 @@ export function Shell({
               </span>
             )}
             {watch?.build && (
-              <BuildPill build={watch.build} onOpenChanges={() => onTab("changes")} />
+              <>
+                <BuildPill build={watch.build} onOpenChanges={() => onTab("changes")} />
+                <AutoUpdateToggle autoUpdate={watch.build.auto_update} />
+              </>
             )}
           </div>
           <div className="flex flex-wrap items-center justify-end gap-1.5">

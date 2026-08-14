@@ -2,8 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   fetchConfig, fetchEnv, fetchSetupStatus,
   patchConfig, patchSecrets, unlockSecrets, unlockWallet,
-  fetchDeployPrefs, patchDeployPrefs,
-  type EnvRow, type FlatConfig, type SetupStatus, type DeployPrefs,
+  type EnvRow, type FlatConfig, type SetupStatus,
 } from "@/lib/api";
 import { Badge, LoadingState, Panel } from "@/components/ui";
 import { Icon } from "@/lib/icons";
@@ -12,7 +11,7 @@ import { WalletCreateModal } from "@/components/WalletCreateModal";
 import { ProfilesPanel } from "@/components/ProfilesPanel";
 import { walletPresence } from "@/lib/walletStatus";
 import {
-  Settings as SettingsIcon, Save, RefreshCw, Lock, Unlock, KeyRound, Wallet, RefreshCcw,
+  Settings as SettingsIcon, Save, RefreshCw, Lock, Unlock, KeyRound, Wallet,
 } from "lucide-react";
 
 type Field =
@@ -461,15 +460,13 @@ export function SettingsPage() {
   const [walletModal, setWalletModal] = useState<"create" | "import" | null>(null);
   /** When wallet is already ready, hide create/import/unlock until user asks to replace. */
   const [walletReplaceOpen, setWalletReplaceOpen] = useState(false);
-  const [deployPrefs, setDeployPrefs] = useState<DeployPrefs | null>(null);
-  const [deployBusy, setDeployBusy] = useState(false);
 
   const load = async () => {
     setLoading(true);
     setErr(null);
     try {
-      const [c, e, s, prefs] = await Promise.all([
-        fetchConfig(), fetchEnv(), fetchSetupStatus(), fetchDeployPrefs(),
+      const [c, e, s] = await Promise.all([
+        fetchConfig(), fetchEnv(), fetchSetupStatus(),
       ]);
       setConfig(c);
       const d: Record<string, string> = {};
@@ -479,7 +476,6 @@ export function SettingsPage() {
       setDraft(d);
       setEnv(e);
       setSetup(s);
-      setDeployPrefs(prefs);
       if (s.wallet.encrypted) setWalletTab("unlock");
     } catch (e) {
       setErr((e as Error).message ?? String(e));
@@ -784,78 +780,6 @@ export function SettingsPage() {
 
       {ready && pageTab === "wallet" && (
       <>
-      <Panel
-        title="Host updates"
-        right={
-          <Badge tone={deployPrefs?.autoUpdate !== false ? "ok" : "warn"}>
-            {deployPrefs?.autoUpdate !== false ? "auto" : "manual"}
-          </Badge>
-        }
-      >
-        <p className="mb-3 text-[11px] text-dim">
-          When <span className="text-fg">meteora-deploy</span> is running, the host can pull
-          new commits from GitHub. Auto-update is on by default. Turn it off to review
-          pending commits on the Changes tab and approve with the checkmark.
-        </p>
-        <div className="flex items-center justify-between gap-3 border border-grid px-3 py-2.5">
-          <span className="flex min-w-0 items-center gap-2">
-            <Icon icon={RefreshCcw} size={14} className="shrink-0 text-accent" />
-            <span>
-              <span className="block text-[12px] text-fg">Auto-update</span>
-              <span className="block text-[10px] text-dim">
-                {deployPrefs?.autoUpdate !== false
-                  ? "Pulls land without asking"
-                  : "Changes → Approve required"}
-              </span>
-            </span>
-          </span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={deployPrefs?.autoUpdate !== false}
-            disabled={deployBusy || deployPrefs == null}
-            onClick={() => {
-              void (async () => {
-                if (!deployPrefs) return;
-                const next = !(deployPrefs.autoUpdate !== false);
-                setDeployBusy(true);
-                try {
-                  const prefs = await patchDeployPrefs({ autoUpdate: next });
-                  setDeployPrefs(prefs);
-                  toast({
-                    title: next ? "Auto-update on" : "Auto-update off",
-                    detail: next
-                      ? "New commits deploy automatically."
-                      : "Approve updates from the Changes tab.",
-                    tone: next ? "ok" : "warn",
-                    kind: "event",
-                  });
-                } catch (e) {
-                  toast({
-                    title: "Couldn’t save update pref",
-                    detail: (e as Error).message,
-                    tone: "danger",
-                    kind: "fail",
-                  });
-                } finally {
-                  setDeployBusy(false);
-                }
-              })();
-            }}
-            className={`relative h-5 w-9 shrink-0 rounded-full border transition-colors ${
-              deployPrefs?.autoUpdate !== false
-                ? "border-ok/70 bg-ok/30"
-                : "border-grid bg-panel"
-            } disabled:opacity-50`}
-          >
-            <span
-              className={`absolute top-0.5 left-0.5 h-3.5 w-3.5 rounded-full bg-fg transition-transform ${
-                deployPrefs?.autoUpdate !== false ? "translate-x-4" : ""
-              }`}
-            />
-          </button>
-        </div>
-      </Panel>
       {(() => {
         const rpcOk = secretEnv.find((r) => r.key === "RPC_URL")?.set
           || setup?.hasRpc;

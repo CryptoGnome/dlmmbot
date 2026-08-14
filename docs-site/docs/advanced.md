@@ -145,7 +145,7 @@ pm2 start deploy/ecosystem.config.cjs --only meteora-deploy
 pm2 save
 ```
 
-Auto-update is **on by default**. To review commits before they land: Settings → Wallet & secrets → turn **Auto-update** off. When GitHub is ahead, open **Changes** and click the checkmark (**Approve**) — the watcher then pulls that tip.
+Auto-update is **on by default**. To review commits before they land: flip the **Auto on/off** switch next to the GitHub build pill in the dashboard header. When GitHub is ahead, open **Changes** and click the checkmark (**Approve**) — the watcher then pulls that tip.
 
 ::: tip
 Don’t SCP a dirty tree and expect CURRENT — push + pull (or let the watcher do it).

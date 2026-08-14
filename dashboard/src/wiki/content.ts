@@ -488,7 +488,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           { title: "Research", text: "People we studied — not trade signals.", icon: "book", tone: "fg" },
           { title: "Wiki", text: "This guided tour.", icon: "bot", tone: "ok" },
           { title: "Changes", text: "Pending Git updates + Approve if auto-update is off.", icon: "refresh", tone: "warn" },
-          { title: "Settings", text: "Knobs + Profiles (official / local / community) + wallet vault + auto-update. See Wiki → Settings profiles.", icon: "lock", tone: "fg" },
+          { title: "Settings", text: "Knobs + Profiles (official / local / community) + wallet vault. See Wiki → Settings profiles.", icon: "lock", tone: "fg" },
         ],
       },
       {
@@ -501,7 +501,8 @@ export const WIKI_SECTIONS: WikiSection[] = [
           "ON/OFF = soft pause (no trades; positions stay open). HALT = emergency close-all (confirm with dash token).",
           "HB = farmer process heartbeat. WS = this page’s live feed.",
           "PAPER / LIVE = mode. BRAKE appears when the cluster brake paused entries.",
-          "Build pill = are we current with GitHub? Host name sits on the right.",
+          "Build pill = are we current with GitHub? Auto on/off switch sits next to it (host pulls vs Changes → Approve).",
+          "Host name (and wallet chip when known) sit on the right.",
         ],
       },
     ],
@@ -518,12 +519,12 @@ export const WIKI_SECTIONS: WikiSection[] = [
         items: [
           {
             title: "Auto-update ON (default)",
-            text: "Deploy watcher pulls when GitHub is ahead, rebuilds, restarts.",
+            text: "Header switch next to the build pill. Deploy watcher pulls when GitHub is ahead, rebuilds, restarts.",
             icon: "refresh",
           },
           {
             title: "Auto-update OFF",
-            text: "You’ll see BEHIND — open Changes, read risk chips, hit Approve.",
+            text: "Flip the same header switch. You’ll see BEHIND / APPROVE — open Changes, read risk chips, hit Approve.",
             icon: "lock",
           },
           {
