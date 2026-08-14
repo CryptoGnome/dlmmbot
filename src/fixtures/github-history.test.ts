@@ -31,4 +31,15 @@ describe("github-history", () => {
     expect(c.risk).toContain("deploy");
     expect(c.ts).toBe(Math.floor(Date.parse("2026-08-14T12:00:00Z") / 1000));
   });
+
+  it("uses merge PR body line as subject", () => {
+    const c = normalizeGithubCommit({
+      sha: "abcdef0123456789abcdef0123456789abcdef01",
+      commit: {
+        message: "Merge pull request #61 from x/release/v0.3.12\n\nRelease v0.3.12 — SIGTERM exit 0",
+        committer: { date: "2026-08-14T12:00:00Z" },
+      },
+    });
+    expect(c.subject).toBe("Release v0.3.12 — SIGTERM exit 0");
+  });
 });

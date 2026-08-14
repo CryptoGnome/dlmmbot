@@ -45,6 +45,15 @@ export interface LiveWatch {
       /** strategy | deps | deploy | core | dash | docs */
       risk?: string[];
     }>;
+    /** Recent GitHub releases (tag + operator summary) for Changes. */
+    releases?: Array<{
+      tag: string;
+      name: string;
+      summary: string | null;
+      at: string | null;
+      ts: number | null;
+      url: string | null;
+    }>;
     /** PM2 auto-deploy on by default; off = approve from Changes. */
     auto_update?: boolean;
     approve_sha?: string | null;

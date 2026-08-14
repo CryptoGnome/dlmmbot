@@ -1,0 +1,18 @@
+---
+description: Release / PR copy must be operator-readable on Changes
+globs:
+alwaysApply: true
+---
+
+# Operator-facing releases & PRs
+
+The dashboard **Changes** tab shows GitHub releases + commit subjects. Operators should see **what changed** at a glance — not `Merge pull request #N from …/release/vX.Y.Z` or a bare `Release vX.Y.Z`.
+
+## When cutting a release or opening develop→main / release PRs
+
+1. **Commit**: `Release vX.Y.Z — <operator one-liner>` (never subject-only `Release vX.Y.Z`).
+2. **PR title**: same one-liner (or `Release vX.Y.Z — …`). Body = short bullets for operators (dashboard / bot / deploy impact).
+3. **`gh release create`**: title `vX.Y.Z — <one-liner>`; notes = the same bullets. Do not ship empty / “Semver bump only” notes. `--generate-notes` may follow, but lead with plain language.
+4. Prefer **squash** for feature PRs so history is the meaningful title.
+
+Full flow: `RELEASE.md`.
