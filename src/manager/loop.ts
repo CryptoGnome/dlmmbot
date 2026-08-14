@@ -7,7 +7,7 @@ import { alert, type AlertKind } from "../alerts.js";
 import { blacklist, getDb, now, recordDecision, REALIZED_PNL_SQL, logError, installProcessErrorHooks } from "../db/db.js";
 import type { Executor } from "../executor/executor.js";
 import { LiveExecutor } from "../executor/live.js";
-import { executeProfitBurn, profitBurnSpendSol, accrueProfitBurn, writeProfitBurnAccrued } from "../executor/profitBurn.js";
+import { executeProfitBurn, profitBurnSpendSol, accrueProfitBurn, readProfitBurnAccrued, writeProfitBurnAccrued } from "../executor/profitBurn.js";
 import { PaperExecutor } from "../executor/paper.js";
 import { rollupDaily } from "../pnl/rollup.js";
 import { fetchSummary } from "../vetting/rugcheck.js";
@@ -225,12 +225,31 @@ async function maybeProfitBurn(
       (accrued < cfg.min_sol ? ` (need ${cfg.min_sol} to burn)` : ""),
   );
 
+  await flushProfitBurn(exec, {
+    measuredPnlSol: measuredPnl,
+    positionId: pos.id,
+    symbol: pos.symbol,
+  });
+}
+
+/** If the burn pot is ≥ min_sol, buy+burn now (also used after backfill / between closes). */
+async function flushProfitBurn(
+  exec: Executor,
+  ctx?: { measuredPnlSol: number; positionId: number; symbol: string },
+): Promise<void> {
+  const cfg = config().profit_burn;
+  if (!cfg?.enabled) return;
+  const accrued = readProfitBurnAccrued();
   if (accrued < cfg.min_sol) return;
 
   if (exec.mode !== "live" || !(exec instanceof LiveExecutor)) {
     getDb().prepare(
       "INSERT INTO ledger (ts, kind, sol, note) VALUES (?, 'profit_burn_paper', ?, ?)",
-    ).run(now(), accrued, `pot ${accrued.toFixed(6)} from pos#${pos.id} ${pos.symbol} (paper — not sent)`);
+    ).run(
+      now(),
+      accrued,
+      `pot ${accrued.toFixed(6)}${ctx ? ` from pos#${ctx.positionId} ${ctx.symbol}` : ""} (paper — not sent)`,
+    );
     writeProfitBurnAccrued(0);
     console.log(
       `[profit_burn] paper: would spend pot ${accrued.toFixed(4)} SOL → burn ${cfg.mint.slice(0, 8)}…`,
@@ -242,13 +261,13 @@ async function maybeProfitBurn(
     connection: exec.connection,
     wallet: exec.wallet,
     spendSol: accrued,
-    measuredPnlSol: measuredPnl,
-    positionId: pos.id,
-    symbol: pos.symbol,
+    measuredPnlSol: ctx?.measuredPnlSol ?? accrued,
+    positionId: ctx?.positionId ?? 0,
+    symbol: ctx?.symbol ?? "pot",
   });
   if (!result) {
     console.error(
-      `[profit_burn] swap failed with pot ${accrued.toFixed(6)} SOL still accrued — will retry on next winner`,
+      `[profit_burn] swap failed with pot ${accrued.toFixed(6)} SOL still accrued — will retry later`,
     );
     return;
   }
@@ -259,10 +278,9 @@ async function maybeProfitBurn(
   );
   await alert(
     "profit_burn",
-    `${pos.symbol} pos#${pos.id}: profit burn pot ${result.spentSol.toFixed(4)} SOL ` +
-      `(last leg ${(cfg.profit_frac * 100).toFixed(0)}% of +${measuredPnl.toFixed(4)})\n` +
-      `burned → ${cfg.mint}\n` +
-      `swap ${result.swapSig}\nburn ${result.burnSig}`,
+    `profit burn pot ${result.spentSol.toFixed(4)} SOL` +
+      (ctx ? ` (last leg ${ctx.symbol} pos#${ctx.positionId})` : "") +
+      `\nburned → ${cfg.mint}\nswap ${result.swapSig}\nburn ${result.burnSig}`,
   );
 }
 
@@ -636,6 +654,8 @@ export async function managePositions(exec: Executor): Promise<void> {
   } catch (e) {
     console.error("[pnl] rollup failed:", (e as Error).message);
   }
+  await flushProfitBurn(exec).catch((e) =>
+    console.error("[profit_burn] flush failed:", (e as Error).message));
 }
 
 /** Remaining sleep so short ticks keep poll cadence; long ticks never stack extra delay. */
