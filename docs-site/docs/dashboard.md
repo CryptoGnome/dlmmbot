@@ -69,7 +69,7 @@ Structured failures over WebSocket. **Transient** (API blip), **Degraded** (part
 
 ### Changes (Changelog)
 
-Pending git updates with risk chips (`strategy` / `deps` / `deploy` / `core` / `dash` / `docs`). Auto-update **on** (default): watcher pulls, rebuilds, restarts. **Off**: BEHIND + **Approve** pulls that tip.
+Pending git updates with risk chips (`strategy` / `deps` / `deploy` / `core` / `dash` / `docs`). On Railway/PaaS the list comes from the GitHub API (optional `GITHUB_TOKEN` for private repos). Auto-update **on** (default): watcher pulls, rebuilds, restarts. **Off**: BEHIND + **Approve** pulls that tip.
 
 ### Settings
 
