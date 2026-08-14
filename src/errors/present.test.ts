@@ -34,4 +34,15 @@ describe("presentError", () => {
     expect(p.label).toBe("RPC offline");
     expect(p.kind).toBe("incident");
   });
+
+  it("labels GMGN rate limits as degraded", () => {
+    const p = presentError({
+      source: "gmgn",
+      code: "rate_limit",
+      level: "warn",
+      message: "GMGN rate limited — trending/vetting paused until reset",
+    });
+    expect(p.kind).toBe("degraded");
+    expect(p.label).toBe("GMGN rate limited");
+  });
 });

@@ -46,6 +46,8 @@ describe("gmgn rate-limit helpers", () => {
     const now = 1_700_000_000_000;
     expect(parseGmgnResetMs('{"error":"RATE_LIMIT_BANNED","reset_at":1700000060}', now))
       .toBe(1_700_000_060_000);
+    expect(parseGmgnResetMs('{"code":429,"error":"RATE_LIMIT_BANNED","reset_at":1700000060}', now))
+      .toBe(1_700_000_060_000);
     expect(parseGmgnResetMs("X-RateLimit-Reset: 1700000099", now)).toBe(1_700_000_099_000);
     expect(parseGmgnResetMs("nope", now)).toBeNull();
   });

@@ -17,10 +17,21 @@ import {
 import { readHaltState } from "./halt.mjs";
 import { readPauseState } from "./pause.mjs";
 import { readWalletMeta } from "./wallet-crypto.mjs";
+import {
+  envCommitMessage,
+  headSourceLabel,
+  resolveDeployBranch,
+  resolveHeadSha,
+  safeBranch,
+  shasMatch,
+  shortSha,
+  syncFromShas,
+} from "./git-source.mjs";
+
+// Re-export for tests / external callers
+export { envCommitSha, safeBranch, shortSha, shasMatch, syncFromShas } from "./git-source.mjs";
 
 const require = createRequire(import.meta.url);
-
-/** Solana pubkeys are base58, 32–44 chars. Reject anything else before use. */
 const BASE58_PUBKEY_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 /** First env var whose value is a well-formed base58 pubkey (defense in depth —
@@ -137,41 +148,6 @@ function gitOk(root, args) {
   }
 }
 
-/** Branch names come from env — restrict to sane git ref characters (and never a leading "-"). */
-export function safeBranch(raw) {
-  const b = (raw ?? "").trim();
-  return /^[A-Za-z0-9][\w./-]*$/.test(b) ? b : "main";
-}
-
-/** Platform-injected commit (Railway has no git binary / often no .git at runtime). */
-export function envCommitSha() {
-  const s = (
-    process.env.RAILWAY_GIT_COMMIT_SHA
-    || process.env.SOURCE_COMMIT
-    || process.env.COMMIT_SHA
-    || ""
-  ).trim();
-  return /^[0-9a-f]{7,40}$/i.test(s) ? s : null;
-}
-
-export function shortSha(full) {
-  if (!full) return null;
-  return full.length > 7 ? full.slice(0, 7) : full;
-}
-
-/** Full SHAs or abbreviated — Railway env vs GitHub tip. */
-export function shasMatch(a, b) {
-  if (!a || !b) return false;
-  const x = String(a).toLowerCase();
-  const y = String(b).toLowerCase();
-  return x === y || x.startsWith(y) || y.startsWith(x);
-}
-
-export function syncFromShas(headFull, originFull) {
-  if (!headFull || !originFull) return "unknown";
-  return shasMatch(headFull, originFull) ? "current" : "behind";
-}
-
 function parseGithubRepo(repoUrl) {
   const m = /github\.com[/:]([^/]+)\/([^/#?\s]+)/i.exec(repoUrl || "");
   if (!m) return null;
@@ -223,32 +199,39 @@ function scheduleGithubTip(repoUrl, branch) {
 
 /**
  * Local checkout vs origin/$BRANCH (after a throttled fetch).
- * On Railway (no git): uses RAILWAY_GIT_COMMIT_SHA + GitHub API tip.
+ * PaaS: platform env SHA + GitHub API tip. VPS PM2: local git + origin fetch.
  * sync: current | behind | ahead | diverged | unknown
  */
 function buildGitInfo(root) {
-  const branch = safeBranch(process.env.DEPLOY_BRANCH || process.env.RAILWAY_GIT_BRANCH);
+  const branch = resolveDeployBranch();
+  const headRes = resolveHeadSha(root, git);
+  const headSource = headRes.source;
+  const trustLocalGit = headSource === "git";
+
   const nowMs = Date.now();
-  if (nowMs - lastOriginFetchAt >= ORIGIN_FETCH_MS) {
+  if (trustLocalGit && nowMs - lastOriginFetchAt >= ORIGIN_FETCH_MS) {
     lastOriginFetchAt = nowMs;
     lastOriginFetchOk = gitOk(root, ["fetch", "origin", branch, "--quiet"]);
   }
 
-  let headFull = git(root, ["rev-parse", "HEAD"]) || envCommitSha();
-  let head = git(root, ["rev-parse", "--short", "HEAD"]) || shortSha(headFull);
-  let message = git(root, ["log", "-1", "--pretty=%s"])
-    || (process.env.RAILWAY_GIT_COMMIT_MESSAGE || "").trim().split("\n")[0].slice(0, 120)
-    || null;
-  let describe = git(root, ["describe", "--always", "--dirty"]) || head;
-  // Ignore untracked clutter from SCP/deploy — only tracked diffs are "dirty".
-  // No git → not dirty (Railway image has no working tree to dirty).
-  const dirty = git(root, ["rev-parse", "HEAD"])
+  let headFull = headRes.sha;
+  let head = headRes.short;
+  let message = trustLocalGit
+    ? git(root, ["log", "-1", "--pretty=%s"])
+    : null;
+  message ||= envCommitMessage();
+  let describe = trustLocalGit
+    ? (git(root, ["describe", "--always", "--dirty"]) || head)
+    : head;
+  const dirty = trustLocalGit
     ? !!(git(root, ["status", "--porcelain", "--untracked-files=no"]))
     : false;
 
-  let originFull = git(root, ["rev-parse", `refs/remotes/origin/${branch}`]);
+  let originFull = trustLocalGit
+    ? git(root, ["rev-parse", `refs/remotes/origin/${branch}`])
+    : null;
   let origin = originFull
-    ? (git(root, ["rev-parse", "--short", `refs/remotes/origin/${branch}`]) || originFull.slice(0, 7))
+    ? (git(root, ["rev-parse", "--short", `refs/remotes/origin/${branch}`]) || shortSha(originFull))
     : null;
 
   let version = "0.0.0";
@@ -262,7 +245,7 @@ function buildGitInfo(root) {
     }
   } catch { /* */ }
 
-  // No local origin ref (common on Railway) — poll GitHub for the branch tip.
+  // No local origin ref (PaaS / no git) — poll GitHub for the branch tip.
   if (!originFull) {
     scheduleGithubTip(repoUrl, branch);
     if (githubTip.branch === branch && githubTip.sha) {
@@ -277,9 +260,9 @@ function buildGitInfo(root) {
   let sync = "unknown";
   if (headFull && originFull) {
     if (shasMatch(headFull, originFull)) sync = "current";
-    else if (gitOk(root, ["merge-base", "--is-ancestor", headFull, originFull])) sync = "behind";
-    else if (gitOk(root, ["merge-base", "--is-ancestor", originFull, headFull])) sync = "ahead";
-    else if (!git(root, ["rev-parse", "HEAD"])) sync = syncFromShas(headFull, originFull);
+    else if (trustLocalGit && gitOk(root, ["merge-base", "--is-ancestor", headFull, originFull])) sync = "behind";
+    else if (trustLocalGit && gitOk(root, ["merge-base", "--is-ancestor", originFull, headFull])) sync = "ahead";
+    else if (!trustLocalGit) sync = syncFromShas(headFull, originFull);
     else sync = "diverged";
   }
 
@@ -324,10 +307,12 @@ function buildGitInfo(root) {
     return order.filter((t) => tags.has(t));
   }
 
-  const recent = parseLog(git(root, ["log", "-20", "--pretty=format:%h%x09%ct%x09%s"]));
+  const recent = trustLocalGit
+    ? parseLog(git(root, ["log", "-20", "--pretty=format:%h%x09%ct%x09%s"]))
+    : [];
   let pending = [];
   let behindCount = 0;
-  if (sync === "behind" && originFull) {
+  if (sync === "behind" && originFull && trustLocalGit) {
     behindCount = Number(git(root, ["rev-list", "--count", `HEAD..${originFull}`])) || 0;
     pending = parseLog(git(root, ["log", `HEAD..${originFull}`, "-20", "--pretty=format:%h%x09%ct%x09%s"]))
       .map((c) => ({ ...c, risk: riskTagsForSha(c.sha) }));
@@ -343,6 +328,8 @@ function buildGitInfo(root) {
     version,
     branch,
     head,
+    head_source: headSource,
+    head_source_label: headSourceLabel(headSource),
     message,
     describe,
     dirty,
@@ -1240,6 +1227,8 @@ export function buildLiveBookSnapshot(root) {
         version: gitInfo.version,
         branch: gitInfo.branch,
         head: gitInfo.head,
+        head_source: gitInfo.head_source,
+        head_source_label: gitInfo.head_source_label,
         message: gitInfo.message,
         describe: gitInfo.describe,
         dirty: gitInfo.dirty,

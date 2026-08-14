@@ -1,5 +1,5 @@
 import { config, env } from "../config.js";
-import { gmgnCli } from "../scanner/gmgn.js";
+import { gmgnCli, gmgnIsBanned } from "../scanner/gmgn.js";
 
 // P0 wallet-dump / new-whale triggers (STRATEGY.md §4) via GMGN holder polling.
 // Top holders snapshotted every holder_poll_s; confirm-then-fire against the
@@ -24,6 +24,7 @@ export function clearHolderWatch(posId: number): void {
 }
 
 async function fetchHolderPct(mint: string): Promise<Map<string, number> | null> {
+  if (gmgnIsBanned()) return null;
   try {
     const raw = await gmgnCli(["token", "holders", "--chain", "sol", "--address", mint, "--limit", "20", "--raw"]);
     const j = JSON.parse(raw) as Record<string, unknown>;

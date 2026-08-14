@@ -279,7 +279,7 @@ Thresholds:
 | `bonus_sustained` / `bonus_emerging` / `bonus_fading` | `8` / `4` / `3` | Score bonus: trending in both windows / 5m only / 1h only |
 | `require_renounced` | `true` | Trending entry says mint/freeze not renounced → pre-vet skip |
 
-GMGN calls are optional enrichment. The bot serializes `gmgn-cli` (one in flight), paces ~1 req/s with route weights, and parks on HTTP 429 until the documented reset — see [API keys → GMGN](./api-keys#gmgn-api-key-gmgn_api_key-optional).
+GMGN calls are optional enrichment. The bot serializes `gmgn-cli` (one in flight), paces ~1 req/s with route weights, and parks ~5 minutes on HTTP 429 (or until `reset_at`) — see [API keys → GMGN](./api-keys#gmgn-api-key-gmgn_api_key-optional).
 
 ## `[apis]`
 

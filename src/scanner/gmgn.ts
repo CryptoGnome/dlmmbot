@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { config, env } from "../config.js";
+import { logError } from "../db/db.js";
 
 const execFileP = promisify(execFile);
 
@@ -37,15 +38,20 @@ export interface GmgnPresence {
 }
 
 let cache: { at: number; byMint: Map<string, GmgnPresence> } | null = null;
-const CACHE_MS = 120_000;
+const CACHE_MS = 300_000; // 5m — trending is enrichment, not tick-critical
 
-/** Documented bucket (gmgn-skills cli-usage). */
-export const GMGN_BUCKET_RATE = 10;
-export const GMGN_BUCKET_CAP = 10;
-/** Floor gap after a finished call — OpenAPI default ~1 req/s. */
+/** Documented bucket (gmgn-skills, 2026): rate=20 capacity=20 per route family. */
+export const GMGN_BUCKET_RATE = 20;
+export const GMGN_BUCKET_CAP = 20;
+/** Floor gap after a finished call — stay under ~1 req/s on weight-1 routes. */
 const MIN_GAP_MS = 1_100;
-const DEFAULT_BAN_MS = 120_000;
+/** GMGN bans are typically 5m when reset_at is missing from the CLI payload. */
+const DEFAULT_BAN_MS = 300_000;
 const SHORT_BAN_WAIT_MS = 5_000;
+/** Reject new jobs during an active ban — never queue work that will extend it. */
+const BAN_REJECT_MS = 250;
+
+let banLoggedUntil = 0;
 
 type Job = {
   args: string[];
@@ -76,16 +82,46 @@ export function gmgnRouteWeight(args: string[]): number {
 
 /** Parse ban end from CLI stdout/stderr / JSON body. */
 export function parseGmgnResetMs(text: string, now = Date.now()): number | null {
+  try {
+    const j = JSON.parse(text) as { reset_at?: number | string };
+    if (j.reset_at != null) {
+      const parsed = parseResetEpoch(j.reset_at, now);
+      if (parsed) return parsed;
+    }
+  } catch { /* not JSON — fall through to regex */ }
   const m =
     /(?:reset_at|X-RateLimit-Reset|RateLimit-Reset)["'\s:=]+(\d{10,13})/i.exec(text)
     ?? /reset(?:s)?\s+(?:at|in)\s+(\d{10,13})/i.exec(text);
-  if (!m) return null;
-  let n = Number(m[1]);
+  if (!m?.[1]) return null;
+  return parseResetEpoch(m[1], now);
+}
+
+function parseResetEpoch(raw: number | string, now: number): number | null {
+  let n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return null;
-  if (n < 1e12) n *= 1000; // seconds → ms
+  if (n < 1e12) n *= 1000;
   if (n < now) return null;
-  if (n > now + 30 * 60_000) return null; // ignore absurd far-future
+  if (n > now + 30 * 60_000) return null;
   return n;
+}
+
+function logBanOnce(): void {
+  if (bannedUntil <= banLoggedUntil) return;
+  banLoggedUntil = bannedUntil;
+  const sec = Math.ceil((bannedUntil - Date.now()) / 1000);
+  const msg = "GMGN rate limited — trending/vetting paused until reset";
+  logError({
+    source: "gmgn",
+    code: "rate_limit",
+    level: "warn",
+    message: msg,
+    dedupeSec: Math.min(Math.max(sec, 60), 600),
+    detail: { pause_sec: sec },
+  });
+}
+
+export function gmgnIsBanned(): boolean {
+  return Date.now() < bannedUntil;
 }
 
 function isRateLimitText(text: string): boolean {
@@ -136,7 +172,11 @@ async function runOne(args: string[]): Promise<string> {
     });
     const combined = `${stdout}\n${stderr ?? ""}`;
     if (isRateLimitText(combined)) {
-      bannedUntil = parseGmgnResetMs(combined) ?? Date.now() + DEFAULT_BAN_MS;
+      bannedUntil = Math.max(
+        bannedUntil,
+        parseGmgnResetMs(combined) ?? Date.now() + DEFAULT_BAN_MS,
+      );
+      logBanOnce();
       throw new Error("gmgn 429");
     }
     return stdout;
@@ -148,6 +188,8 @@ async function runOne(args: string[]): Promise<string> {
         bannedUntil,
         parseGmgnResetMs(text) ?? Date.now() + DEFAULT_BAN_MS,
       );
+      logBanOnce();
+      throw new Error("gmgn cooling down after 429");
     }
     throw e;
   } finally {
@@ -177,6 +219,10 @@ async function pump(): Promise<void> {
 
 /** Paced, 429-aware GMGN CLI call — the only path any module may use. */
 export async function gmgnCli(args: string[]): Promise<string> {
+  const rem = bannedUntil - Date.now();
+  if (rem > BAN_REJECT_MS) {
+    return Promise.reject(new Error("gmgn cooling down after 429"));
+  }
   return new Promise((resolve, reject) => {
     queue.push({ args, resolve, reject });
     void pump();
@@ -188,6 +234,7 @@ export function _resetGmgnPaceForTests(): void {
   queue = [];
   pumping = false;
   bannedUntil = 0;
+  banLoggedUntil = 0;
   nextSlotAt = 0;
   tokens = GMGN_BUCKET_CAP;
   lastRefillAt = Date.now();
@@ -243,10 +290,10 @@ export async function trendingByMint(): Promise<Map<string, GmgnPresence>> {
   const g = config().gmgn;
   if (!g.enabled || !env().gmgnApiKey) return new Map();
   if (cache && Date.now() - cache.at < CACHE_MS) return cache.byMint;
+  if (gmgnIsBanned()) return cache?.byMint ?? new Map();
 
   const byMint = new Map<string, GmgnPresence>();
-  // Sequential awaits — clearer + never stampede the queue with N parallel jobs
-  // that then sit banned after the first 429.
+  // Sequential — never stampede; stop all windows on first 429/cooldown.
   for (const iv of g.intervals) {
     try {
       const tokens = await fetchInterval(iv, g.min_liquidity_usd);
@@ -256,7 +303,18 @@ export async function trendingByMint(): Promise<Map<string, GmgnPresence>> {
         else byMint.set(t.address, { token: t, intervals: new Set([iv]) });
       }
     } catch (e) {
-      console.error(`[gmgn] trending ${iv} fetch failed (continuing without):`, (e as Error).message);
+      const msg = (e as Error).message;
+      if (!/429|cooling down|RATE_LIMIT/i.test(msg)) {
+        logError({
+          source: "gmgn",
+          code: "trending_fetch",
+          level: "warn",
+          message: `trending ${iv}: ${msg}`.slice(0, 800),
+          dedupeSec: 300,
+          detail: { interval: iv },
+        });
+      }
+      if (/429|cooling down|RATE_LIMIT/i.test(msg)) break;
     }
   }
 
@@ -298,7 +356,7 @@ export function parseTokenSecurity(raw: string): GmgnSecurity | null {
 
 /** Token security cross-check. null = unavailable (no key / API failure / unrecognizable payload) — vet.ts records the blind spot. */
 export async function tokenSecurity(mint: string): Promise<GmgnSecurity | null> {
-  if (!env().gmgnApiKey) return null;
+  if (!env().gmgnApiKey || gmgnIsBanned()) return null;
   const hit = secCache.get(mint);
   if (hit && Date.now() - hit.at < ENRICH_TTL_MS) return hit.v;
   try {
@@ -322,7 +380,7 @@ export interface TraderTagStats {
 
 /** Behavioral tags on a token's top traders. null = unavailable — degrades silently. */
 export async function tokenTraderTags(mint: string): Promise<TraderTagStats | null> {
-  if (!env().gmgnApiKey) return null;
+  if (!env().gmgnApiKey || gmgnIsBanned()) return null;
   const hit = tagCache.get(mint);
   if (hit && Date.now() - hit.at < ENRICH_TTL_MS) return hit.v;
   try {

@@ -120,6 +120,24 @@ export function presentError(input: {
     }
   }
 
+  if (source === "gmgn" && code === "rate_limit") {
+    return {
+      label: "GMGN rate limited",
+      kind: "degraded",
+      level: "warn",
+      hint: "Optional trending/vetting paused ~5m — Meteora scanning continues. Check for two bots sharing one GMGN key.",
+    };
+  }
+
+  if (source === "gmgn" && code === "trending_fetch") {
+    return {
+      label: "GMGN trending unavailable",
+      kind: "degraded",
+      level: "warn",
+      hint: "One trending window failed — scan continues without that bonus.",
+    };
+  }
+
   if (isTimeout(msg)) {
     if (stack.includes("meteora") || stack.includes("scanner/")) {
       return {

@@ -159,7 +159,7 @@ pm2 save
 
 Auto-update is **on by default**. To review first: flip **Auto on/off** next to the GitHub build pill. When GitHub is ahead, **Changes → Approve**. Don’t SCP a dirty tree and expect CURRENT — push + pull.
 
-**Railway:** the image often has no `git` binary, so the pill uses `RAILWAY_GIT_COMMIT_SHA` and checks GitHub for the branch tip. `GIT?` / a missing SHA usually means that env var isn’t set (redeploy from GitHub) or the tip fetch hasn’t completed yet.
+**Build pill:** auto-detects where you’re hosted. **PM2 / VPS** — local `git` checkout vs `origin/$DEPLOY_BRANCH`. **Railway / Vercel / Render / etc.** — platform deploy SHA (`RAILWAY_GIT_COMMIT_SHA`, `VERCEL_GIT_COMMIT_SHA`, …) vs GitHub branch tip (no local git needed). Hover the pill for the SHA source. `GIT?` means no SHA resolved yet (redeploy or wait for GitHub tip). Auto on/off is next to the pill; when GitHub is ahead, use **Changes → Approve**. Don’t SCP a dirty tree and expect CURRENT — push + pull.
 
 ## Dashboard from outside
 

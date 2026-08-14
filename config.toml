@@ -351,7 +351,7 @@ bonus_emerging = 4         # 5m only — catching fire now, not yet proven
 bonus_fading = 3           # 1h only — was hot, current momentum decaying
 require_renounced = true   # trending entry says mint/freeze not renounced -> pre-vet skip
 # Rate limits: one serial CLI queue, ~1 req/s floor, weight-aware bucket (holders/traders=5).
-# On 429 we park until X-RateLimit-Reset — never spam the cooldown.
+# On 429 we park ~5m (or until reset_at) — never spam; a second bot on the same key doubles load.
 
 [apis]
 meteora_datapi = "https://dlmm.datapi.meteora.ag"
