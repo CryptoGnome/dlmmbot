@@ -4,15 +4,30 @@
  *   DASH_TOKEN=… node deploy/dashboard-server.mjs
  *   http://HOST:8787/?token=…
  *   ws://HOST:8787/ws?token=…
+ *
+ * SECURITY / TRANSPORT
+ * This server speaks plain HTTP — it does not terminate TLS itself. The bearer
+ * token and anything pasted into Settings (RPC URLs, wallet keys) travel in
+ * cleartext between browser and server. Safe setups:
+ *   - Bind loopback only (DASH_HOST=127.0.0.1) and reach it via SSH tunnel:
+ *       ssh -L 8787:127.0.0.1:8787 user@host
+ *   - Or keep the default 0.0.0.0 bind strictly on a trusted LAN.
+ *   - For anything internet-facing, put a TLS reverse proxy in front
+ *     (Caddy/nginx/Cloudflare Tunnel; Railway's edge already provides HTTPS).
+ * A startup warning is logged whenever the bind is non-loopback.
  */
 import { createServer } from "node:http";
 import { readFileSync, existsSync, statSync } from "node:fs";
-import { resolve, dirname, extname, join } from "node:path";
+import { resolve, dirname, extname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { timingSafeEqual } from "node:crypto";
 import { WebSocketServer } from "ws";
-import { buildLiveBookSnapshot } from "./lib/live-book-snapshot.mjs";
+import { buildLiveBookSnapshot, safeBranch } from "./lib/live-book-snapshot.mjs";
 import { buildHistorySnapshot } from "./lib/history-snapshot.mjs";
-import { applyConfigUpdates, applyEnvUpdates, flattenConfig, parseConfig, readEnvMasked } from "./lib/config-edit.mjs";
+import {
+  applyConfigUpdates, applyEnvUpdates, flattenConfig, parseConfig, readEnvMasked,
+  queueConfigWrite,
+} from "./lib/config-edit.mjs";
 import {
   generateAndEncrypt, importAndEncrypt, unlockEncryptedWallet,
   setupStatus, writeSetupState, hasEncryptedWallet,
@@ -29,7 +44,7 @@ import {
 } from "./lib/profiles.mjs";
 import { requestHalt, clearHalt, readHaltState } from "./lib/halt.mjs";
 import { requestPause, clearPause, readPauseState } from "./lib/pause.mjs";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const root = resolve(process.env.FARMER_ROOT ?? resolve(__dir, ".."));
@@ -63,30 +78,61 @@ const MIME = {
   ".woff2": "font/woff2",
 };
 
+/** Constant-time string compare (length mismatch short-circuits, which only leaks length). */
+function safeEqual(a, b) {
+  const ab = Buffer.from(String(a ?? ""), "utf8");
+  const bb = Buffer.from(String(b ?? ""), "utf8");
+  if (ab.length !== bb.length || ab.length === 0) return false;
+  return timingSafeEqual(ab, bb);
+}
+
 function authorized(req, url) {
   if (!token) return false;
   const q = url.searchParams.get("token");
-  if (q && q === token) return true;
+  if (q && safeEqual(q, token)) return true;
   const h = req.headers.authorization ?? "";
-  if (h === `Bearer ${token}`) return true;
+  if (safeEqual(h, `Bearer ${token}`)) return true;
   return false;
 }
 
 function sendJson(res, status, body) {
-  const raw = JSON.stringify(body);
-  res.writeHead(status, {
-    "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store",
-    "Access-Control-Allow-Origin": "*",
-  });
-  res.end(raw);
+  try {
+    const raw = JSON.stringify(body);
+    res.writeHead(status, {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
+    });
+    res.end(raw);
+  } catch { /* socket already gone (e.g. oversized body dropped) */ }
 }
 
-function readBody(req) {
+const MAX_BODY_BYTES = 1024 * 1024; // 1 MB — settings/profile payloads are tiny
+
+function readBody(req, res) {
   return new Promise((resolveBody, reject) => {
     const chunks = [];
-    req.on("data", (c) => chunks.push(c));
+    let size = 0;
+    let done = false;
+    req.on("data", (c) => {
+      if (done) return;
+      size += c.length;
+      if (size > MAX_BODY_BYTES) {
+        done = true;
+        chunks.length = 0;
+        const err = new Error("request body too large (1 MB max)");
+        err.statusCode = 413;
+        reject(err);
+        // Stop reading (TCP backpressure), let the 413 flush, then drop the
+        // connection instead of draining an unbounded upload.
+        req.pause();
+        res?.once("finish", () => req.destroy());
+        setTimeout(() => req.destroy(), 2_000).unref();
+        return;
+      }
+      chunks.push(c);
+    });
     req.on("end", () => {
+      if (done) return;
       try {
         const raw = Buffer.concat(chunks).toString("utf8");
         resolveBody(raw ? JSON.parse(raw) : {});
@@ -94,7 +140,7 @@ function readBody(req) {
         reject(e);
       }
     });
-    req.on("error", reject);
+    req.on("error", (e) => { if (!done) reject(e); });
   });
 }
 
@@ -136,11 +182,9 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
   if (req.method === "OPTIONS") {
-    res.writeHead(204, {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Headers": "Authorization, Content-Type",
-      "Access-Control-Allow-Methods": "GET, PATCH, POST, OPTIONS",
-    });
+    // No CORS headers on purpose: the SPA is served same-origin by this server,
+    // so cross-origin browser access to /api/* stays blocked by default.
+    res.writeHead(204);
     res.end();
     return;
   }
@@ -187,12 +231,12 @@ const server = createServer(async (req, res) => {
 
   if (url.pathname === "/api/config" && req.method === "PATCH") {
     try {
-      const body = await readBody(req);
+      const body = await readBody(req, res);
       const updates = body?.updates ?? body;
-      const result = applyConfigUpdates(root, updates);
+      const result = await queueConfigWrite(() => applyConfigUpdates(root, updates));
       sendJson(res, 200, result);
     } catch (e) {
-      sendJson(res, 400, { error: e.message ?? String(e) });
+      sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
     }
     return;
   }
@@ -234,7 +278,7 @@ const server = createServer(async (req, res) => {
 
   if (url.pathname === "/api/profiles/local" && req.method === "POST") {
     try {
-      const body = await readBody(req);
+      const body = await readBody(req, res);
       const profile = saveLocalProfile(root, {
         name: body?.name,
         description: body?.description,
@@ -244,7 +288,7 @@ const server = createServer(async (req, res) => {
       });
       sendJson(res, 200, { ok: true, profile });
     } catch (e) {
-      sendJson(res, 400, { error: e.message ?? String(e) });
+      sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
     }
     return;
   }
@@ -254,14 +298,14 @@ const server = createServer(async (req, res) => {
       const id = decodeURIComponent(url.pathname.slice("/api/profiles/local/".length));
       sendJson(res, 200, deleteLocalProfile(root, id));
     } catch (e) {
-      sendJson(res, 400, { error: e.message ?? String(e) });
+      sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
     }
     return;
   }
 
   if (url.pathname === "/api/profiles/preview" && req.method === "POST") {
     try {
-      const body = await readBody(req);
+      const body = await readBody(req, res);
       const resolved = await resolveProfileUpdates(root, body);
       const preview = previewProfileDiff(root, resolved.updates);
       sendJson(res, 200, {
@@ -272,16 +316,16 @@ const server = createServer(async (req, res) => {
         changes: preview.changes,
       });
     } catch (e) {
-      sendJson(res, 400, { error: e.message ?? String(e) });
+      sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
     }
     return;
   }
 
   if (url.pathname === "/api/profiles/apply" && req.method === "POST") {
     try {
-      const body = await readBody(req);
+      const body = await readBody(req, res);
       const resolved = await resolveProfileUpdates(root, body);
-      const result = applyProfileUpdates(root, resolved.updates);
+      const result = await queueConfigWrite(() => applyProfileUpdates(root, resolved.updates));
       watchCache = { at: 0, data: null, building: null };
       sendJson(res, 200, {
         ok: true,
@@ -293,7 +337,7 @@ const server = createServer(async (req, res) => {
         config: result.config,
       });
     } catch (e) {
-      sendJson(res, 400, { error: e.message ?? String(e) });
+      sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
     }
     return;
   }
@@ -309,29 +353,29 @@ const server = createServer(async (req, res) => {
 
   if (url.pathname === "/api/secrets" && req.method === "PATCH") {
     try {
-      const body = await readBody(req);
+      const body = await readBody(req, res);
       const confirm = typeof body?.confirm === "string" ? body.confirm : "";
-      if (!token || confirm !== token) {
+      if (!token || !safeEqual(confirm, token)) {
         sendJson(res, 403, { error: "re-enter dash token to edit secrets" });
         return;
       }
       const updates = body?.updates ?? {};
-      const result = applyEnvUpdates(root, updates);
+      const result = await queueConfigWrite(() => applyEnvUpdates(root, updates));
       sendJson(res, 200, {
         ...result,
         note: "Wrote .env. Restart the bot (and dash if RPC/token changed) for full effect.",
       });
     } catch (e) {
-      sendJson(res, 400, { error: e.message ?? String(e) });
+      sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
     }
     return;
   }
 
   if (url.pathname === "/api/secrets/unlock" && req.method === "POST") {
     try {
-      const body = await readBody(req);
+      const body = await readBody(req, res);
       const confirm = typeof body?.confirm === "string" ? body.confirm : "";
-      if (!token || confirm !== token) {
+      if (!token || !safeEqual(confirm, token)) {
         sendJson(res, 403, { error: "wrong dash token" });
         return;
       }
@@ -345,7 +389,7 @@ const server = createServer(async (req, res) => {
         ],
       });
     } catch (e) {
-      sendJson(res, 400, { error: e.message ?? String(e) });
+      sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
     }
     return;
   }
@@ -361,7 +405,7 @@ const server = createServer(async (req, res) => {
 
   if (url.pathname === "/api/setup/complete" && req.method === "POST") {
     try {
-      const body = await readBody(req);
+      const body = await readBody(req, res);
       const state = writeSetupState({
         completed: body?.skipped ? false : true,
         skipped: !!body?.skipped,
@@ -369,26 +413,26 @@ const server = createServer(async (req, res) => {
       });
       sendJson(res, 200, { ok: true, setup: state, ...setupStatus(readEnvMasked(root)) });
     } catch (e) {
-      sendJson(res, 400, { error: e.message ?? String(e) });
+      sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
     }
     return;
   }
 
   if (url.pathname === "/api/wallet/generate" && req.method === "POST") {
     try {
-      const body = await readBody(req);
+      const body = await readBody(req, res);
       const confirm = typeof body?.confirm === "string" ? body.confirm : "";
-      if (!token || confirm !== token) {
+      if (!token || !safeEqual(confirm, token)) {
         sendJson(res, 403, { error: "re-enter dash token" });
         return;
       }
       const passphrase = typeof body?.passphrase === "string" ? body.passphrase : "";
       const overwrite = !!body?.overwrite;
       const result = generateAndEncrypt(passphrase, { overwrite });
-      applyEnvUpdates(root, {
+      await queueConfigWrite(() => applyEnvUpdates(root, {
         PUBLIC_WALLET: result.publicKey,
         WALLET_PUBKEY: result.publicKey,
-      });
+      }));
       sendJson(res, 200, {
         publicKey: result.publicKey,
         secretOnce: result.secretOnce,
@@ -396,16 +440,16 @@ const server = createServer(async (req, res) => {
         status: setupStatus(readEnvMasked(root)),
       });
     } catch (e) {
-      sendJson(res, 400, { error: e.message ?? String(e) });
+      sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
     }
     return;
   }
 
   if (url.pathname === "/api/wallet/import" && req.method === "POST") {
     try {
-      const body = await readBody(req);
+      const body = await readBody(req, res);
       const confirm = typeof body?.confirm === "string" ? body.confirm : "";
-      if (!token || confirm !== token) {
+      if (!token || !safeEqual(confirm, token)) {
         sendJson(res, 403, { error: "re-enter dash token" });
         return;
       }
@@ -413,17 +457,17 @@ const server = createServer(async (req, res) => {
       const secret = typeof body?.secret === "string" ? body.secret : "";
       const overwrite = !!body?.overwrite;
       const result = importAndEncrypt(secret, passphrase, { overwrite });
-      applyEnvUpdates(root, {
+      await queueConfigWrite(() => applyEnvUpdates(root, {
         PUBLIC_WALLET: result.publicKey,
         WALLET_PUBKEY: result.publicKey,
-      });
+      }));
       sendJson(res, 200, {
         publicKey: result.publicKey,
         note: "Imported & encrypted. Unlock with your passphrase when you want the bot to trade.",
         status: setupStatus(readEnvMasked(root)),
       });
     } catch (e) {
-      sendJson(res, 400, { error: e.message ?? String(e) });
+      sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
     }
     return;
   }
@@ -439,7 +483,7 @@ const server = createServer(async (req, res) => {
 
   if (url.pathname === "/api/deploy-prefs" && req.method === "PATCH") {
     try {
-      const body = await readBody(req);
+      const body = await readBody(req, res);
       const next = {};
       if (body?.autoUpdate != null) next.autoUpdate = !!body.autoUpdate;
       if (body?.autoUpdate === true) {
@@ -450,17 +494,17 @@ const server = createServer(async (req, res) => {
       watchCache = { at: 0, data: null, building: null };
       sendJson(res, 200, { prefs });
     } catch (e) {
-      sendJson(res, 400, { error: e.message ?? String(e) });
+      sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
     }
     return;
   }
 
   if (url.pathname === "/api/deploy-approve" && req.method === "POST") {
     try {
-      const branch = process.env.DEPLOY_BRANCH || "master";
+      const branch = safeBranch(process.env.DEPLOY_BRANCH);
       let remoteSha = null;
       try {
-        remoteSha = execSync(`git rev-parse refs/remotes/origin/${branch}`, {
+        remoteSha = execFileSync("git", ["rev-parse", `refs/remotes/origin/${branch}`], {
           cwd: root, encoding: "utf8",
         }).trim() || null;
       } catch { /* */ }
@@ -476,16 +520,16 @@ const server = createServer(async (req, res) => {
         note: "Approved — meteora-deploy will pull within a minute if the watcher is running.",
       });
     } catch (e) {
-      sendJson(res, 400, { error: e.message ?? String(e) });
+      sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
     }
     return;
   }
 
   if (url.pathname === "/api/wallet/unlock" && req.method === "POST") {
     try {
-      const body = await readBody(req);
+      const body = await readBody(req, res);
       const confirm = typeof body?.confirm === "string" ? body.confirm : "";
-      if (!token || confirm !== token) {
+      if (!token || !safeEqual(confirm, token)) {
         sendJson(res, 403, { error: "re-enter dash token" });
         return;
       }
@@ -495,11 +539,11 @@ const server = createServer(async (req, res) => {
       }
       const passphrase = typeof body?.passphrase === "string" ? body.passphrase : "";
       const unlocked = unlockEncryptedWallet(passphrase);
-      applyEnvUpdates(root, {
+      await queueConfigWrite(() => applyEnvUpdates(root, {
         WALLET_PRIVATE_KEY: unlocked.secret,
         PUBLIC_WALLET: unlocked.publicKey,
         WALLET_PUBKEY: unlocked.publicKey,
-      });
+      }));
       sendJson(res, 200, {
         ok: true,
         publicKey: unlocked.publicKey,
@@ -507,7 +551,7 @@ const server = createServer(async (req, res) => {
         status: setupStatus(readEnvMasked(root)),
       });
     } catch (e) {
-      sendJson(res, 400, { error: e.message ?? String(e) });
+      sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
     }
     return;
   }
@@ -523,9 +567,9 @@ const server = createServer(async (req, res) => {
 
   if (url.pathname === "/api/halt" && req.method === "POST") {
     try {
-      const body = await readBody(req);
+      const body = await readBody(req, res);
       const confirm = typeof body?.confirm === "string" ? body.confirm : "";
-      if (!token || confirm !== token) {
+      if (!token || !safeEqual(confirm, token)) {
         sendJson(res, 403, { error: "re-enter dash token to halt/resume" });
         return;
       }
@@ -534,7 +578,7 @@ const server = createServer(async (req, res) => {
       watchCache = { at: 0, data: null, building: null };
       sendJson(res, 200, { ok: true, ...state, ...readPauseState(root) });
     } catch (e) {
-      sendJson(res, 400, { error: e.message ?? String(e) });
+      sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
     }
     return;
   }
@@ -546,13 +590,13 @@ const server = createServer(async (req, res) => {
         sendJson(res, 401, { error: "dash token required" });
         return;
       }
-      const body = await readBody(req);
+      const body = await readBody(req, res);
       const action = body?.action === "off" ? "off" : "on";
       const pause = action === "off" ? requestPause(root) : clearPause(root);
       watchCache = { at: 0, data: null, building: null };
       sendJson(res, 200, { ok: true, ...pause, ...readHaltState(root) });
     } catch (e) {
-      sendJson(res, 400, { error: e.message ?? String(e) });
+      sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
     }
     return;
   }
@@ -563,7 +607,7 @@ const server = createServer(async (req, res) => {
         sendJson(res, 401, { error: "dash token required" });
         return;
       }
-      const body = await readBody(req);
+      const body = await readBody(req, res);
       const all = body?.all === true;
       const ids = Array.isArray(body?.ids)
         ? body.ids.map((x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0)
@@ -576,7 +620,7 @@ const server = createServer(async (req, res) => {
       watchCache = { at: 0, data: null, building: null };
       sendJson(res, 200, { ok: true, dismissed });
     } catch (e) {
-      sendJson(res, 400, { error: e.message ?? String(e) });
+      sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
     }
     return;
   }
@@ -600,9 +644,12 @@ const server = createServer(async (req, res) => {
   }
 
   let rel = url.pathname === "/" ? "/index.html" : url.pathname;
-  rel = rel.replace(/\.\./g, "");
-  const file = join(dist, rel);
-  if (existsSync(file) && statSync(file).isFile()) {
+  try { rel = decodeURIComponent(rel); } catch { /* keep raw */ }
+  // Resolve then require the result to stay inside dist/ — robust against
+  // ../ traversal in any encoding (unlike the old regex strip).
+  const file = resolve(dist, "." + rel.replace(/^[/\\]+/, "/"));
+  const insideDist = file === dist || file.startsWith(dist + sep);
+  if (insideDist && existsSync(file) && statSync(file).isFile()) {
     sendFile(res, file);
     return;
   }
@@ -744,6 +791,17 @@ if (!token) {
   process.exit(1);
 }
 
-server.listen(port, "0.0.0.0", () => {
-  console.log(`[dash] listening on http://0.0.0.0:${port} (root=${root}, ws=/ws every ${WATCH_MS}ms)`);
+const host = process.env.DASH_HOST || "0.0.0.0";
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
+
+server.listen(port, host, () => {
+  console.log(`[dash] listening on http://${host}:${port} (root=${root}, ws=/ws every ${WATCH_MS}ms)`);
+  if (!LOOPBACK_HOSTS.has(host)) {
+    console.warn(
+      "[dash] WARNING: bound to a non-loopback interface over plain HTTP — the dash token and any "
+      + "secrets pasted into Settings travel unencrypted on the network. Keep this port on a trusted "
+      + "LAN or behind a TLS reverse proxy (Caddy/nginx/Cloudflare Tunnel; Railway's edge already "
+      + "terminates HTTPS), or set DASH_HOST=127.0.0.1 and use an SSH tunnel.",
+    );
+  }
 });
