@@ -77,7 +77,7 @@ Settings writes go to the `data/` volume, never the git checkout — so the buil
 
 ### Wiki
 
-The in-dashboard operator manual — a friendlier mirror of [STRATEGY.md](https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md): big picture, sleeves, scanning, entries, the P0–P5 ladder, follow mode, sizing, skips, accounting, and a glossary. It's kept in sync with the code whenever behavior changes.
+The in-dashboard operator manual — a friendlier mirror of [STRATEGY.md](https://github.com/CryptoGnome/dlmmbot/blob/main/STRATEGY.md): big picture, sleeves, scanning, entries, the P0–P5 ladder, follow mode, sizing, skips, accounting, and a glossary. It's kept in sync with the code whenever behavior changes.
 
 ## Encrypted wallet: create, import, unlock
 

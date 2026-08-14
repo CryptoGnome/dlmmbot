@@ -15,7 +15,8 @@ pm2 save && pm2 startup     # survive reboots (follow the printed instructions)
 This starts three PM2 apps:
 
 - **meteora-farmer** — the bot (`npm run run`), auto-restarted on crash.
-- **meteora-deploy** — the auto-deploy watcher: polls `origin/master` every 30s;
+- **meteora-deploy** — the auto-deploy watcher: polls `origin/$DEPLOY_BRANCH`
+  (default **`main`**) every 30s;
   on new commits it verifies the new SHA in a **detached throwaway worktree**
   (`npm ci` if dependency manifests changed, typecheck, tests, dashboard build)
   and **only moves the live checkout and restarts the bot when everything is
@@ -68,7 +69,21 @@ pm2 set pm2-logrotate:compress true     # gzip rotated logs
 
 ## Workflow after setup
 
-Push to `master` from anywhere → server picks it up within ~30s and restarts
+Day-to-day work lands on **`develop`**; production releases land on **`main`**
+after staging looks good. See **[RELEASE.md](RELEASE.md)** for the full
+branching + semver flow.
+
+Set which branch a host tracks:
+
+```bash
+# Staging / dev bot
+DEPLOY_BRANCH=develop
+
+# Production bot (default if unset)
+DEPLOY_BRANCH=main
+```
+
+Push to the tracked branch → server picks it up within ~30s and restarts
 the bot on the new code. Watch it with:
 
 ```bash
@@ -187,11 +202,13 @@ whose commits touched `docs-site/` (VitePress source outside that folder) with
 **“No deployment available”** / `skip_reason: path_config`. Bot-only commits
 still redeployed the old site; site edits were silently skipped.
 
-Every push to `master` should now build VitePress into `docs/setup/` and
+Every push to **`main`** should now build VitePress into `docs/setup/` and
 publish the whole `docs/` tree (marketing `index.html` + setup docs).
 
 **Manual redeploy:** GitHub Actions → **Deploy site** (needs repo secrets
 `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`), or Cloudflare Pages →
-**Create deployment** on `master`.
+**Create deployment** on **`main`**.
+
+**Production branch in Cloudflare:** set to **`main`** (not `master`).
 
 **Local check before push:** `npm run docs:build` then spot-check `docs/`.

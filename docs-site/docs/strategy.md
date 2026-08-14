@@ -5,7 +5,7 @@ description: The full DLMM Bot rulebook — pool gates, token vetting, scoring, 
 
 # Strategy reference
 
-This page mirrors [STRATEGY.md](https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md), the repo's live spec, in plain language. Values shown are the **current shipped defaults from `config.toml`** — several were deliberately tightened after live book review, so where the spec's original bracketed default differs, this page shows what actually runs. Everything here is hot-reloadable via [Settings / config.toml](./configuration).
+This page mirrors [STRATEGY.md](https://github.com/CryptoGnome/dlmmbot/blob/main/STRATEGY.md), the repo's live spec, in plain language. Values shown are the **current shipped defaults from `config.toml`** — several were deliberately tightened after live book review, so where the spec's original bracketed default differs, this page shows what actually runs. Everything here is hot-reloadable via [Settings / config.toml](./configuration).
 
 Philosophy: **capital preservation first.** One-sided SOL bid-ask below price as the default entry, mechanical exits instead of conviction-holding, PnL denominated in SOL. Wherever a human would "ask the group," the bot is strictly more defensive.
 
@@ -178,4 +178,4 @@ Every skip is logged with the failing gate in the `decisions` table — the tuni
 - [Risk & sizing](./risk) — Kelly, circuit breaker, cluster brake, HALT
 - [Configuration reference](./configuration) — every threshold above as a config key
 - [FAQ](./faq) — honest answers about losing money
-- [STRATEGY.md](https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md) — the raw spec with live-book history
+- [STRATEGY.md](https://github.com/CryptoGnome/dlmmbot/blob/main/STRATEGY.md) — the raw spec with live-book history

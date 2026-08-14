@@ -71,8 +71,9 @@ export default defineConfig({
           { text: "Dashboard guide", link: "/dashboard" },
           { text: "CLI", link: "/cli" },
           { text: "FAQ", link: "/faq" },
-          { text: "STRATEGY.md (repo)", link: "https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md" },
-          { text: "DEPLOY.md (repo)", link: "https://github.com/CryptoGnome/dlmmbot/blob/master/DEPLOY.md" },
+          { text: "STRATEGY.md (repo)", link: "https://github.com/CryptoGnome/dlmmbot/blob/main/STRATEGY.md" },
+          { text: "DEPLOY.md (repo)", link: "https://github.com/CryptoGnome/dlmmbot/blob/main/DEPLOY.md" },
+          { text: "RELEASE.md (repo)", link: "https://github.com/CryptoGnome/dlmmbot/blob/main/RELEASE.md" },
         ],
       },
     ],
@@ -91,7 +92,7 @@ export default defineConfig({
       label: "On this page",
     },
     editLink: {
-      pattern: "https://github.com/CryptoGnome/dlmmbot/edit/master/docs-site/docs/:path",
+      pattern: "https://github.com/CryptoGnome/dlmmbot/edit/main/docs-site/docs/:path",
       text: "Edit this page",
     },
     lastUpdated: {

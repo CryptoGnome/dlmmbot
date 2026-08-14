@@ -410,7 +410,7 @@ export async function fetchProfiles(): Promise<{
     local: data.local ?? [],
     share: data.share ?? {
       repo: "CryptoGnome/dlmmbot",
-      ref: "master",
+      ref: "main",
       new_file_base: "",
       community_readme: "https://dlmmbot.com/setup/profiles",
       docs_url: "https://dlmmbot.com/setup/profiles",
@@ -443,7 +443,7 @@ export async function fetchCommunityProfiles(): Promise<{
     error: data.error ?? null,
     share: data.share ?? {
       repo: "CryptoGnome/dlmmbot",
-      ref: "master",
+      ref: "main",
       new_file_base: "",
       community_readme: "https://dlmmbot.com/setup/profiles",
       docs_url: "https://dlmmbot.com/setup/profiles",
@@ -550,7 +550,7 @@ export async function fetchProfileSnapshot(name?: string): Promise<{
     share_url: data.share_url ?? "",
     share: data.share ?? {
       repo: "CryptoGnome/dlmmbot",
-      ref: "master",
+      ref: "main",
       new_file_base: "",
       community_readme: "https://dlmmbot.com/setup/profiles",
       docs_url: "https://dlmmbot.com/setup/profiles",

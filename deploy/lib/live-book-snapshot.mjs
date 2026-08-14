@@ -135,7 +135,7 @@ function gitOk(root, args) {
 /** Branch names come from env — restrict to sane git ref characters (and never a leading "-"). */
 export function safeBranch(raw) {
   const b = (raw ?? "").trim();
-  return /^[A-Za-z0-9][\w./-]*$/.test(b) ? b : "master";
+  return /^[A-Za-z0-9][\w./-]*$/.test(b) ? b : "main";
 }
 
 /** Throttle GitHub fetches so the 3s watch loop does not hammer origin. */

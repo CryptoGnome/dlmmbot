@@ -80,7 +80,7 @@ function profilesRepo() {
   return process.env.PROFILES_REPO || "CryptoGnome/dlmmbot";
 }
 function profilesRef() {
-  return process.env.PROFILES_REF || "master";
+  return process.env.PROFILES_REF || "main";
 }
 function rawBase() {
   return `https://raw.githubusercontent.com/${profilesRepo()}/${profilesRef()}/profiles`;

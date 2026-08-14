@@ -225,7 +225,7 @@ export function ProfilesPanel({
         name,
         share: meta ?? {
           repo: "CryptoGnome/dlmmbot",
-          ref: "master",
+          ref: "main",
           new_file_base: "",
           community_readme: "https://dlmmbot.com/setup/profiles",
           docs_url: "https://dlmmbot.com/setup/profiles",

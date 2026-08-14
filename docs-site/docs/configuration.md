@@ -309,4 +309,4 @@ Not in `config.toml`, but part of the same picture:
 - [Risk & sizing](./risk) — the safety keys explained
 - [Settings profiles](./profiles) — curated packs of these knobs
 - [Dashboard guide](./dashboard) — editing settings from the UI
-- [config.toml (repo template)](https://github.com/CryptoGnome/dlmmbot/blob/master/config.toml)
+- [config.toml (repo template)](https://github.com/CryptoGnome/dlmmbot/blob/main/config.toml)

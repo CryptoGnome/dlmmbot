@@ -75,11 +75,11 @@ function BuildPill({ build, onOpenChanges }: {
       : syncTone === "warn" ? "border-warn/70 text-warn"
         : syncTone === "accent" ? "border-accent/70 text-accent"
           : "border-grid text-muted";
-  const branch = build.branch || "master";
+  const branch = build.branch || "main";
   const href = build.commits_url
     ?? (build.repo_url
       ? `${build.repo_url.replace(/\/$/, "")}/commits/${encodeURIComponent(branch)}`
-      : "https://github.com/CryptoGnome/dlmmbot/commits/master");
+      : "https://github.com/CryptoGnome/dlmmbot/commits/main");
   const pulse = sync === "behind" || (build.running != null && build.describe != null
     && build.running !== build.describe);
 

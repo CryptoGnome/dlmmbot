@@ -174,7 +174,7 @@ pm2 startup
 pm2 logs meteora-farmer
 ```
 
-Ecosystem sets `FARMER_CONFIG_PATH` / `FARMER_ENV_PATH` / `FARMER_DB_PATH` under `data/` so Settings never dirties git. `meteora-deploy` in the same ecosystem is the git pull watcher — start it only if you want updates from `master`.
+Ecosystem sets `FARMER_CONFIG_PATH` / `FARMER_ENV_PATH` / `FARMER_DB_PATH` under `data/` so Settings never dirties git. `meteora-deploy` in the same ecosystem is the git pull watcher — start it only if you want updates from `main` (or `develop` on staging).
 
 ## Auto-deploy
 

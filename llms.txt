@@ -26,7 +26,8 @@ GMGN API key: https://gmgn.ai/ai (optional — see docs/setup/api-keys)
 - [FAQ](https://dlmmbot.com/setup/faq): honest answers — losses, paper-first, restarts, RPC
 - [Fees](https://dlmmbot.com/setup/fees): GNME usage fee on live winning closes
 - [Full text for agents](https://dlmmbot.com/llms-full.txt): longer product summary
-- [Strategy (repo)](https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md): exits and risk rules
+- [Strategy (repo)](https://github.com/CryptoGnome/dlmmbot/blob/main/STRATEGY.md): exits and risk rules
+- [Release workflow (repo)](https://github.com/CryptoGnome/dlmmbot/blob/main/RELEASE.md): develop → main, semver GitHub Releases
 
 ## Product facts
 

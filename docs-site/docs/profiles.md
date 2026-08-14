@@ -37,7 +37,7 @@ You do **not** need to clone the bot to a PC, and you do **not** need `git` on R
 4. If you are not a collaborator, GitHub shows **Fork this repository** — accept that. You edit **your fork**, then open a PR upstream. That is expected.
 5. Paste the JSON into the new file and commit on the fork.
 6. Still on your fork, open **Edit index.json** (link in the modal) and add the copied row to the `profiles` array (same branch).
-7. **Contribute → Open pull request** against `CryptoGnome/dlmmbot` `master`.
+7. **Contribute → Open pull request** against `CryptoGnome/dlmmbot` `main` (or `develop` for in-flight work).
 
 After merge, the dashboard gallery picks it up (community cache ~10 minutes).
 

@@ -25,7 +25,7 @@ cd "$(dirname "$0")/.."
 
 POLL_SECONDS="${DEPLOY_POLL_SECONDS:-30}"
 APP_NAME="${DEPLOY_APP_NAME:-meteora-farmer}"
-BRANCH="${DEPLOY_BRANCH:-master}"
+BRANCH="${DEPLOY_BRANCH:-main}"
 
 # PM2 under a stripped PATH (common after `pm2 restart meteora-deploy`) used to
 # print "deployed" while never restarting the farmer. Resolve an absolute binary

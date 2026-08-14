@@ -49,11 +49,11 @@ Pipeline: **scan → vet → enter → manage → exit**, all driven by the tick
 1. **Auto-commit + push when a task is done** — don't wait to be asked. Concise message, why > what. Exceptions: user said not to, mid-flight task, or diff is only scratch/secret files.
 2. **Docs sync in the same commit** — if the diff changes user-facing behavior, setup, env vars, strategy knobs, or dashboard features, update the matching surfaces: `docs/index.html` (marketing), `docs-site/` markdown (setup), `dashboard/src/wiki/content.ts` (ops Wiki), `llms.txt`/`llms-full.txt`, `README.md`, `STRATEGY.md`. Surgical edits only.
 3. **Wiki sync** — any change to scanning, sleeves, entry/exit rules, sizing/brakes, HALT semantics, or dashboard tab meaning must update the Wiki tab content in the same commit.
-4. **After pushing, watch CI** — `gh run list --commit $(git rev-parse HEAD)` then `gh run watch <id> --exit-status`; fix until green before declaring done. Never force-push master.
+4. **After pushing, watch CI** — `gh run list --commit $(git rev-parse HEAD)` then `gh run watch <id> --exit-status`; fix until green before declaring done. Never force-push main.
 
 ## Operational cautions
 
 - **One bot instance per wallet/DB.** The loop holds `data/farmer.lock`. On Windows, killing a background `npm run run` kills only the npm wrapper — the `tsx` child survives and keeps trading. Kill every node process whose CommandLine matches the repo path, then delete `data/farmer.lock`.
-- The bot normally runs on the user's server (PM2 + auto-deploy watcher polling origin/master every 30s). Local workflow is edit → commit → push; do not start a local `npm run run` while the server runs.
+- The bot normally runs on the user's server (PM2 + auto-deploy watcher polling `origin/main` or `origin/develop` via `DEPLOY_BRANCH` every 30s). Local workflow: push to **develop** for staging, merge to **main** + Release workflow for production — see `RELEASE.md`. Do not start a local `npm run run` while the server runs.
 - `data/`, `secrets/`, and `.env` are runtime/secret state — never commit them; don't paste keys or `DASH_TOKEN` values into docs.
 - Meteora datapi facts (verified): pagination is 1-based; `fee_tvl_ratio` values are already percent; `collect_fee_mode` 0 = fees in both tokens, 1 = quote-only (SOL).

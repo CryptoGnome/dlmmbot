@@ -35,7 +35,7 @@ Pick a path. Same bot, same paper/live gates — only the host changes.
 - [FAQ](./faq) — honest answers, starting with "can I lose money?" (yes)
 - [Fees](./fees) — the GNME usage fee on live winning closes
 
-Also see [STRATEGY.md](https://github.com/CryptoGnome/dlmmbot/blob/master/STRATEGY.md) for the raw spec with live-book history.
+Also see [STRATEGY.md](https://github.com/CryptoGnome/dlmmbot/blob/main/STRATEGY.md) for the raw spec with live-book history.
 
 ::: tip Settings profiles
 Dashboard **Settings → Profiles**: official packs, local saves, and a GitHub community gallery. **Share to GitHub** is browser-only (fork when asked). Full guide: [Settings profiles](./profiles).

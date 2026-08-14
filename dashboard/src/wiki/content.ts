@@ -545,6 +545,10 @@ export const WIKI_SECTIONS: WikiSection[] = [
       },
       {
         type: "p",
+        text: "Repo branches: day-to-day work lands on develop (staging host); production releases land on main after you merge and run the GitHub Release workflow (semver tags). See repo RELEASE.md.",
+      },
+      {
+        type: "p",
         text: "Risk chips on pending commits (strategy / deps / deploy / core / dash / docs) are a quick “how spicy is this update?” hint — not a substitute for reading the subjects.",
       },
     ],
