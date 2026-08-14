@@ -1,9 +1,33 @@
 /**
  * Surgical config.toml edits — update key = value lines in-place so comments survive.
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { parse } from "smol-toml";
 import { runtimePaths } from "./runtime-paths.mjs";
+
+/**
+ * Atomic write: temp file in the same directory + rename over the target, so
+ * the bot's 2s hot-reload poll can never observe a half-written config/env.
+ */
+function writeFileAtomic(path, text) {
+  const tmp = `${path}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
+  writeFileSync(tmp, text, "utf8");
+  renameSync(tmp, path);
+}
+
+/**
+ * In-process write queue — route every config/.env mutation through this so
+ * concurrent Settings PATCHes cannot interleave their read-modify-write cycles.
+ * (applyConfigUpdates/applyEnvUpdates stay synchronous for boot-time callers
+ * like railway-start; HTTP handlers must wrap them: `await queueConfigWrite(...)`.)
+ */
+let writeChain = Promise.resolve();
+export function queueConfigWrite(fn) {
+  const run = writeChain.then(() => fn());
+  writeChain = run.then(() => undefined, () => undefined);
+  return run;
+}
 
 /** Sections the Settings UI may edit. Nested tables under majors.pools are excluded. */
 const EDITABLE_SECTIONS = new Set([
@@ -121,7 +145,7 @@ export function applyConfigUpdates(root, updates) {
   }
 
   if (missing.length) throw new Error(`unknown keys: ${missing.join(", ")}`);
-  if (applied.length) writeFileSync(configPath(root), text, "utf8");
+  if (applied.length) writeFileAtomic(configPath(root), text);
   return { applied, config: flattenConfig(parseConfig(root)) };
 }
 
@@ -156,6 +180,11 @@ export const SECRET_EDIT_KEYS = [
 ];
 
 const SECRET_EDIT_SET = new Set(SECRET_EDIT_KEYS);
+
+/** Solana pubkeys are base58, 32–44 chars. These env keys end up in URLs and
+ * child-process context downstream — reject anything that isn't a pubkey. */
+const BASE58_PUBKEY_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+const PUBKEY_ENV_KEYS = new Set(["WALLET_PUBKEY", "PUBLIC_WALLET"]);
 
 function envPath(root) {
   return runtimePaths(root).envPath;
@@ -207,6 +236,9 @@ export function applyEnvUpdates(root, updates) {
     if (typeof rawVal !== "string") throw new Error(`${key}: string required`);
     const value = rawVal.trim();
     if (!value) continue; // blank = keep existing
+    if (PUBKEY_ENV_KEYS.has(key) && !BASE58_PUBKEY_RE.test(value)) {
+      throw new Error(`${key}: not a valid base58 Solana public key`);
+    }
 
     const lineRe = new RegExp(`^(\\s*${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*=\\s*).*$`, "m");
     const escaped = value.replace(/\r?\n/g, "");
@@ -219,6 +251,6 @@ export function applyEnvUpdates(root, updates) {
     applied.push(key);
   }
 
-  if (applied.length) writeFileSync(path, text, "utf8");
+  if (applied.length) writeFileAtomic(path, text);
   return { applied, env: readEnvMasked(root) };
 }

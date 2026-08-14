@@ -5,7 +5,7 @@
 import { createRequire } from "node:module";
 import { hostname } from "node:os";
 import { resolve } from "node:path";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { runtimePaths } from "./runtime-paths.mjs";
 
 const SCHEMA = `
@@ -33,7 +33,7 @@ let cachedBuild;
 function buildLabel(root) {
   if (cachedBuild !== undefined) return cachedBuild;
   try {
-    cachedBuild = execSync("git describe --always --dirty", { cwd: root, encoding: "utf8" }).trim() || null;
+    cachedBuild = execFileSync("git", ["describe", "--always", "--dirty"], { cwd: root, encoding: "utf8" }).trim() || null;
   } catch {
     cachedBuild = null;
   }

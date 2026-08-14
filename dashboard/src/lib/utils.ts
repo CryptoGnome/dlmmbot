@@ -6,9 +6,20 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function tokenFromUrl(): string {
-  const q = new URLSearchParams(window.location.search).get("token");
+  const params = new URLSearchParams(window.location.search);
+  const q = params.get("token");
   if (q) {
     sessionStorage.setItem("dash_token", q);
+    // Scrub the token from the address bar / history so it can't be
+    // shoulder-surfed, bookmarked, or leaked via referrer.
+    try {
+      params.delete("token");
+      const qs = params.toString();
+      const clean = window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash;
+      window.history.replaceState(window.history.state, "", clean);
+    } catch {
+      /* history API unavailable — non-fatal */
+    }
     return q;
   }
   return sessionStorage.getItem("dash_token") ?? "";
