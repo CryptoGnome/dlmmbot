@@ -29,6 +29,15 @@ export function parseTab(hash: string): TabId {
   return TABS.some((t) => t.id === id) ? (id as TabId) : "overview";
 }
 
+/** Compact age for the HB pill — seconds since the farmer last finished a tick. */
+function formatHbAge(ageS: number | null | undefined): string {
+  if (ageS == null || !Number.isFinite(ageS)) return "—";
+  const s = Math.max(0, Math.floor(ageS));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  return `${Math.floor(s / 3600)}h`;
+}
+
 function BuildPill({ build, onOpenChanges }: {
   build: LiveWatch["build"];
   onOpenChanges?: () => void;
@@ -298,7 +307,14 @@ export function Shell({
   const mode = (watch?.heartbeat?.mode ?? "").toLowerCase();
   const modeLive = mode === "live";
   const hbAge = watch?.heartbeat_age_s;
+  const hbMissing = hbAge == null;
   const showBrake = !!watch?.cluster?.tripped && !watch?.ops?.halted;
+  const hbLabel = formatHbAge(hbAge);
+  const hbTitle = hbMissing
+    ? "No farmer heartbeat yet — waiting for the bot process to finish a tick"
+    : stale
+      ? `Farmer heartbeat stale (${hbLabel}) — last tick was too long ago; check pm2 / logs`
+      : `Farmer heartbeat ok — last tick ${hbLabel} ago (not a wall clock)`;
 
   return (
     <div className="flex h-screen overflow-hidden bg-bg text-fg">
@@ -342,17 +358,16 @@ export function Shell({
           <div className="flex flex-wrap items-center gap-2">
             <HaltToggle watch={watch} />
             <span
-              className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10px] tracking-widest ${
-                stale ? "border-danger/70 text-danger" : "border-grid text-dim"
-              }`}
-              title={
-                stale
-                  ? `farmer heartbeat stale${hbAge != null ? ` (${hbAge}s)` : ""}`
-                  : `farmer heartbeat fresh${hbAge != null ? ` (${hbAge}s)` : ""}`
-              }
+              className={cn(
+                "inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10px] tracking-widest tabular-nums",
+                stale || hbMissing
+                  ? "border-danger/70 text-danger"
+                  : "border-ok/70 text-ok",
+              )}
+              title={hbTitle}
             >
-              <Icon icon={stale ? Unplug : CircleDot} size={11} />
-              {stale ? "HB?" : "HB"}
+              <Icon icon={stale || hbMissing ? Unplug : CircleDot} size={11} />
+              HB {hbLabel}
             </span>
             <span
               className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10px] tracking-widest ${
