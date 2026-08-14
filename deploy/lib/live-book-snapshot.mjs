@@ -31,6 +31,7 @@ import {
   readGithubHistoryCache,
   scheduleGithubHistory,
 } from "./github-history.mjs";
+import { labelCommits } from "./release-labels.mjs";
 import { readSmartflowSnapshot } from "./smartflow-snapshot.mjs";
 
 // Re-export for tests / external callers
@@ -206,23 +207,31 @@ function buildGitInfo(root) {
     }
   } catch { /* */ }
 
-  // No local origin ref (PaaS / no git) — poll GitHub for tip + commit lists.
-  let gh = { tipSha: null, tipMessage: null, recent: [], pending: [], behindCount: 0, fetchedAt: null, ok: false };
-  if (!originFull || !trustLocalGit) {
-    scheduleGithubHistory({ repoUrl, branch, headFull });
-    gh = readGithubHistoryCache();
-    if (gh.fetchedAt) {
-      lastOriginFetchAt = gh.fetchedAt;
-      lastOriginFetchOk = gh.ok;
-    }
-    if (!originFull && gh.tipSha) {
-      originFull = gh.tipSha;
-      origin = shortSha(originFull);
-    }
-    if (!message && gh.tipMessage && originFull && shasMatch(headFull, originFull)) {
-      message = gh.tipMessage;
-    }
+  // Always poll GitHub for releases (operator-facing Changes). On PaaS also
+  // use tip + commit lists; with local git only tip fills missing origin.
+  let gh = {
+    tipSha: null, tipMessage: null, recent: [], pending: [], releases: [],
+    behindCount: 0, fetchedAt: null, ok: false,
+  };
+  scheduleGithubHistory({
+    repoUrl,
+    branch,
+    headFull,
+    releasesOnly: !!(originFull && trustLocalGit),
+  });
+  gh = readGithubHistoryCache();
+  if (gh.fetchedAt) {
+    lastOriginFetchAt = gh.fetchedAt;
+    lastOriginFetchOk = gh.ok;
   }
+  if (!originFull && gh.tipSha) {
+    originFull = gh.tipSha;
+    origin = shortSha(originFull);
+  }
+  if (!message && gh.tipMessage && originFull && shasMatch(headFull, originFull)) {
+    message = gh.tipMessage;
+  }
+  const releases = Array.isArray(gh.releases) ? gh.releases : [];
 
   let sync = "unknown";
   if (headFull && originFull) {
@@ -236,11 +245,24 @@ function buildGitInfo(root) {
   const releaseUrl = `${repoUrl}/releases`;
   const commitsUrl = `${repoUrl}/commits/${branch}`;
 
+  /** Records: sha\\0ts\\0subject\\0body — body first line used for merge commits. */
   const parseLog = (raw) => {
     if (!raw) return [];
     return raw.split("\n").filter(Boolean).map((line) => {
-      const [sha, ts, ...rest] = line.split("\t");
-      const subject = rest.join("\t").trim();
+      const parts = line.split("\0");
+      let sha; let ts; let subject;
+      if (parts.length >= 3) {
+        [sha, ts, subject] = parts;
+        const bodyFirst = (parts[3] || "").split("\n").map((l) => l.trim()).find(Boolean);
+        if (/^Merge pull request #\d+/i.test(subject || "") && bodyFirst) {
+          subject = bodyFirst.slice(0, 160);
+        }
+      } else {
+        const [s, t, ...rest] = line.split("\t");
+        sha = s;
+        ts = t;
+        subject = rest.join("\t").trim();
+      }
       const n = Number(ts);
       return {
         sha: sha || null,
@@ -275,14 +297,20 @@ function buildGitInfo(root) {
   }
 
   let recent = trustLocalGit
-    ? parseLog(git(root, ["log", "-20", "--pretty=format:%h%x09%ct%x09%s"]))
+    ? labelCommits(
+      parseLog(git(root, ["log", "-20", "--pretty=format:%h%x00%ct%x00%s%x00%b"])),
+      releases,
+    )
     : (gh.recent || []);
   let pending = [];
   let behindCount = 0;
   if (sync === "behind" && originFull && trustLocalGit) {
     behindCount = Number(git(root, ["rev-list", "--count", `HEAD..${originFull}`])) || 0;
-    pending = parseLog(git(root, ["log", `HEAD..${originFull}`, "-20", "--pretty=format:%h%x09%ct%x09%s"]))
-      .map((c) => ({ ...c, risk: riskTagsForSha(c.sha) }));
+    pending = labelCommits(
+      parseLog(git(root, ["log", `HEAD..${originFull}`, "-20", "--pretty=format:%h%x00%ct%x00%s%x00%b"]))
+        .map((c) => ({ ...c, risk: riskTagsForSha(c.sha) })),
+      releases,
+    );
   } else if (sync === "behind" && !trustLocalGit) {
     pending = gh.pending || [];
     behindCount = gh.behindCount || pending.length || 0;
@@ -313,6 +341,7 @@ function buildGitInfo(root) {
     fetch_ok: lastOriginFetchOk,
     recent,
     pending,
+    releases,
     auto_update: prefs.autoUpdate,
     approve_sha: prefs.approveSha,
     approved_at: prefs.approvedAt,
@@ -1217,6 +1246,7 @@ export function buildLiveBookSnapshot(root) {
         fetched_at: gitInfo.fetched_at,
         recent: gitInfo.recent,
         pending: gitInfo.pending,
+        releases: gitInfo.releases,
         auto_update: gitInfo.auto_update,
         approve_sha: gitInfo.approve_sha,
         approved_at: gitInfo.approved_at,

@@ -50,9 +50,19 @@ Cloudflare Pages (**dlmmbot.com**): production branch **`main`**. Optionally add
 
 Current version lives in root **`package.json`** (`version` field). Tags are **`vMAJOR.MINOR.PATCH`** (e.g. `v0.2.0`).
 
+Operators read releases on the dashboard **Changes** tab. Every release commit, PR, and GitHub Release note must answer: **what changed for the operator?** Never ship a bare `Release vX.Y.Z` or a PR body that only says “Semver bump only.”
+
 ### 1. Merge to `main`
 
-Open a PR **`develop` → `main`**. CI must be green. Merge (squash or merge commit — your choice; tags always point at explicit release commits on `main`).
+Open a PR **`develop` → `main`**. CI must be green.
+
+**PR title** = operator one-liner (what they get), not “Merge develop” or a branch name:
+
+```text
+Exit 0 on Railway redeploy so updates are not reported as crashes
+```
+
+**PR body** = short bullets (Changes / Wiki / setup impact). Squash-merge preferred so `main` history stays readable; if you use a merge commit, put the same one-liner as the first line of the commit body.
 
 ### 2. Cut semver on `main` (protected branch)
 
@@ -68,15 +78,29 @@ Open a PR **`develop` → `main`**. CI must be green. Merge (squash or merge com
 git fetch origin
 git checkout -B release/vX.Y.Z origin/main
 npm version patch   # or minor / major — updates package.json + lockfile root only
-git commit -am "Release vX.Y.Z"
+# Commit message MUST include the operator one-liner after the em dash:
+git commit -am "Release vX.Y.Z — <what operators see / get>"
 git push -u origin release/vX.Y.Z
-gh pr create --base main --head release/vX.Y.Z --title "Release vX.Y.Z" --body "Semver bump only."
+gh pr create --base main --head release/vX.Y.Z \
+  --title "Release vX.Y.Z — <same one-liner>" \
+  --body "$(cat <<'EOF'
+## Operator notes
+- <bullet what changed for dashboard / bot / deploy>
+- <risk or action if any>
+
+EOF
+)"
 # CI green → merge and delete the branch:
 gh pr merge <n> --merge --delete-branch
-git tag -a vX.Y.Z <merge-sha> -m "DLMM Bot vX.Y.Z"
+git tag -a vX.Y.Z <merge-sha> -m "DLMM Bot vX.Y.Z — <one-liner>"
 git push origin vX.Y.Z
-gh release create vX.Y.Z --title "DLMM Bot vX.Y.Z" --generate-notes --latest
+gh release create vX.Y.Z --title "vX.Y.Z — <one-liner>" --latest --notes "$(cat <<'EOF'
+- <same operator bullets as the PR>
+EOF
+)"
 ```
+
+`--generate-notes` alone is fine as a *supplement*, but always lead with 1–3 plain-language bullets. Empty or “Semver bump only” notes leave the Changes tab useless.
 
 **Delete release branches after merge.** Only `develop` and `main` are long-lived. A merged `release/vX.Y.Z` (or feature branch) left on GitHub is clutter — always merge with `--delete-branch`, or run:
 

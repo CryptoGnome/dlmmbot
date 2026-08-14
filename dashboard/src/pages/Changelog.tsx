@@ -3,11 +3,12 @@ import { Panel, Badge } from "@/components/ui";
 import { shortTime, timeAgo } from "@/lib/utils";
 import type { LiveWatch } from "@/lib/types";
 import { Icon } from "@/lib/icons";
-import { ExternalLink, ScrollText, Check } from "lucide-react";
+import { ExternalLink, ScrollText, Check, Tag } from "lucide-react";
 import { approveDeployUpdate } from "@/lib/api";
 import { toast } from "@/lib/toast";
 
 type Commit = NonNullable<LiveWatch["build"]["recent"]>[number] & { risk?: string[] };
+type Release = NonNullable<LiveWatch["build"]["releases"]>[number];
 
 const RISK_TONE: Record<string, "danger" | "warn" | "accent" | "ok" | "fg"> = {
   strategy: "danger",
@@ -83,10 +84,62 @@ function CommitList({
   );
 }
 
+function ReleasesList({
+  items,
+  empty,
+}: {
+  items: Release[];
+  empty: string;
+}) {
+  if (!items.length) {
+    return <p className="text-[12px] text-dim">{empty}</p>;
+  }
+  return (
+    <ul className="space-y-0">
+      {items.map((r) => (
+        <li
+          key={r.tag}
+          className="flex items-start gap-3 border-t border-grid py-2 first:border-0"
+        >
+          <span className="w-[7.25rem] shrink-0 text-[10px] leading-tight text-dim">
+            {r.at ? (
+              <>
+                <span className="block tabular-nums">{shortTime(r.at)}</span>
+                <span className="mt-0.5 block">{timeAgo(r.at)}</span>
+              </>
+            ) : (
+              "—"
+            )}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Badge tone="accent">{r.tag}</Badge>
+              {r.url ? (
+                <a
+                  href={r.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-[13px] text-fg no-underline hover:text-hover"
+                >
+                  {r.summary || r.name || r.tag}
+                  <Icon icon={ExternalLink} size={10} className="opacity-60" />
+                </a>
+              ) : (
+                <span className="text-[13px] text-fg">{r.summary || r.name || r.tag}</span>
+              )}
+            </div>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function ChangelogPage({ watch }: { watch: LiveWatch | null }) {
   const b = watch?.build;
   const pending = b?.pending ?? [];
   const recent = b?.recent ?? [];
+  const releases = b?.releases ?? [];
   const behind = b?.sync === "behind";
   const auto = b?.auto_update !== false;
   const needsApproval = !!b?.needs_approval;
@@ -123,8 +176,21 @@ export function ChangelogPage({ watch }: { watch: LiveWatch | null }) {
           Changes
         </h1>
         <p className="text-[11px] text-dim">
-          Recent deploys on this host
+          What landed on this host — releases first, then commits
           {b?.branch ? ` · ${b.branch}` : ""}
+          {b?.release_url ? (
+            <>
+              {" · "}
+              <a
+                href={b.release_url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-accent no-underline hover:text-hover"
+              >
+                Releases
+              </a>
+            </>
+          ) : null}
           {b?.commits_url ? (
             <>
               {" · "}
@@ -134,7 +200,7 @@ export function ChangelogPage({ watch }: { watch: LiveWatch | null }) {
                 rel="noreferrer"
                 className="text-accent no-underline hover:text-hover"
               >
-                GitHub
+                Commits
               </a>
             </>
           ) : null}
@@ -193,6 +259,21 @@ export function ChangelogPage({ watch }: { watch: LiveWatch | null }) {
           />
         </Panel>
       )}
+
+      <Panel
+        title="Releases"
+        right={
+          <span className="inline-flex items-center gap-1 text-[10px] tracking-wider text-muted uppercase">
+            <Icon icon={Tag} size={11} />
+            at a glance
+          </span>
+        }
+      >
+        <ReleasesList
+          items={releases}
+          empty="No GitHub releases yet — they appear after the next poll (or set GITHUB_TOKEN for private repos)."
+        />
+      </Panel>
 
       <Panel
         title="On this host"

@@ -1,8 +1,14 @@
 /**
- * GitHub commit history for PaaS hosts (Railway, etc.) where local `.git`
- * is missing or not trustworthy. Used by live-book-snapshot for Changes tab.
+ * GitHub commit + release history for PaaS hosts (Railway, etc.) where local
+ * `.git` is missing or not trustworthy. Also used on VPS for release notes
+ * shown on the Changes tab.
  */
 import { shortSha, shasMatch } from "./git-source.mjs";
+import {
+  labelCommits,
+  normalizeGithubRelease,
+  subjectFromCommitMessage,
+} from "./release-labels.mjs";
 
 const GH_TTL_MS = Number(process.env.DASH_GIT_POLL_MS || 30_000);
 
@@ -13,6 +19,7 @@ const GH_TTL_MS = Number(process.env.DASH_GIT_POLL_MS || 30_000);
  *   tipMessage: string | null,
  *   recent: object[],
  *   pending: object[],
+ *   releases: object[],
  *   behindCount: number,
  *   inflight: Promise<void> | null,
  * }} */
@@ -23,6 +30,7 @@ let cache = {
   tipMessage: null,
   recent: [],
   pending: [],
+  releases: [],
   behindCount: 0,
   inflight: null,
 };
@@ -35,6 +43,7 @@ export function clearGithubHistoryCacheForTests() {
     tipMessage: null,
     recent: [],
     pending: [],
+    releases: [],
     behindCount: 0,
     inflight: null,
   };
@@ -84,7 +93,7 @@ export function riskTagsFromPaths(paths) {
 export function normalizeGithubCommit(c, { files } = {}) {
   const full = typeof c?.sha === "string" ? c.sha : null;
   const msg = String(c?.commit?.message ?? c?.message ?? "");
-  const subject = msg.split("\n")[0].slice(0, 120) || "(no subject)";
+  const subject = subjectFromCommitMessage(msg);
   const dateStr = c?.commit?.committer?.date || c?.commit?.author?.date || c?.date;
   const atMs = dateStr ? Date.parse(dateStr) : NaN;
   const paths = Array.isArray(files)
@@ -110,13 +119,14 @@ function parseGithubUrl(repoUrl) {
 }
 
 /**
- * Stale-while-revalidate cache of tip + commit lists for Changes on PaaS.
- * @param {{ repoUrl: string, branch: string, headFull: string | null }} opts
+ * Stale-while-revalidate cache of tip + commits + releases for Changes.
+ * @param {{ repoUrl: string, branch: string, headFull: string | null, releasesOnly?: boolean }} opts
+ * releasesOnly: local-git hosts — fetch tip + releases only (skip commit lists).
  */
-export function scheduleGithubHistory({ repoUrl, branch, headFull }) {
+export function scheduleGithubHistory({ repoUrl, branch, headFull, releasesOnly = false }) {
   const parsed = parseGithubUrl(repoUrl);
   if (!parsed || !branch) return;
-  const key = `${parsed.owner}/${parsed.repo}@${branch}|${headFull || ""}`;
+  const key = `${parsed.owner}/${parsed.repo}@${branch}|${headFull || ""}|${releasesOnly ? "r" : "f"}`;
   const now = Date.now();
   if (cache.key === key && now - cache.at < GH_TTL_MS) return;
   if (cache.inflight) return;
@@ -126,43 +136,56 @@ export function scheduleGithubHistory({ repoUrl, branch, headFull }) {
       const { owner, repo } = parsed;
       const base = `https://api.github.com/repos/${owner}/${repo}`;
 
-      const tip = await githubJson(
-        `${base}/commits/${encodeURIComponent(branch)}`,
-      );
-      const tipSha = typeof tip?.sha === "string" ? tip.sha : null;
-      const tipMessage = String(tip?.commit?.message ?? "").split("\n")[0].slice(0, 120) || null;
+      const tipP = githubJson(`${base}/commits/${encodeURIComponent(branch)}`);
+      const relP = githubJson(`${base}/releases?per_page=12`);
 
-      // History of what is running (walk from deployed SHA when known).
-      const recentSha = headFull || tipSha || branch;
-      const recentRaw = await githubJson(
-        `${base}/commits?sha=${encodeURIComponent(recentSha)}&per_page=20`,
-      );
-      const recent = Array.isArray(recentRaw)
-        ? recentRaw.map((c) => normalizeGithubCommit(c))
+      const tip = await tipP;
+      const tipSha = typeof tip?.sha === "string" ? tip.sha : null;
+      const tipMessage = subjectFromCommitMessage(String(tip?.commit?.message ?? ""));
+
+      const relRaw = await relP;
+      const releases = Array.isArray(relRaw)
+        ? relRaw.map(normalizeGithubRelease).filter(Boolean)
         : [];
 
-      let pending = [];
-      let behindCount = 0;
-      if (headFull && tipSha && !shasMatch(headFull, tipSha)) {
-        const cmp = await githubJson(
-          `${base}/compare/${encodeURIComponent(headFull)}...${encodeURIComponent(tipSha)}`,
+      let recent = cache.recent;
+      let pending = cache.pending;
+      let behindCount = cache.behindCount;
+
+      if (!releasesOnly) {
+        const recentSha = headFull || tipSha || branch;
+        const recentRaw = await githubJson(
+          `${base}/commits?sha=${encodeURIComponent(recentSha)}&per_page=20`,
         );
-        behindCount = typeof cmp?.ahead_by === "number" ? cmp.ahead_by : 0;
-        const commits = Array.isArray(cmp?.commits) ? [...cmp.commits].reverse() : [];
-        // Enrich first few with file-based risk tags (rate-limit friendly).
-        const enriched = [];
-        for (let i = 0; i < Math.min(commits.length, 20); i++) {
-          const c = commits[i];
-          if (i < 5 && c?.sha) {
-            try {
-              const detail = await githubJson(`${base}/commits/${c.sha}`);
-              enriched.push(normalizeGithubCommit(detail));
-              continue;
-            } catch { /* fall through */ }
+        recent = Array.isArray(recentRaw)
+          ? labelCommits(recentRaw.map((c) => normalizeGithubCommit(c)), releases)
+          : [];
+
+        pending = [];
+        behindCount = 0;
+        if (headFull && tipSha && !shasMatch(headFull, tipSha)) {
+          const cmp = await githubJson(
+            `${base}/compare/${encodeURIComponent(headFull)}...${encodeURIComponent(tipSha)}`,
+          );
+          behindCount = typeof cmp?.ahead_by === "number" ? cmp.ahead_by : 0;
+          const commits = Array.isArray(cmp?.commits) ? [...cmp.commits].reverse() : [];
+          const enriched = [];
+          for (let i = 0; i < Math.min(commits.length, 20); i++) {
+            const c = commits[i];
+            if (i < 5 && c?.sha) {
+              try {
+                const detail = await githubJson(`${base}/commits/${c.sha}`);
+                enriched.push(normalizeGithubCommit(detail));
+                continue;
+              } catch { /* fall through */ }
+            }
+            enriched.push(normalizeGithubCommit(c));
           }
-          enriched.push(normalizeGithubCommit(c));
+          pending = labelCommits(enriched, releases);
         }
-        pending = enriched;
+      } else if (cache.recent.length) {
+        recent = labelCommits(cache.recent, releases);
+        pending = labelCommits(cache.pending, releases);
       }
 
       cache = {
@@ -172,6 +195,7 @@ export function scheduleGithubHistory({ repoUrl, branch, headFull }) {
         tipMessage,
         recent,
         pending,
+        releases,
         behindCount,
         inflight: null,
       };
@@ -188,8 +212,11 @@ export function readGithubHistoryCache() {
     tipMessage: cache.tipMessage,
     recent: cache.recent,
     pending: cache.pending,
+    releases: cache.releases,
     behindCount: cache.behindCount,
     fetchedAt: cache.at || null,
-    ok: !!(cache.tipSha || cache.recent.length),
+    ok: !!(cache.tipSha || cache.recent.length || cache.releases.length),
   };
 }
+
+export { labelCommits, operatorCommitLabel, summarizeReleaseBody } from "./release-labels.mjs";
