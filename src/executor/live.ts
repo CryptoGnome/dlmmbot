@@ -15,7 +15,6 @@ import type { ExitReason, Position } from "../types.js";
 import type { Executor, OpenParams, PositionMark } from "./executor.js";
 import { quoteToSolLamports, swapToSolEscalating } from "./jupiter.js";
 import { zapToSolEscalating } from "./zap.js";
-import { runEscapeRebalance } from "./rebalance.js";
 import { loadKeypair } from "./wallet.js";
 
 // CJS require (see reconcile.ts): the SDK's ESM build crashes on anchor's
@@ -629,82 +628,10 @@ export class LiveExecutor implements Executor {
     return { withdrawnSol: measured ?? withdrawn, txCostSol: 0.001 };
   }
 
-  async escapeRebalance(position: Position, slippageBps: number): Promise<{ ok: boolean }> {
-    // BOB#66 / Niles#63: Zap reported success while zap-in left liquidity in the
-    // wallet; next tick P0'd an empty shell at −100% until residual sweep. Prefer
-    // plain close until reshape is proven with a post-check.
-    if (config().exec.escape_rebalance_enabled !== true) return { ok: false };
-
-    const { active, positions } = await this.ourLbPositions(position);
-    try {
-      const res = await runEscapeRebalance({
-        connection: this.connection,
-        wallet: this.wallet,
-        poolAddress: position.poolAddress,
-        minBinId: position.minBinId,
-        maxBinId: position.maxBinId,
-        activeBinId: active,
-        lbPositions: positions,
-        swapSlippageBps: slippageBps,
-        send: (tx) => this.send(tx),
-      });
-      if (!res.ok) return { ok: false };
-
-      // Zap can return ok with a no-op zap-in (tokens still in wallet, bins empty).
-      const after = await this.ourLbPositions(position);
-      const pool = await this.pool(position.poolAddress);
-      const worth = this.valueOf(after.positions, after.priceYperX, pool.tokenX.mint.decimals);
-      const empty = after.positions.length === 0
-        || after.positions.every(lbPositionEmpty)
-        || worth.valueSol <= 1e-9;
-      if (empty) {
-        getDb().prepare(
-          "INSERT INTO events (position_id, ts, type, tx_sig, detail_json) VALUES (?, ?, 'rebalance_partial', ?, ?)"
-        ).run(
-          position.id, now(), res.sigs[0] ?? null,
-          JSON.stringify({
-            kind: "escape_rebalance_noop",
-            sigs: res.sigs,
-            bins: [res.newMinBinId, res.newMaxBinId],
-            valueSol: worth.valueSol,
-          }),
-        );
-        console.error(
-          `[live] pos#${position.id}: escape rebalance left empty position (value=${worth.valueSol.toFixed(4)}) — salvage close`,
-        );
-        return { ok: false };
-      }
-
-      const db = getDb();
-      db.prepare("UPDATE positions SET min_bin_id = ?, max_bin_id = ?, fell_deep = 0 WHERE id = ?")
-        .run(res.newMinBinId, res.newMaxBinId, position.id);
-      db.prepare(
-        "UPDATE position_accounts SET min_bin_id = ?, max_bin_id = ? WHERE position_id = ?"
-      ).run(res.newMinBinId, res.newMaxBinId, position.id);
-      db.prepare(
-        "INSERT INTO events (position_id, ts, type, tx_sig, detail_json) VALUES (?, ?, 'rebalance', ?, ?)"
-      ).run(position.id, now(), res.sigs[0] ?? null, JSON.stringify({ kind: "escape_rebalance", sigs: res.sigs, bins: [res.newMinBinId, res.newMaxBinId] }));
-      console.log(`[live] pos#${position.id} ${position.symbol}: escape rebalance bins [${res.newMinBinId},${res.newMaxBinId}]`);
-      return { ok: true };
-    } catch (e) {
-      const sigs = (e as { sigs?: string[] }).sigs ?? [];
-      if (sigs.length) {
-        getDb().prepare(
-          "INSERT INTO events (position_id, ts, type, tx_sig, detail_json) VALUES (?, ?, 'rebalance_partial', ?, ?)"
-        ).run(
-          position.id, now(), sigs[0] ?? null,
-          JSON.stringify({
-            kind: "escape_rebalance_partial",
-            sigs,
-            error: (e as Error).message?.split("\n")[0] ?? String(e),
-          }),
-        );
-        console.error(
-          `[live] pos#${position.id}: partial escape rebalance (${sigs.length} sigs) — position may be empty; close next`,
-        );
-      }
-      throw e;
-    }
+  async escapeRebalance(_position: Position, _slippageBps: number): Promise<{ ok: boolean }> {
+    // Disabled: Zap reshape reported success on BOB/Niles while zap-in left an empty
+    // shell (−100% until residual sweep). Escape hatch always closes instead.
+    return { ok: false };
   }
 
   async close(position: Position, reason: ExitReason, slippageBps: number): Promise<{ exitSol: number; txCostSol: number }> {

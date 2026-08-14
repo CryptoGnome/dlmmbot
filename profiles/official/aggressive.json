@@ -15,7 +15,6 @@
     "manage.claim_min_sol": 0.03,
     "manage.profit_lock_enabled": true,
     "manage.max_age_h": 72,
-    "exec.escape_rebalance_enabled": false,
     "gates.mcap_min_usd": 75000,
     "gates.tvl_min_usd": 3000,
     "gates.tvl_max_usd": 3000000,

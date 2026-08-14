@@ -18,7 +18,6 @@ export const PROFILE_ALLOWLIST = new Set([
   "manage.claim_min_sol",
   "manage.profit_lock_enabled",
   "manage.max_age_h",
-  "exec.escape_rebalance_enabled",
   "gates.mcap_min_usd",
   "gates.tvl_min_usd",
   "gates.tvl_max_usd",

@@ -600,7 +600,7 @@ export async function managePositions(exec: Executor): Promise<void> {
               }
             }
             const { exitSol } = await closeAndReport(exec, pos, "escape", config().exec.exit_slippage_bps, "close",
-              "escape hatch: deep dip recovered to range top — reset (close fallback)");
+              "escape hatch: deep dip recovered to range top — close and reset");
             bankProfit(pos, exitSol, "escape hatch");
             recordDecision(pos.tokenMint, pos.poolAddress, "exited", "escape_hatch", null, { frac, mark, sleeve });
             continue;

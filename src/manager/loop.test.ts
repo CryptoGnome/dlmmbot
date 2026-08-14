@@ -83,7 +83,7 @@ describe("managePositions contracts", () => {
     expect(row.exit_reason).toBe("P1_stop");
   });
 
-  it("escape hatch after deep dip recovers to top", async () => {
+  it("escape hatch closes after deep dip recovers to top", async () => {
     const id = insertOpenPosition({ entrySol: 0.4, minBinId: 100, maxBinId: 200, fellDeep: 1 });
     exec.setMark(id, {
       valueSol: 0.42,
@@ -93,20 +93,6 @@ describe("managePositions contracts", () => {
     });
     await managePositions(exec);
     expect(exec.escapeRebalanced).toEqual([id]);
-    expect(exec.closed).toEqual([]);
-  });
-
-  it("escape hatch falls back to close when rebalance fails", async () => {
-    const id = insertOpenPosition({ entrySol: 0.4, minBinId: 100, maxBinId: 200, fellDeep: 1 });
-    exec.setMark(id, {
-      valueSol: 0.42,
-      price: 1.05,
-      activeBinId: 180,
-      inRange: true,
-    });
-    exec.escapeRebalance = async () => ({ ok: false });
-    await managePositions(exec);
-    expect(exec.escapeRebalanced).toEqual([]);
     expect(exec.closed).toEqual([{ id, reason: "escape" }]);
   });
 

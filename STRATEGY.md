@@ -89,7 +89,7 @@ Default shape — **Tux entry**: one-sided SOL, bid-ask, below current price.
    - **Manual fallback (`use_zap = false`):** `removeLiquidity(shouldClaimAndClose)` + lite Jupiter swap.
    - Normal exits `[50 bps]` swap slippage; P0 safety exits `[1000 bps]` (speed over price).
    - Partial profit locks: `removeLiquidity(bps)` then zap withdrawn token side → SOL via Zap SDK (same swap path as exits).
-   - **Escape hatch:** `rebalanceDlmmPosition` reshapes in place (preserve width, anchor top at active bin). Falls back to close + re-enter if Zap fails or `use_zap = false`.
+   - **Escape hatch:** deep dip then recovery → **close** (realize fees / reset). In-place Zap reshape is disabled after live no-op zap-in failures left empty shells.
 7. **Second tranche** `[on]`: for score ≥ `[85]`, an additional BidAsk pocket *below* the primary (Gmet dual-range), sized at `[50%]` of the primary, down toward `tranche_max_down_pct` (clamped by the P0 safety floor). Skipped when the primary already fills that floor, on micro sleeve, or when slots/size floor block it.
 
 ## 4. Position management — the state machine
@@ -232,7 +232,7 @@ Tables:
 - Three-tier sleeves: micro loss-budget caps, meme (main), majors discovery + spot + TA entry + separate manage
 - Residual token sweep, Telegram alerts, out-of-process heartbeat, config hot-reload, auto-deploy watcher
 - Zap SDK token→SOL on close/claim/sweep/profit-lock (`use_zap`, manual lite-Jupiter fallback)
-- Escape hatch in-place rebalance via `rebalanceDlmmPosition` (close fallback if Zap fails)
+- Escape hatch (deep dip → recovery → close); in-place Zap reshape disabled after live no-op losses
 - LAN ops dashboard (`meteora-dash` :8787) — phosphor terminal UI + equity/exit/skip charts
 - Kelly on measured wallet PnL (n≥50 on live book); fee banking only (`fee_destination = bank`, `majors.fee_compound = false`)
 

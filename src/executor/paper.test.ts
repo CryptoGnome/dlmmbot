@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { PaperExecutor } from "./paper.js";
-import { escapeRebalanceDeltas } from "./rebalance.js";
 import { installConfig, restoreConfig } from "../test/config.js";
 import { useMemoryDb, resetTestDb, insertOpenPosition } from "../test/db.js";
 import { getDb } from "../db/db.js";
@@ -143,22 +142,12 @@ describe("PaperExecutor profit lock + escape rebalance", () => {
     expect(ev.type).toBe("profit_lock");
   });
 
-  it("escapeRebalance reshapes bins in place", async () => {
+  it("escapeRebalance is disabled (escape hatch closes instead)", async () => {
     const exec = new PaperExecutor();
     const pos = openPos(100, 200);
-    vi.spyOn(exec, "mark").mockResolvedValue({
-      valueSol: 0.4, unclaimedFeesSol: 0, activeBinId: 500, price: 0.001,
-      inRange: true, aboveRange: false, belowRange: false,
-      tvlUsd: 50_000, feeTvl30mPct: 1, vol30mUsd: 80_000,
-    });
-    const { newMinBinId, newMaxBinId } = escapeRebalanceDeltas(100, 200, 500);
-    expect(await exec.escapeRebalance(pos, 50)).toEqual({ ok: true });
-    const row = getDb().prepare("SELECT min_bin_id, max_bin_id, fell_deep FROM positions WHERE id = ?").get(pos.id) as { min_bin_id: number; max_bin_id: number; fell_deep: number };
-    expect(row.min_bin_id).toBe(newMinBinId);
-    expect(row.max_bin_id).toBe(newMaxBinId);
-    expect(row.fell_deep).toBe(0);
-    const ev = getDb().prepare("SELECT type, detail_json FROM events WHERE position_id = ?").get(pos.id) as { type: string; detail_json: string };
-    expect(ev.type).toBe("rebalance");
-    expect(JSON.parse(ev.detail_json).kind).toBe("escape_rebalance");
+    expect(await exec.escapeRebalance(pos, 50)).toEqual({ ok: false });
+    const row = getDb().prepare("SELECT min_bin_id, max_bin_id FROM positions WHERE id = ?").get(pos.id) as { min_bin_id: number; max_bin_id: number };
+    expect(row.min_bin_id).toBe(100);
+    expect(row.max_bin_id).toBe(200);
   });
 });

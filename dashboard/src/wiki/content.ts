@@ -316,7 +316,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
             code: "P4",
             title: "Still in range — manage",
             when: "Price is trading our bins",
-            then: "Claim/bank fees; maybe profit-lock a slice; escape-hatch reshape after deep dip + recovery",
+            then: "Claim/bank fees; maybe profit-lock a slice; escape hatch closes after deep dip + recovery",
             tone: "accent",
           },
           {
@@ -705,7 +705,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           ["Spot", "Spread evenly across bins — majors style."],
           ["Active bin", "Where the pool’s price is right now."],
           ["Zap", "Helper that turns leftover tokens into SOL when we exit."],
-          ["Escape hatch", "Deep dip, then recovery → reshape the range instead of dying slowly."],
+          ["Escape hatch", "Deep dip, then recovery → close and free the slot (reset), not a slow bleed."],
           ["Profit lock", "Bank a slice of a big winner while the rest keeps earning."],
           ["Usage fee", "Fixed 1% of measured close profit → buy+burn GNME (not Settings-tunable)."],
           ["Profile", "Pack of Bot settings — official / local / GitHub community. See Wiki → Settings profiles."],

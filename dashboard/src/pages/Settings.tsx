@@ -70,12 +70,6 @@ const GROUPS: Group[] = [
       { path: "manage.claim_min_sol", label: "Claim fees above", kind: "sol", min: 0.01, max: 0.5, step: 0.01 },
       { path: "manage.profit_lock_enabled", label: "Profit lock", kind: "bool", help: "Bank some profit on big runners while staying in." },
       { path: "manage.max_age_h", label: "Max hold time", kind: "int", min: 6, max: 168, step: 6, suffix: "hours" },
-      {
-        path: "exec.escape_rebalance_enabled",
-        label: "Escape rebalance",
-        kind: "bool",
-        help: "Try reshape-in-place before closing on escape hatch. Off = close instead.",
-      },
     ],
   },
   {
