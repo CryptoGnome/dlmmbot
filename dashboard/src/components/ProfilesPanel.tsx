@@ -52,7 +52,7 @@ function ProfileCard({
   busy: boolean;
 }) {
   return (
-    <div className="min-w-[11rem] flex-1 border border-grid p-3">
+    <div className="flex h-full min-w-0 flex-col border border-grid p-3">
       <div className="flex flex-wrap items-start gap-1.5">
         <div className="font-display text-[13px] font-semibold text-fg">{p.name}</div>
         {(p.tags ?? []).slice(0, 2).map((t) => (
@@ -61,7 +61,7 @@ function ProfileCard({
           </Badge>
         ))}
       </div>
-      <p className="mt-1 line-clamp-3 text-[11px] leading-snug text-dim">
+      <p className="mt-1 line-clamp-3 flex-1 text-[11px] leading-snug text-dim">
         {p.description || "No description."}
       </p>
       <div className="mt-2 text-[10px] text-muted">
@@ -275,7 +275,7 @@ export function ProfilesPanel({
           <>
         <div className="mb-4">
           <div className="mb-1.5 text-[10px] tracking-[0.14em] text-dim uppercase">Official</div>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {official.map((p) => (
               <ProfileCard
                 key={p.id}
@@ -317,7 +317,7 @@ export function ProfilesPanel({
               Share to GitHub
             </button>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {local.map((p) => (
               <ProfileCard
                 key={p.id}
@@ -351,7 +351,7 @@ export function ProfilesPanel({
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search…"
-              className="min-w-[8rem] border border-grid bg-transparent px-2 py-1 text-[11px] text-fg outline-none focus:border-accent"
+              className="min-w-[8rem] max-w-xs border border-grid bg-transparent px-2 py-1 text-[11px] text-fg outline-none focus:border-accent"
             />
             <button
               type="button"
@@ -361,7 +361,7 @@ export function ProfilesPanel({
             >
               How to contribute
             </button>
-            { (share?.docs_url || share?.community_readme) && (
+            {(share?.docs_url || share?.community_readme) && (
               <a
                 href={share.docs_url || share.community_readme}
                 target="_blank"
@@ -376,7 +376,7 @@ export function ProfilesPanel({
           {communityErr && (
             <p className="mb-2 text-[11px] text-warn">Gallery offline: {communityErr}</p>
           )}
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {filteredCommunity.map((p) => (
               <ProfileCard
                 key={p.id}

@@ -29,12 +29,21 @@ type Field =
       hint?: (ui: number) => string;
     };
 
-type Group = { title: string; blurb?: string; fields: Field[] };
+type Group = {
+  title: string;
+  blurb?: string;
+  /** Grid columns for fields (default 3). Use 2 for toggle+slider pairs. */
+  cols?: 2 | 3 | 4;
+  /** Pair each toggle with following sliders as clear rows (Token safety). */
+  layout?: "grid" | "gates";
+  fields: Field[];
+};
 
 const GROUPS: Group[] = [
   {
     title: "Book & size",
     blurb: "How many positions and how big they can get.",
+    cols: 4,
     fields: [
       { path: "sizing.max_positions", label: "Max open positions", kind: "int", min: 1, max: 10 },
       { path: "sizing.min_position_sol", label: "Minimum size", kind: "sol", min: 0.1, max: 2, step: 0.1 },
@@ -54,6 +63,7 @@ const GROUPS: Group[] = [
   {
     title: "Risk",
     blurb: "Exits and fee banking.",
+    cols: 4,
     fields: [
       {
         path: "manage.stop_loss_frac",
@@ -74,6 +84,7 @@ const GROUPS: Group[] = [
   {
     title: "Pool filters",
     blurb: "Skip pools that don’t clear these floors (before token vetting).",
+    cols: 3,
     fields: [
       { path: "gates.mcap_min_usd", label: "Min market cap", kind: "usd", min: 50_000, max: 500_000, step: 10_000 },
       { path: "gates.tvl_min_usd", label: "Min pool TVL", kind: "usd", min: 1_000, max: 50_000, step: 1_000 },
@@ -131,7 +142,8 @@ const GROUPS: Group[] = [
   },
   {
     title: "Token safety",
-    blurb: "Toggle a check off to stop blocking on it, or leave it on and set how strict the slider is.",
+    blurb: "Toggle a check off to stop blocking on it, or leave it on and set how strict the slider is. Paired as toggle → threshold.",
+    layout: "gates",
     fields: [
       {
         path: "vetting.age_min_enabled",
@@ -236,6 +248,7 @@ const GROUPS: Group[] = [
   {
     title: "Special features",
     blurb: "Extra entry / manage behaviors.",
+    cols: 2,
     fields: [
       { path: "entry.tranche_enabled", label: "Second tranche", kind: "bool", help: "Extra BidAsk pocket under high-score primaries." },
       { path: "follow.enabled", label: "Follow re-entry", kind: "bool", help: "Small legs after a clean above-range exit." },
@@ -269,6 +282,7 @@ const GROUPS: Group[] = [
   {
     title: "Majors parking",
     blurb: "Separate sleeve for SOL-quoted majors (ANSEM, PUMP, …).",
+    cols: 3,
     fields: [
       { path: "majors.enabled", label: "Enabled", kind: "bool" },
       { path: "majors.size_sol", label: "Position size", kind: "sol", min: 0.25, max: 3, step: 0.25 },
@@ -278,6 +292,7 @@ const GROUPS: Group[] = [
   },
   {
     title: "Mode",
+    cols: 2,
     fields: [
       {
         path: "exec.mode",
@@ -292,6 +307,41 @@ const GROUPS: Group[] = [
     ],
   },
 ];
+
+type GateRow =
+  | { kind: "gate"; gate: Field; knobs: Field[] }
+  | { kind: "loners"; fields: Field[] }
+  | { kind: "plain"; fields: Field[] };
+
+function chunkGateRows(fields: Field[]): GateRow[] {
+  const rows: GateRow[] = [];
+  let i = 0;
+  while (i < fields.length) {
+    const f = fields[i]!;
+    if (f.kind !== "bool") {
+      const plain: Field[] = [];
+      while (i < fields.length && fields[i]!.kind !== "bool") plain.push(fields[i++]!);
+      rows.push({ kind: "plain", fields: plain });
+      continue;
+    }
+    const gate = fields[i++]!;
+    const knobs: Field[] = [];
+    while (i < fields.length && fields[i]!.kind !== "bool") knobs.push(fields[i++]!);
+    if (knobs.length > 0) {
+      rows.push({ kind: "gate", gate, knobs });
+      continue;
+    }
+    const loners: Field[] = [gate];
+    while (i < fields.length && fields[i]!.kind === "bool") {
+      let j = i + 1;
+      while (j < fields.length && fields[j]!.kind !== "bool") j += 1;
+      if (j > i + 1) break;
+      loners.push(fields[i++]!);
+    }
+    rows.push({ kind: "loners", fields: loners });
+  }
+  return rows;
+}
 
 const PUBLIC_PATHS = new Set(GROUPS.flatMap((g) => g.fields.map((f) => f.path)));
 
@@ -409,17 +459,17 @@ function SliderRow({
   onChange: (n: number) => void;
 }) {
   return (
-    <div className="block max-w-[13.5rem] space-y-1">
+    <div className="flex h-full min-w-0 flex-col gap-1.5 border border-grid px-2.5 py-2">
       <div className="flex items-baseline justify-between gap-2">
-        <span className={`text-[11px] ${changed ? "text-hover" : "text-muted"}`} title={help}>
+        <span className={`min-w-0 text-[11px] leading-snug ${changed ? "text-hover" : "text-muted"}`} title={help}>
           {label}{changed ? " *" : ""}
         </span>
-        <span className="font-mono text-[11px] text-fg tabular-nums">{display}</span>
+        <span className="shrink-0 font-mono text-[11px] text-fg tabular-nums">{display}</span>
       </div>
       {hint && <p className="text-[9px] leading-snug text-accent">{hint}</p>}
       <input
         type="range"
-        className="slider-field"
+        className="slider-field mt-auto"
         min={min}
         max={max}
         step={step}
@@ -433,6 +483,12 @@ function SliderRow({
       </div>
     </div>
   );
+}
+
+function fieldGridClass(cols: 2 | 3 | 4 = 3) {
+  if (cols === 2) return "grid grid-cols-1 gap-2 sm:grid-cols-2";
+  if (cols === 4) return "grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4";
+  return "grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3";
 }
 
 export function SettingsPage() {
@@ -602,9 +658,9 @@ export function SettingsPage() {
     if (f.kind === "bool") {
       const on = wire === "true";
       return (
-        <div key={f.path} className="flex items-start justify-between gap-3">
+        <div key={f.path} className="flex h-full min-w-0 flex-col gap-2 border border-grid px-2.5 py-2">
           <div className="min-w-0">
-            <div className={`text-[11px] ${changed ? "text-hover" : "text-muted"}`}>
+            <div className={`text-[11px] leading-snug ${changed ? "text-hover" : "text-muted"}`}>
               {f.label}{changed ? " *" : ""}
             </div>
             {f.help && <p className="mt-1 text-[10px] leading-snug text-dim">{f.help}</p>}
@@ -613,7 +669,7 @@ export function SettingsPage() {
             type="button"
             role="switch"
             aria-checked={on}
-            className={`shrink-0 border px-3 py-1 text-[11px] tracking-wider uppercase ${
+            className={`mt-auto self-start border px-3 py-1 text-[11px] tracking-wider uppercase ${
               on ? "border-ok/50 bg-ok/10 text-ok" : "border-grid text-dim"
             }`}
             onClick={() => setPath(f.path, on ? "false" : "true")}
@@ -626,12 +682,12 @@ export function SettingsPage() {
 
     if (f.kind === "select") {
       return (
-        <label key={f.path} className="block space-y-1">
-          <span className={`text-[11px] ${changed ? "text-hover" : "text-muted"}`}>
+        <label key={f.path} className="flex h-full min-w-0 flex-col gap-1.5 border border-grid px-2.5 py-2">
+          <span className={`text-[11px] leading-snug ${changed ? "text-hover" : "text-muted"}`}>
             {f.label}{changed ? " *" : ""}
           </span>
-          {f.help && <span className="block text-[10px] leading-snug text-dim">{f.help}</span>}
-          <select className="input-field" value={wire} onChange={(e) => setPath(f.path, e.target.value)}>
+          {f.help && <span className="text-[10px] leading-snug text-dim">{f.help}</span>}
+          <select className="input-field mt-auto" value={wire} onChange={(e) => setPath(f.path, e.target.value)}>
             {f.options.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
@@ -642,11 +698,11 @@ export function SettingsPage() {
 
     if (f.kind === "text") {
       return (
-        <label key={f.path} className="block w-full max-w-md space-y-1 basis-full">
-          <span className={`text-[11px] ${changed ? "text-hover" : "text-muted"}`}>
+        <label key={f.path} className="col-span-full flex min-w-0 flex-col gap-1.5 border border-grid px-2.5 py-2">
+          <span className={`text-[11px] leading-snug ${changed ? "text-hover" : "text-muted"}`}>
             {f.label}{changed ? " *" : ""}
           </span>
-          {f.help && <span className="block text-[10px] leading-snug text-dim">{f.help}</span>}
+          {f.help && <span className="text-[10px] leading-snug text-dim">{f.help}</span>}
           <input className="input-field" value={wire} onChange={(e) => setPath(f.path, e.target.value)} />
         </label>
       );
@@ -690,7 +746,7 @@ export function SettingsPage() {
   const walletBadgeLabel = presence.label;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display flex items-center gap-2 text-lg font-semibold tracking-wide">
@@ -772,9 +828,34 @@ export function SettingsPage() {
       {ready && pageTab === "bot" && GROUPS.map((g) => (
         <Panel key={g.title} title={g.title} right={<Badge tone="accent">{g.fields.filter((f) => f.path in (config ?? {})).length}</Badge>}>
           {g.blurb && <p className="mb-3 text-[11px] text-dim">{g.blurb}</p>}
-          <div className="flex flex-wrap gap-x-8 gap-y-4">
-            {g.fields.map(renderField)}
-          </div>
+          {g.layout === "gates" ? (
+            <div className="space-y-2">
+              {chunkGateRows(g.fields).map((row, idx) => {
+                if (row.kind === "gate") {
+                  return (
+                    <div
+                      key={`${row.gate.path}-${idx}`}
+                      className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(13rem,0.85fr)_1.35fr]"
+                    >
+                      {renderField(row.gate)}
+                      <div className={row.knobs.length > 1 ? "grid grid-cols-1 gap-2 sm:grid-cols-2" : "min-w-0"}>
+                        {row.knobs.map(renderField)}
+                      </div>
+                    </div>
+                  );
+                }
+                return (
+                  <div key={`row-${idx}`} className={fieldGridClass(2)}>
+                    {row.fields.map(renderField)}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className={fieldGridClass(g.cols)}>
+              {g.fields.map(renderField)}
+            </div>
+          )}
         </Panel>
       ))}
 
