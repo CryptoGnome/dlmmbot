@@ -487,9 +487,9 @@ function SliderRow({
 
 function fieldGridClass(cols: 2 | 3 | 4 = 3) {
   if (cols === 2) return "grid grid-cols-1 gap-2 sm:grid-cols-2";
-  // Equal-width cells that pack cleanly — avoids flex-wrap stagger.
-  if (cols === 4) return "grid grid-cols-[repeat(auto-fill,minmax(11.5rem,1fr))] gap-2";
-  return "grid grid-cols-[repeat(auto-fill,minmax(13.5rem,1fr))] gap-2";
+  // Fixed counts so N fields divide evenly (4→2×2 / 4×1, 9→3×3).
+  if (cols === 4) return "grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4";
+  return "grid grid-cols-1 gap-2 md:grid-cols-3";
 }
 
 export function SettingsPage() {
