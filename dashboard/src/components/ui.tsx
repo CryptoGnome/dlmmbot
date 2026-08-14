@@ -1,5 +1,54 @@
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
+import { Loader2 } from "lucide-react";
+
+export function Spinner({
+  size = 16,
+  className,
+  label = "Loading",
+}: {
+  size?: number;
+  className?: string;
+  /** Accessible name for screen readers */
+  label?: string;
+}) {
+  return (
+    <span
+      role="status"
+      aria-label={label}
+      className={cn("inline-flex shrink-0 text-accent", className)}
+    >
+      <Loader2 size={size} strokeWidth={1.75} className="animate-spin" aria-hidden />
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+}
+
+/** Page / panel placeholder while async data loads. Reuse anywhere. */
+export function LoadingState({
+  label = "Loading…",
+  className,
+  compact = false,
+}: {
+  label?: string;
+  className?: string;
+  /** Smaller inline block (panels) vs page-sized */
+  compact?: boolean;
+}) {
+  return (
+    <div
+      role="status"
+      className={cn(
+        "flex flex-col items-center justify-center gap-2.5 text-dim",
+        compact ? "min-h-[5rem] py-5" : "min-h-[12rem] border border-grid bg-panel py-12",
+        className,
+      )}
+    >
+      <Spinner size={compact ? 18 : 24} label={label} />
+      <span className="text-[11px] tracking-[0.14em] uppercase">{label}</span>
+    </div>
+  );
+}
 
 export function Panel({
   title, children, className, right, bodyClassName,

@@ -11,7 +11,7 @@ import {
   type ProfileShareMeta,
   type SettingsProfile,
 } from "@/lib/api";
-import { Badge, Panel } from "@/components/ui";
+import { Badge, LoadingState, Panel } from "@/components/ui";
 import { Icon } from "@/lib/icons";
 import { toast } from "@/lib/toast";
 import { copyText } from "@/lib/errorReport";
@@ -107,6 +107,7 @@ export function ProfilesPanel({
   const [share, setShare] = useState<ProfileShareMeta | null>(null);
   const [communityErr, setCommunityErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [ready, setReady] = useState(false);
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [shareGuide, setShareGuide] = useState<ShareState | null>(null);
   const [saveName, setSaveName] = useState("");
@@ -127,10 +128,12 @@ export function ProfilesPanel({
     setCommunity(c.profiles);
     setCommunityErr(c.error);
     if (c.share) setShare(c.share);
+    setReady(true);
   }, []);
 
   useEffect(() => {
     void reload().catch((e) => {
+      setReady(true);
       toast({ title: "Profiles load failed", detail: (e as Error).message, tone: "danger", kind: "fail" });
     });
   }, [reload]);
@@ -265,6 +268,10 @@ export function ProfilesPanel({
           Applying never changes paper/live mode or secrets. Sharing is browser-only — works from Railway.
         </p>
 
+        {!ready ? (
+          <LoadingState compact label="Loading profiles…" />
+        ) : (
+          <>
         <div className="mb-4">
           <div className="mb-1.5 text-[10px] tracking-[0.14em] text-dim uppercase">Official</div>
           <div className="flex flex-wrap gap-2">
@@ -384,6 +391,8 @@ export function ProfilesPanel({
             )}
           </div>
         </div>
+          </>
+        )}
       </Panel>
 
       {preview && (

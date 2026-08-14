@@ -5,7 +5,7 @@ import {
   fetchDeployPrefs, patchDeployPrefs,
   type EnvRow, type FlatConfig, type SetupStatus, type DeployPrefs,
 } from "@/lib/api";
-import { Badge, Panel } from "@/components/ui";
+import { Badge, LoadingState, Panel } from "@/components/ui";
 import { Icon } from "@/lib/icons";
 import { toast } from "@/lib/toast";
 import { WalletCreateModal } from "@/components/WalletCreateModal";
@@ -444,6 +444,7 @@ export function SettingsPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [ready, setReady] = useState(false);
   const [secretsOpen, setSecretsOpen] = useState(false);
   const [secretsUnlocked, setSecretsUnlocked] = useState(false);
   const [confirmToken, setConfirmToken] = useState("");
@@ -484,6 +485,7 @@ export function SettingsPage() {
       setErr((e as Error).message ?? String(e));
     } finally {
       setLoading(false);
+      setReady(true);
     }
   };
 
@@ -714,12 +716,12 @@ export function SettingsPage() {
           )}
           <button
             type="button"
-            className="inline-flex items-center gap-1.5 border border-grid px-3 py-1.5 text-[11px] tracking-wider text-muted uppercase hover:text-hover"
+            className="inline-flex items-center gap-1.5 border border-grid px-3 py-1.5 text-[11px] tracking-wider text-muted uppercase hover:text-hover disabled:opacity-40"
             onClick={() => void load()}
             disabled={loading}
           >
-            <Icon icon={RefreshCw} size={12} />
-            Reload
+            <Icon icon={RefreshCw} size={12} className={loading ? "animate-spin" : undefined} />
+            {loading ? "Loading…" : "Reload"}
           </button>
         </div>
       </div>
@@ -731,6 +733,7 @@ export function SettingsPage() {
             pageTab === "bot" ? "bg-ok/15 text-ok" : "text-dim hover:text-muted"
           }`}
           onClick={() => setPageTab("bot")}
+          disabled={!ready}
         >
           <Icon icon={SettingsIcon} size={12} />
           Bot settings
@@ -742,6 +745,7 @@ export function SettingsPage() {
             pageTab === "wallet" ? "bg-ok/15 text-ok" : "text-dim hover:text-muted"
           }`}
           onClick={() => setPageTab("wallet")}
+          disabled={!ready}
         >
           <Icon icon={Wallet} size={12} />
           Wallet & secrets
@@ -753,9 +757,9 @@ export function SettingsPage() {
 
       {err && <div className="border border-danger/60 bg-panel px-3 py-2 text-danger text-[11px]">{err}</div>}
       {msg && <div className="border border-ok/60 bg-panel px-3 py-2 text-ok text-[11px]">{msg}</div>}
-      {loading && <div className="text-[12px] text-dim">Loading…</div>}
+      {!ready && <LoadingState label="Loading settings…" />}
 
-      {!loading && pageTab === "bot" && (
+      {ready && pageTab === "bot" && (
         <ProfilesPanel
           onApplied={(next) => {
             setConfig(next);
@@ -769,7 +773,7 @@ export function SettingsPage() {
         />
       )}
 
-      {!loading && pageTab === "bot" && GROUPS.map((g) => (
+      {ready && pageTab === "bot" && GROUPS.map((g) => (
         <Panel key={g.title} title={g.title} right={<Badge tone="accent">{g.fields.filter((f) => f.path in (config ?? {})).length}</Badge>}>
           {g.blurb && <p className="mb-3 text-[11px] text-dim">{g.blurb}</p>}
           <div className="flex flex-wrap gap-x-8 gap-y-4">
@@ -778,7 +782,7 @@ export function SettingsPage() {
         </Panel>
       ))}
 
-      {!loading && pageTab === "wallet" && (
+      {ready && pageTab === "wallet" && (
       <>
       <Panel
         title="Host updates"
