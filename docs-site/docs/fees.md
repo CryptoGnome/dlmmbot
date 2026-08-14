@@ -28,8 +28,8 @@ This is a required product fee, not an operator toggle. Plan for it when sizing 
 - **Not** RPC, Jupiter, or host costs — those are your infrastructure bills.
 - **Not** charged on every trade or every close — only net **wins** in live mode.
 
-## Related
-
-- [Risk & sizing](./risk) — paper-first and promotion gate before live
-- [Configuration](./configuration) — strategy knobs (the fee is intentionally absent from `config.toml`)
-- [FAQ](./faq) — losses, restarts, RPC, and other operator questions
+<p class="cta-row">
+  <a class="doc-btn ghost" href="./risk">Risk & sizing</a>
+  <a class="doc-btn ghost" href="./configuration">Configuration</a>
+  <a class="doc-btn ghost" href="./faq">FAQ</a>
+</p>

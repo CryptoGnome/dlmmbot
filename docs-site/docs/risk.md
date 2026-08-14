@@ -7,9 +7,7 @@ description: How DLMM Bot sizes positions (Kelly) and what stops it from digging
 
 Memecoin LP expectancy comes from **many small fee wins plus rare full losses** on rugs that beat the safety triggers. The vetting engine cannot catch a well-executed slow rug — sizing caps and brakes are the real defense. This page is how the bot decides *how big*, and everything that can stop it.
 
-::: danger The honest frame
-You can lose 100% of the funds under this bot's control. Nothing here removes that; it bounds it. Burner wallet only, paper first. Not financial advice.
-:::
+<p class="note bad">You can lose 100% of the funds under this bot’s control. Burner wallet only, paper first. Not financial advice.</p>
 
 ## The bankroll
 
@@ -82,9 +80,7 @@ Three different "stop" concepts — don't confuse them:
 
 The loop holds a lock file (`data/farmer.lock`). **Never run two bot processes against the same wallet/DB** — they would double-trade the same strategy, and in live mode, the same wallet. The lock is per-machine, so a dev-PC loop plus a server loop is the dangerous case; when the server takes over, stop the local one.
 
-::: warning Windows kill gotcha
-On Windows, killing a background `npm run run` kills only the npm wrapper — the `tsx` child **survives and keeps trading**. Kill every node process whose command line matches the repo path, then delete `data/farmer.lock`.
-:::
+<p class="note warn">On Windows, killing a background <code>npm run run</code> kills only the npm wrapper — the <code>tsx</code> child <strong>survives and keeps trading</strong>. Kill every node process whose command line matches the repo path, then delete <code>data/farmer.lock</code>.</p>
 
 ## Paper first: the promotion gate
 
@@ -103,11 +99,9 @@ Being honest about the limits:
 - RugCheck free reports are cached upstream; our own RPC checks are the fresh layer, and RugCheck is only ever a veto.
 - The stop loss (P1) realizes −25%+ by definition. The live book's P1 exits were dump-throughs that kept falling after exit — the stop is doing its job, not failing.
 
-## Related
-
-- [Strategy reference](./strategy) — the P0–P5 ladder these brakes protect
-- [Configuration reference](./configuration) — every brake threshold as a key
-- [FAQ](./faq) — "Can I lose money?" and other direct answers
-- [Fees](./fees) — GNME usage fee on live wins
-- [How it works](./how-it-works) — the pipeline overview
-- [CLI reference](./cli) — `halt`, `pause`, `status`, `force-close`
+<p class="cta-row">
+  <a class="doc-btn ghost" href="./strategy">Strategy</a>
+  <a class="doc-btn ghost" href="./configuration">Configuration</a>
+  <a class="doc-btn ghost" href="./faq">FAQ</a>
+  <a class="doc-btn ghost" href="./cli">CLI</a>
+</p>

@@ -5,32 +5,17 @@ description: Run DLMM Bot locally or on a VPS with PM2 and auto-deploy.
 
 # Advanced setup
 
-For people with a server, or who want to run on their own PC. Most newcomers should use [Easy setup (Railway)](./easy).
+Your PC or a Linux VPS. Same bot and paper/live gates as Railway. Newcomers: start on Easy.
 
-[Get a VPS on Vultr →](https://www.vultr.com/?ref=9917878-9J)
-
-::: warning
-Same risk rules: paper first, burner only, never commit `.env`.
-:::
-
-::: tip Settings profiles
-Dashboard **Settings → Profiles** for official / local / community packs. Share via the guided **Share to GitHub** modal. Guide: [Settings profiles](./profiles).
-:::
-
-## When to use this
-
-| Path | Best for |
-| --- | --- |
-| [Easy (Railway)](./easy) | No server. Public HTTPS. Auto-redeploy. |
-| **This guide** | VPS / home box / local PC with full control. |
-| Same bot | Identical code and paper/live gates. |
+<p class="cta-row">
+  <a class="doc-btn" href="https://www.vultr.com/?ref=9917878-9J" target="_blank" rel="noreferrer">Get a Vultr VPS</a>
+  <a class="doc-btn ghost" href="./easy">Easy setup</a>
+  <a class="doc-btn ghost" href="./api-keys">API keys</a>
+</p>
 
 ## VPS on Vultr
 
-Need a box? We run production on a small Linux VPS. [Vultr](https://www.vultr.com/?ref=9917878-9J) is a straightforward pick — spin up Ubuntu, SSH in, then follow [PM2 on a VPS](#pm2-on-a-vps) below.
-
-::: tip Suggested Vultr plan
-**Cloud Compute → Regular Performance** (names vary by region — anything in this ballpark is fine):
+Spin up Ubuntu, SSH in, then follow [PM2](#pm2-on-a-vps). We run production on a small box in this ballpark:
 
 | | Minimum |
 | --- | --- |
@@ -39,26 +24,23 @@ Need a box? We run production on a small Linux VPS. [Vultr](https://www.vultr.co
 | **Disk** | 80 GB NVMe |
 | **OS** | Ubuntu 24.04 LTS |
 
-Why this size: the farmer loop + dashboard + auto-deploy watcher stay light day-to-day, but deploy verification runs `npm ci`, typecheck, tests, and a dashboard build — that spike needs RAM headroom. SQLite and `data/` live on disk; 80 GB leaves room for logs and git history.
-
-**Region:** pick one close to your RPC provider (US West/East is common for Helius / QuickNode). After the VM is up: `git clone`, `npm install`, then PM2 as below.
-
-[Create a Vultr VPS →](https://www.vultr.com/?ref=9917878-9J)
-:::
+Deploy verification (`npm ci`, typecheck, tests, dashboard build) is the RAM spike — day-to-day the farmer + dash + watcher stay light. Pick a region close to your RPC (US West/East is common for Helius). Then `git clone`, `npm install`, PM2.
 
 ## Required API keys
 
-Helius RPC and Jupiter are required before live. GMGN is optional but recommended (free). **Full step-by-step:** [API keys](./api-keys).
-
-Quick map:
+Helius RPC and Jupiter before live. GMGN optional, recommended, free.
 
 | Key | Sign up |
 | --- | --- |
 | **`RPC_URL`** | [Helius](https://dashboard.helius.dev/signup) → Mainnet RPC URL |
 | **`JUPITER_API_KEY`** | [developers.jup.ag/portal](https://developers.jup.ag/portal) |
-| **`GMGN_API_KEY`** (optional) | [gmgn.ai/ai](https://gmgn.ai/ai) — see [API keys → GMGN](./api-keys#gmgn-api-key-gmgn_api_key-optional) |
+| **`GMGN_API_KEY`** | [gmgn.ai/ai](https://gmgn.ai/ai) — [full steps](./api-keys#gmgn-api-key-gmgn_api_key-optional) |
 
-The first-run **setup wizard** walks through RPC + Jupiter; GMGN can be added there or later in Settings.
+The first-run wizard walks through RPC + Jupiter. GMGN can wait.
+
+<p class="cta-row">
+  <a class="doc-btn ghost" href="./api-keys">Full key signup</a>
+</p>
 
 ## Local install (paper)
 
@@ -91,7 +73,7 @@ JUPITER_API_KEY=your_jupiter_key
 
 ### 3. Force paper in runtime config
 
-First run seeds gitignored `data/config.toml` from the repo template. Edit that file (or use Settings) — not the tracked `config.toml`.
+First run seeds gitignored `data/config.toml` from the repo template. Edit that file (or Settings) — not the tracked `config.toml`.
 
 ```toml
 # data/config.toml
@@ -99,17 +81,12 @@ First run seeds gitignored `data/config.toml` from the repo template. Edit that 
 mode = "paper"
 ```
 
-::: tip
-Live needs **both** this and `FARMER_MODE=live`.
-:::
+Live needs **both** this and `FARMER_MODE=live`. One switch stays paper.
 
 ### 4. Run
 
 ```bash
 npm run run
-```
-
-```bash
 npm run status
 npm run halt
 ```
@@ -126,11 +103,11 @@ npm run dash:build && npm run dash
 ```bash
 DASH_TOKEN=pick-a-long-random-password
 DASH_PORT=8787
-# optional: bind loopback only (default 0.0.0.0) — reach it via SSH tunnel
+# optional: bind loopback only (default 0.0.0.0)
 DASH_HOST=127.0.0.1
 ```
 
-The dash server speaks plain HTTP — it logs a startup warning when bound to a non-loopback interface. Keep it on a trusted LAN or behind HTTPS (see [Dashboard from outside](#dashboard-from-outside)).
+The dash speaks plain HTTP. Keep it on a trusted LAN or behind HTTPS.
 
 ```bash
 npm run dash:build
@@ -139,11 +116,11 @@ npm run dash
 
 Open [http://localhost:8787](http://localhost:8787) with that token.
 
-The **Errors** tab streams structured runtime failures over WebSocket. Header **ON/OFF** soft-pauses the trading engine (positions stay open). Red **HALT** closes all opens then idles (same `HALT` file as `npm run halt`; confirm with dash token). Pending updates on **Changes** show risk chips (`strategy`, `deps`, `deploy`, `dash`, `docs`). The **Wiki** tab is the in-dashboard operator manual (scan → sleeves → exits → ops); keep it aligned with `STRATEGY.md` when behavior changes.
+**Errors** streams runtime failures. Header **ON/OFF** soft-pauses (positions stay open). Red **HALT** closes all opens then idles. **Changes** shows pending updates with risk chips. **Wiki** is the in-dashboard operator manual.
 
 ## Keys & going live
 
-Encrypted wallet via the dashboard (recommended) or plain `WALLET_PRIVATE_KEY` for advanced installs. Plus Helius RPC + Jupiter key from [Required API keys](#required-api-keys) above.
+Encrypted wallet via the dashboard (recommended) or `WALLET_PRIVATE_KEY` for advanced installs. Fresh burner only — one bot process per wallet/DB.
 
 ```bash
 # data/.env (seeded from .env on first run)
@@ -159,10 +136,6 @@ WALLET_PRIVATE_KEY=…
 mode = "live"
 ```
 
-::: danger Burner only
-One bot process per wallet/DB.
-:::
-
 ## PM2 on a VPS
 
 ```bash
@@ -174,7 +147,7 @@ pm2 startup
 pm2 logs meteora-farmer
 ```
 
-Ecosystem sets `FARMER_CONFIG_PATH` / `FARMER_ENV_PATH` / `FARMER_DB_PATH` under `data/` so Settings never dirties git. `meteora-deploy` in the same ecosystem is the git pull watcher — start it only if you want updates from `main` (or `develop` on staging).
+Ecosystem sets `FARMER_CONFIG_PATH` / `FARMER_ENV_PATH` / `FARMER_DB_PATH` under `data/` so Settings never dirties git. `meteora-deploy` is the git pull watcher — start it only if you want updates from `main` (or `develop` on staging).
 
 ## Auto-deploy
 
@@ -183,11 +156,7 @@ pm2 start deploy/ecosystem.config.cjs --only meteora-deploy
 pm2 save
 ```
 
-Auto-update is **on by default**. To review commits before they land: flip the **Auto on/off** switch next to the GitHub build pill in the dashboard header. When GitHub is ahead, open **Changes** and click the checkmark (**Approve**) — the watcher then pulls that tip.
-
-::: tip
-Don’t SCP a dirty tree and expect CURRENT — push + pull (or let the watcher do it).
-:::
+Auto-update is **on by default**. To review first: flip **Auto on/off** next to the GitHub build pill. When GitHub is ahead, **Changes → Approve**. Don’t SCP a dirty tree and expect CURRENT — push + pull.
 
 ## Dashboard from outside
 
@@ -195,9 +164,7 @@ Don’t SCP a dirty tree and expect CURRENT — push + pull (or let the watcher 
 - **Cloudflare Tunnel** — public HTTPS without opening ports
 - **Reverse proxy + HTTPS** on a VPS with a domain
 
-::: danger
-Don’t expose `:8787` raw without a strong `DASH_TOKEN` (and HTTPS).
-:::
+<p class="note bad">Don’t expose <code>:8787</code> raw without a strong <code>DASH_TOKEN</code> and HTTPS.</p>
 
 ## Troubleshooting
 
@@ -205,5 +172,5 @@ Don’t expose `:8787` raw without a strong `DASH_TOKEN` (and HTTPS).
 | --- | --- |
 | `better-sqlite3` build fail | VS Build Tools / `build-essential` |
 | Already running / lock | Only if sure: `npm run release` |
-| BEHIND on version pill | Start `meteora-deploy`, or approve on Changes if auto-update is off, or `git pull` |
+| BEHIND on version pill | Start `meteora-deploy`, or Approve on Changes, or `git pull` |
 | Want the simple path | [Easy setup (Railway)](./easy) |

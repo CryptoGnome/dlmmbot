@@ -5,7 +5,7 @@ description: Official, local, and community settings packs — apply in the dash
 
 # Settings profiles
 
-Packs of Bot settings knobs (same paths as **Settings → Bot settings**). Apply with a diff preview. Profiles never flip paper/live mode, never touch RPC/wallet secrets, and never change [product fees](./fees).
+Packs of Bot settings knobs (same paths as **Settings → Bot settings**). Apply with a diff preview. Profiles never flip paper/live, never touch RPC/wallet secrets, and never change [product fees](./fees).
 
 | Kind | Where it lives | Who sees it |
 |---|---|---|
@@ -13,7 +13,7 @@ Packs of Bot settings knobs (same paths as **Settings → Bot settings**). Apply
 | **My profiles** | Your data volume (`data/profiles/`) | Only your bot |
 | **Community** | GitHub gallery under `profiles/community/` | Everyone after a PR merges |
 
-Open **Settings → Profiles** in the dashboard. The in-dashboard Wiki → **Settings profiles** has the short operator tour; this page is the full share guide.
+Open **Settings → Profiles**. The Wiki → **Settings profiles** has the short operator tour.
 
 ## Apply a pack
 
@@ -27,23 +27,17 @@ On **My profiles**, name the current Bot settings and **Save current**. That sna
 
 ## Share to the community gallery (browser-only)
 
-You do **not** need to clone the bot to a PC, and you do **not** need `git` on Railway. Stay logged into [github.com](https://github.com) in the browser.
+No clone, no `git` on Railway. Stay logged into [github.com](https://github.com) in the browser.
 
-### Steps
-
-1. In the bot: **Settings → Profiles → Share to GitHub** (or **How to contribute**).
-2. In the guided modal: **Copy JSON**, then **Copy index row**.
+1. **Settings → Profiles → Share to GitHub** (or **How to contribute**).
+2. In the modal: **Copy JSON**, then **Copy index row**.
 3. Click **Create `<slug>.json`** — opens GitHub’s create-file page.
-4. If you are not a collaborator, GitHub shows **Fork this repository** — accept that. You edit **your fork**, then open a PR upstream. That is expected.
+4. If you’re not a collaborator, GitHub shows **Fork this repository** — accept that. You edit your fork, then open a PR upstream. That is expected.
 5. Paste the JSON into the new file and commit on the fork.
 6. Still on your fork, open **Edit index.json** (link in the modal) and add the copied row to the `profiles` array (same branch).
 7. **Contribute → Open pull request** against `CryptoGnome/dlmmbot` `main` (or `develop` for in-flight work).
 
 After merge, the dashboard gallery picks it up (community cache ~10 minutes).
-
-::: tip Fork = normal
-Most operators are not collaborators. The fork prompt is the open-source path — not a bug.
-:::
 
 ## Rules for community PRs
 
@@ -85,8 +79,8 @@ Most operators are not collaborators. The fork prompt is the open-source path �
 }
 ```
 
-## Related
-
-- Dashboard: **Settings → Profiles** and Wiki → **Settings profiles**
-- Easy setup: [Railway](./easy)
-- Advanced setup: [local / VPS](./advanced)
+<p class="cta-row">
+  <a class="doc-btn ghost" href="./easy">Easy setup</a>
+  <a class="doc-btn ghost" href="./dashboard">Dashboard guide</a>
+  <a class="doc-btn ghost" href="./configuration">Configuration</a>
+</p>

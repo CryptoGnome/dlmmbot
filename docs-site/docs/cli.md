@@ -78,10 +78,9 @@ Runs the out-of-process liveness checker once by hand (normally it lives in cron
 | `npm test` | Full vitest run with enforced coverage thresholds |
 | `npm run test:watch` | Watch mode |
 
-## Related
-
-- [Risk & sizing](./risk) — HALT vs PAUSE vs OFF, the one-instance rule
-- [Advanced setup](./advanced) — PM2, auto-deploy, running on a VPS
-- [Dashboard guide](./dashboard) — the UI equivalents of these commands
-- [Configuration reference](./configuration) — the knobs `scan` is testing
-- [FAQ](./faq) — restart behavior and other operational questions
+<p class="cta-row">
+  <a class="doc-btn ghost" href="./risk">Risk & sizing</a>
+  <a class="doc-btn ghost" href="./advanced">Advanced setup</a>
+  <a class="doc-btn ghost" href="./dashboard">Dashboard</a>
+  <a class="doc-btn ghost" href="./faq">FAQ</a>
+</p>

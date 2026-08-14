@@ -12,9 +12,7 @@ Every knob the bot obeys lives in one TOML file. Key facts before the tables:
 - Dashboard **Settings → Bot settings** writes these same keys, and [Settings profiles](./profiles) apply curated packs of them.
 - Defaults below are the shipped template values. Several were deliberately tightened from the original spec after live trading (noted where interesting).
 
-::: warning Don't casually weaken safety keys
-Stops, brakes, and vetting gates exist because the alternatives lost money in the live book. Change with evidence — see [Risk & sizing](./risk).
-:::
+<p class="note warn">Don’t casually weaken stops, brakes, or vetting gates — they exist because the alternatives lost money. Change with evidence. See <a href="./risk">Risk &amp; sizing</a>.</p>
 
 ## `[scanner]`
 
@@ -258,9 +256,7 @@ Thresholds:
 | `tx_retries` | `3` | Network retries before abandoning and re-quoting |
 | `paper_promotion_days` | `7` | Consecutive profitable paper days for live eligibility |
 
-::: info Not a knob
-The 1% GNME buy-and-burn usage fee is hardcoded in `src/executor/profitBurn.ts` — it is deliberately **not** a config key. See [Fees](./fees).
-:::
+<p class="note ok">The 1% GNME buy-and-burn fee is hardcoded in <code>src/executor/profitBurn.ts</code> — not a config key. See <a href="./fees">Fees</a>.</p>
 
 ## `[watchdog]`
 
@@ -303,10 +299,9 @@ Not in `config.toml`, but part of the same picture:
 | `DASH_TOKEN` / `DASH_PORT` | Dashboard auth token and port (default 8787) |
 | `FARMER_CONFIG_PATH` / `FARMER_ENV_PATH` / `FARMER_DB_PATH` | Override runtime file locations (PM2 ecosystem sets these under `data/`) |
 
-## Related
-
-- [Strategy reference](./strategy) — what these thresholds do in context
-- [Risk & sizing](./risk) — the safety keys explained
-- [Settings profiles](./profiles) — curated packs of these knobs
-- [Dashboard guide](./dashboard) — editing settings from the UI
-- [config.toml (repo template)](https://github.com/CryptoGnome/dlmmbot/blob/main/config.toml)
+<p class="cta-row">
+  <a class="doc-btn ghost" href="./strategy">Strategy</a>
+  <a class="doc-btn ghost" href="./risk">Risk & sizing</a>
+  <a class="doc-btn ghost" href="./profiles">Profiles</a>
+  <a class="doc-btn ghost" href="https://github.com/CryptoGnome/dlmmbot/blob/main/config.toml" target="_blank" rel="noreferrer">config.toml</a>
+</p>

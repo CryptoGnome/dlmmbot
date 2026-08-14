@@ -5,40 +5,42 @@ description: Setup docs for DLMM Bot — Railway (easy) or local / VPS / PM2 (ad
 
 # Docs
 
-Pick a path. Same bot, same paper/live gates — only the host changes.
+Same bot, same paper/live gates — only the host changes.
 
 <div class="pick-grid">
   <a class="pick" href="./easy">
     <span class="tag">Recommended</span>
     <h3>Easy — Railway</h3>
-    <p>No VPS. Public HTTPS dashboard. Auto-redeploy from GitHub. Best for most users.</p>
+    <p>No VPS. Public HTTPS dashboard. Auto-redeploy from GitHub.</p>
   </a>
   <a class="pick" href="./advanced">
     <span class="tag ops">Operators</span>
     <h3>Advanced — local / VPS</h3>
-    <p>Run on your PC or a Linux VPS (we suggest Vultr). PM2, auto-deploy watcher, tunnels.</p>
+    <p>Your PC or a Linux VPS. PM2, auto-deploy watcher, tunnels.</p>
   </a>
 </div>
 
 ## Understand the bot
 
-- [How it works](./how-it-works) — the full pipeline for newcomers: scan → vet → enter → manage → exit, sleeves, follow mode
-- [Strategy reference](./strategy) — every gate, the P0–P5 exit ladder, follow mode, blacklist rules
-- [Risk & sizing](./risk) — Kelly, brakes, HALT/PAUSE, the paper→live promotion gate
+<div class="ref-list">
+  <a href="./how-it-works">How it works <span>scan → vet → enter → manage → exit</span></a>
+  <a href="./strategy">Strategy reference <span>every gate, P0–P5 ladder, follow mode</span></a>
+  <a href="./risk">Risk &amp; sizing <span>Kelly, brakes, HALT, paper→live</span></a>
+</div>
 
 ## Reference
 
-- [Configuration](./configuration) — every `config.toml` key with defaults
-- [API keys](./api-keys) — Helius, Jupiter, GMGN signup in one place
-- [Dashboard guide](./dashboard) — tab-by-tab, setup wizard, encrypted wallet
-- [CLI](./cli) — every command and when to use it
-- [FAQ](./faq) — honest answers, starting with "can I lose money?" (yes)
-- [Fees](./fees) — the GNME usage fee on live winning closes
+<div class="ref-list">
+  <a href="./api-keys">API keys <span>Helius, Jupiter, GMGN</span></a>
+  <a href="./dashboard">Dashboard guide <span>tabs, wizard, wallet, HALT</span></a>
+  <a href="./configuration">Configuration <span>every config.toml key</span></a>
+  <a href="./profiles">Settings profiles <span>official, local, community packs</span></a>
+  <a href="./cli">CLI <span>scan, status, halt, pause</span></a>
+  <a href="./fees">Fees <span>1% GNME burn on live wins</span></a>
+  <a href="./faq">FAQ <span>can you lose money? yes</span></a>
+</div>
 
-Also see [STRATEGY.md](https://github.com/CryptoGnome/dlmmbot/blob/main/STRATEGY.md) for the raw spec with live-book history.
-
-::: tip Settings profiles
-Dashboard **Settings → Profiles**: official packs, local saves, and a GitHub community gallery. **Share to GitHub** is browser-only (fork when asked). Full guide: [Settings profiles](./profiles).
-:::
-
-License is [PolyForm Shield](https://github.com/CryptoGnome/dlmmbot/blob/main/LICENSE) — run it yourself; do not ship a competing copy.
+<p class="cta-row">
+  <a class="doc-btn ghost" href="https://github.com/CryptoGnome/dlmmbot/blob/main/STRATEGY.md" target="_blank" rel="noreferrer">STRATEGY.md</a>
+  <a class="doc-btn ghost" href="https://github.com/CryptoGnome/dlmmbot/blob/main/LICENSE" target="_blank" rel="noreferrer">License</a>
+</p>

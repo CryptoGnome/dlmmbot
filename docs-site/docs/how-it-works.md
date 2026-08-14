@@ -5,13 +5,11 @@ description: The full DLMM Bot pipeline for newcomers — scan, vet, enter, mana
 
 # How the bot works
 
-DLMM Bot is an automated liquidity-provider (LP) bot for [Meteora DLMM](https://meteora.ag) pools on Solana. In one sentence: **it parks SOL in bins just under a hot token's price, earns a fee every time traders move through those bins, and cashes back to SOL by fixed mechanical rules.**
+An automated LP bot for [Meteora DLMM](https://meteora.ag) on Solana: **park SOL in bins just under a hot token’s price, earn a fee when traders move through, cash back to SOL by fixed rules.**
 
-Think of it like a market stall under the current price: shoppers (traders) walk through our bins, we collect a tiny fee each time, and we leave when the rules say leave — not when we "feel" like it.
+Like a stall under the current price: shoppers walk through the bins, we collect a tiny fee, and we leave when the rules say leave.
 
-::: warning Risk first
-Memecoin LP can wipe a wallet. The bot is built defense-first (paper mode by default, hard safety gates, mechanical stops), but it cannot catch every rug. **Burner wallet only. Not financial advice.** See [Risk & sizing](./risk).
-:::
+<p class="note warn">Memecoin LP can wipe a wallet. Burner only. See <a href="./risk">Risk &amp; sizing</a>.</p>
 
 ## The pipeline
 
@@ -25,57 +23,55 @@ scan → vet → enter → manage → exit
 
 | Stage | What happens | How often |
 |---|---|---|
-| **Scan** | Sweep Meteora's pool list for busy SOL-quoted pools; dedupe copycat tickers; apply hard pool gates (TVL, fees, volume, base fee); score survivors 0–100 | Every 60s |
-| **Vet** | Fresh on-chain + RugCheck checks on the token itself: authorities revoked, holder concentration, insider clusters, creator rug history, age window | At entry time |
-| **Enter** | Open a **one-sided SOL** position below the current price (BidAsk shape for memes, Spot for majors), sized by Kelly + score, within rent budgets | When a candidate passes everything and a slot is free |
-| **Manage** | Poll each open position and walk the P0→P5 priority ladder: safety exits, stop loss, rotation, take-profit, fee claims, below-range handling | Every 15s |
-| **Exit** | Close the position, swap any leftover tokens back to SOL (Zap SDK, Jupiter fallback), record measured PnL in SQLite | When a rule fires — never on gut feel |
+| **Scan** | Sweep Meteora’s pool list for busy SOL-quoted pools; dedupe copycat tickers; hard pool gates; score 0–100 | Every 60s |
+| **Vet** | On-chain + RugCheck: authorities, holders, insider clusters, creator rug history, age | At entry time |
+| **Enter** | One-sided SOL below price (BidAsk for memes, Spot for majors), Kelly + score, rent budgets | Slot free + candidate passed |
+| **Manage** | P0→P5 ladder: safety, stop, rotation, take-profit, fee claims, below-range | Every 15s |
+| **Exit** | Close, swap leftovers to SOL (Zap SDK, Jupiter fallback), record measured PnL | When a rule fires |
 
-Two design choices run through all of it:
-
-- **SOL is the unit of account.** Wins and losses are measured in SOL that actually left and returned to the wallet — not notional marks, not USD screenshots.
-- **Rules beat gut feel.** The bot has no whale chat to consult. Wherever a human trader would "ask the group," the bot takes the strictly more defensive branch.
+- **SOL is the unit of account.** Wins and losses are wallet SOL in and out — not USD screenshots.
+- **Rules beat gut feel.** Wherever a human would “ask the group,” the bot takes the more defensive branch.
 
 ## Why one-sided SOL below price?
 
-The default entry never buys the token up front. The bot places only SOL, in bins **below** the current price:
+The default entry never buys the token up front. Only SOL, in bins **below** the current price:
 
-1. If price **dips** into the range, the bins mechanically buy tokens on the way down (cheaper each bin).
-2. If price **recovers** back up through the range, the same bins sell those tokens back for SOL — above the acquisition price — plus every trade paid a fee.
-3. If price **never visits** the range, the SOL just sits there untouched: no profit, but no loss either (only idle capital and a little rent).
+1. Price **dips** into the range → bins buy tokens cheaper each step.
+2. Price **recovers** through the range → those bins sell above acquisition, plus fees both ways.
+3. Price **never visits** → SOL sits untouched: no profit, no loss (idle capital + a little rent).
 
-The bot is not guessing the top. It waits for price to come to it, earns the round trip, and leaves.
+The bot waits for price to come to it. It is not guessing the top.
 
 ## The three sleeves
 
-One scanner pipeline, three playbooks. The **sleeve** is stamped on each position at entry and decides its range shape, sizing, and manage rules.
+Sleeve is stamped at entry and decides range shape, sizing, and manage rules.
 
 | Sleeve | What it trades | Range shape | Sizing (current defaults) |
 |---|---|---|---|
-| **micro** | Very young/small memes, mcap $100k–$200k | BidAsk below price | 0.5× the core Kelly size, max 0.45 SOL, at most **1** slot, ≤5% of wallet total — loss budget first |
-| **meme** | The main book: memes, mcap ≥ $200k | BidAsk below price | Kelly × score multiplier; the bread-and-butter strategy |
-| **majors** | Allowlisted SOL-quoted alts (PUMP, JTO, BONK, WIF, RAY, JUP, …) | **Spot** (uniform bins, 12% below / 6% above price) | Fixed 0.75 SOL, max 1 slot, separate slower manage rules |
+| **micro** | Young/small memes, mcap $100k–$200k | BidAsk below price | 0.5× Kelly, max 0.45 SOL, **1** slot, ≤5% of wallet |
+| **meme** | Main book, mcap ≥ $200k | BidAsk below price | Kelly × score multiplier |
+| **majors** | Allowlisted SOL-quoted alts (PUMP, JTO, BONK, WIF, RAY, JUP, …) | **Spot** (12% below / 6% above) | Fixed 0.75 SOL, max 1 slot, slower manage |
 
-Majors run **after** meme entries each tick, and only when at least `meme_reserve_slots` (2) remain free — hot memes always keep headroom. Stable pairs like SOL‑USDC are permanently out of scope, not a "later" feature.
+Majors run **after** meme entries, and only when at least `meme_reserve_slots` (2) remain free. Stable pairs like SOL‑USDC are permanently out of scope.
 
 ## Managing a position: the P0→P5 ladder
 
-Every open position is checked top-to-bottom against a priority ladder every 15 seconds. **First match wins — a higher rule always preempts a lower one.**
+Checked top-to-bottom every 15 seconds. **First match wins.**
 
 | Rule | Name | One-liner |
 |---|---|---|
-| **P0** | Safety exit | Rug signals → close *now*, dump token to SOL, blacklist token + creator |
-| **P1** | Stop loss | Position worth < 75% of entry in SOL → close, take the loss |
-| **P2** | Rotation | Fees/volume went cold, or position too old → free the slot |
-| **P3** | Above range | Price climbed out the top → take profit (or exit slowly if it never visited us) |
-| **P4** | In range | Earning: claim/bank fees, maybe profit-lock a slice, escape hatch |
-| **P5** | Below range | 100% token after a short grace → close, swap to SOL, cool down |
+| **P0** | Safety exit | Rug signals → close *now*, dump to SOL, blacklist token + creator |
+| **P1** | Stop loss | Worth < 75% of entry in SOL → close |
+| **P2** | Rotation | Fees/volume went cold, or too old → free the slot |
+| **P3** | Above range | Climbed out the top → take profit (or exit slowly if it never visited) |
+| **P4** | In range | Claim/bank fees, maybe profit-lock a slice |
+| **P5** | Below range | 100% token after a short grace → close, swap, cool down |
 
-Full details with every threshold: [Strategy reference](./strategy).
+Full thresholds: [Strategy reference](./strategy).
 
 ## Follow mode (careful re-entry)
 
-After a clean up-and-out close (P3), the token often keeps running. Follow mode may re-enter the same token — but only through deliberately picky gates, because simulation over recorded price paths showed unguarded chasing loses money:
+After a clean up-and-out close (P3), follow mode may re-enter — through picky gates. Unguarded chasing lost money in simulation:
 
 ```
 P3 close ──arms──▶ wait for: hot volume (≥$100k/30m)
@@ -87,30 +83,28 @@ P3 close ──arms──▶ wait for: hot volume (≥$100k/30m)
                      −0.075 SOL cumulative loss, cold volume, or 12h
 ```
 
-While a follow chain owns a token, the normal scanner skips it — one owner of re-entry timing per token. See [Strategy reference → Follow mode](./strategy#p3-f-follow-mode).
+While a follow chain owns a token, the normal scanner skips it. [Strategy → Follow mode](./strategy#p3-f-follow-mode).
 
 ## Paper vs live
 
-- **Paper (default):** the full brain runs — real scanning, real vetting, real pool data — but fills are simulated. Identical database records, flagged `paper`. No wallet needed.
-- **Live:** real SOL. Deliberately double-locked: it requires **both** `FARMER_MODE=live` in the environment **and** `[exec] mode = "live"` in config. One switch alone stays safe.
+- **Paper (default):** full brain, real pool data, simulated fills. No wallet needed.
+- **Live:** real SOL. Needs **both** `FARMER_MODE=live` **and** `[exec] mode = "live"`. One switch stays paper.
 
-The built-in promotion gate: `npm run status` tracks consecutive profitable paper days and marks you **eligible** after 7. See [Risk & sizing → Paper first](./risk#paper-first-the-promotion-gate).
+Promotion gate: `npm run status` marks **eligible** after 7 consecutive profitable paper days. [Risk → Paper first](./risk#paper-first-the-promotion-gate).
 
 ## What's actually running
 
 | Process | Job |
 |---|---|
-| **Farmer** | The tick loop — scans, vets, opens, manages, closes. The strategy lives here. |
-| **Dashboard** | The web UI: live positions, charts, HALT button, settings, the in-app Wiki. |
-| **Deploy watcher** (optional, PM2 path) | Pulls new builds from GitHub — automatically, or after you Approve. |
-| **SQLite + config** | `data/farmer.db` (positions, decisions, errors) and `data/config.toml` (your knobs, hot-reloaded). |
+| **Farmer** | Tick loop — scans, vets, opens, manages, closes. |
+| **Dashboard** | Positions, charts, HALT, settings, Wiki. |
+| **Deploy watcher** (optional) | Pulls new builds from GitHub. |
+| **SQLite + config** | `data/farmer.db` and `data/config.toml` (hot-reloaded). |
 
-The chain is the source of truth: on every startup the bot enumerates the wallet's actual on-chain DLMM positions, diffs against the database, and repairs the DB to match.
+On every startup the bot enumerates on-chain DLMM positions and repairs the DB to match. The chain wins.
 
-## Related
-
-- [Strategy reference](./strategy) — every gate, threshold, and exit rule
-- [Risk & sizing](./risk) — Kelly, brakes, HALT/PAUSE, promotion gate
-- [Configuration reference](./configuration) — every knob in `config.toml`
-- [Dashboard guide](./dashboard) — tab-by-tab tour
-- [Easy setup (Railway)](./easy) · [Advanced setup](./advanced)
+<p class="cta-row">
+  <a class="doc-btn ghost" href="./strategy">Strategy</a>
+  <a class="doc-btn ghost" href="./risk">Risk & sizing</a>
+  <a class="doc-btn ghost" href="./easy">Easy setup</a>
+</p>

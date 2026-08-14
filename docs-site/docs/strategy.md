@@ -172,10 +172,9 @@ Every skip is logged with the failing gate in the `decisions` table — the tuni
 - Per position: fees claimed + fees unclaimed + (exit value − entry value) − rent − tx costs, all in SOL. Realized PnL is **measured wallet delta** — what actually left and returned — never our own intent.
 - **Reconciliation:** on startup, the chain wins. The bot enumerates the wallet's actual DLMM positions, diffs against the DB, repairs, and logs discrepancies.
 
-## Related
-
-- [How it works](./how-it-works) — the newcomer's tour of this same material
-- [Risk & sizing](./risk) — Kelly, circuit breaker, cluster brake, HALT
-- [Configuration reference](./configuration) — every threshold above as a config key
-- [FAQ](./faq) — honest answers about losing money
-- [STRATEGY.md](https://github.com/CryptoGnome/dlmmbot/blob/main/STRATEGY.md) — the raw spec with live-book history
+<p class="cta-row">
+  <a class="doc-btn ghost" href="./how-it-works">How it works</a>
+  <a class="doc-btn ghost" href="./risk">Risk & sizing</a>
+  <a class="doc-btn ghost" href="./configuration">Configuration</a>
+  <a class="doc-btn ghost" href="https://github.com/CryptoGnome/dlmmbot/blob/main/STRATEGY.md" target="_blank" rel="noreferrer">STRATEGY.md</a>
+</p>
