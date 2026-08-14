@@ -154,7 +154,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           {
             title: "Majors",
             badge: "alts",
-            text: "Allowlisted SOL-quoted alts. Spot (flat) bins + separate timing. Runs after memes so hot memes keep slots.",
+            text: "Allowlisted SOL-quoted alts. Spot (flat) bins + separate timing. Settings → Majors parking: search a ticker on Meteora and add to the allowlist (no mint address). Runs after memes so hot memes keep slots.",
             icon: "layers",
           },
         ],
@@ -220,7 +220,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
         type: "callout",
         tone: "warn",
         title: "GMGN is paced",
-        text: "Optional trending / honeypot / holder checks share one queue (~1 req/s, heavier routes cost more). A 429 parks GMGN for ~5 minutes (or until reset) — no repeated retries; Meteora scanning keeps going. Two bots on the same API key will 429.",
+        text: "Optional trending / honeypot / holder checks share one serial queue with **separate leaky buckets per module** (market, token, track). Holders/traders cost 5×; polls are staggered; trader tags off by default. A 429 **parks all GMGN until reset** — queued work is dropped (retries extend the ban). Meteora scanning continues. Staging + production on the same API key doubles load and will 429.",
       },
     ],
   },

@@ -46,6 +46,7 @@ holder_gate_enabled = true       # block single-holder / top-10 concentration
 rugcheck_veto_enabled = true     # block high RugCheck score (rugged flag always on)
 creator_rug_enabled = true       # block creators with prior rug count
 gmgn_security_enabled = true     # block honeypot / sell-tax from GMGN
+gmgn_trader_tags_enabled = false   # weight-5 traders call — off by default (rate-limit headroom)
 single_holder_max_pct = 15
 top10_max_pct = 40
 insider_cluster_max_pct = 10
@@ -116,7 +117,7 @@ poll_s = 15
 safety_tvl_drop_pct = 40         # in 10 min
 safety_wallet_dump_pct = 3       # single holder's supply-% drop between polls
 safety_new_whale_pct = 10
-holder_poll_s = 90               # GMGN holder-snapshot interval per open position
+holder_poll_s = 120              # GMGN holder-snapshot interval per open position
 safety_price_crash_pct = -60     # from entry, AT ANY AGE — there is no time window in the code
                                  # (loop.ts: `crashed` compares mark.price to entryPrice, nothing else).
                                  # This comment used to claim "in <15 min", which was never implemented.
@@ -367,8 +368,10 @@ bonus_sustained = 8        # 5m AND 1h — momentum confirmed and holding
 bonus_emerging = 4         # 5m only — catching fire now, not yet proven
 bonus_fading = 3           # 1h only — was hot, current momentum decaying
 require_renounced = true   # trending entry says mint/freeze not renounced -> pre-vet skip
-# Rate limits: one serial CLI queue, ~1 req/s floor, weight-aware bucket (holders/traders=5).
-# On 429 we park ~5m (or until reset_at) — never spam; a second bot on the same key doubles load.
+# Rate limits: serial queue + **per-module** leaky buckets (market/token/track, rate=20).
+# 60s spend cap + ban flushes queue — any call during 429 extends the ban (+5s each).
+# Holders/traders weight=5 — staggered polls, trader tags off by default.
+# On 429 park until reset_at; never retry. Two bots on one GMGN_API_KEY doubles load.
 
 [apis]
 meteora_datapi = "https://dlmm.datapi.meteora.ag"

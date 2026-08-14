@@ -114,21 +114,18 @@ export function ProfilesPanel({
   const [q, setQ] = useState("");
 
   const reload = useCallback(async () => {
-    const [p, c] = await Promise.all([
-      fetchProfiles(),
-      fetchCommunityProfiles().catch((e) => ({
-        profiles: [] as typeof community,
-        error: (e as Error).message,
-        share: null as ProfileShareMeta | null,
-      })),
-    ]);
+    const p = await fetchProfiles();
     setOfficial(p.official);
     setLocal(p.local);
     setShare(p.share);
-    setCommunity(c.profiles);
-    setCommunityErr(c.error);
-    if (c.share) setShare(c.share);
     setReady(true);
+    void fetchCommunityProfiles()
+      .then((c) => {
+        setCommunity(c.profiles);
+        setCommunityErr(c.error);
+        if (c.share) setShare(c.share);
+      })
+      .catch((e) => setCommunityErr((e as Error).message));
   }, []);
 
   useEffect(() => {

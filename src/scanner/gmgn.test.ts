@@ -3,6 +3,10 @@ import {
   parseTokenSecurity,
   parseGmgnResetMs,
   gmgnRouteWeight,
+  gmgnBucketId,
+  gmgnTokenBudgetOk,
+  gmgnSpendOk,
+  _setGmgnBucketForTests,
   _resetGmgnPaceForTests,
 } from "./gmgn.js";
 
@@ -50,5 +54,26 @@ describe("gmgn rate-limit helpers", () => {
       .toBe(1_700_000_060_000);
     expect(parseGmgnResetMs("X-RateLimit-Reset: 1700000099", now)).toBe(1_700_000_099_000);
     expect(parseGmgnResetMs("nope", now)).toBeNull();
+  });
+
+  it("maps CLI args to per-module buckets", () => {
+    expect(gmgnBucketId(["market", "trending"])).toBe("market");
+    expect(gmgnBucketId(["token", "holders"])).toBe("token");
+    expect(gmgnBucketId(["track", "smartmoney"])).toBe("track");
+  });
+
+  it("sheds optional trader-tag calls when token bucket is depleted", () => {
+    _resetGmgnPaceForTests();
+    _setGmgnBucketForTests("token", 5);
+    expect(gmgnTokenBudgetOk(5)).toBe(true);
+    _setGmgnBucketForTests("token", 4);
+    expect(gmgnTokenBudgetOk(5)).toBe(false);
+  });
+
+  it("allows required security preflight when optional paths would shed", () => {
+    _resetGmgnPaceForTests();
+    _setGmgnBucketForTests("token", 1);
+    expect(gmgnSpendOk(1, "token")).toBe(true);
+    expect(gmgnSpendOk(5, "token", { optional: true })).toBe(false);
   });
 });

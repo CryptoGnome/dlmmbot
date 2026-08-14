@@ -45,6 +45,7 @@ import {
 } from "./lib/profiles.mjs";
 import { requestHalt, clearHalt, readHaltState } from "./lib/halt.mjs";
 import { requestPause, clearPause, readPauseState } from "./lib/pause.mjs";
+import { searchMajorsSymbols } from "./lib/majors-search.mjs";
 import { execFileSync } from "node:child_process";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -166,6 +167,24 @@ function allowRange(range) {
 let watchCache = { at: 0, data: null, building: null };
 const WATCH_CACHE_MS = Math.max(1_000, Math.floor(WATCH_MS * 0.9));
 
+/** Parsed config.toml flatten — hot-reload polls every ~2s; avoid re-parse on every Settings field read. */
+let configFlatCache = { at: 0, flat: null };
+const CONFIG_FLAT_CACHE_MS = 2_000;
+
+function bustConfigFlatCache() {
+  configFlatCache = { at: 0, flat: null };
+}
+
+function getFlatConfig() {
+  const now = Date.now();
+  if (configFlatCache.flat && now - configFlatCache.at < CONFIG_FLAT_CACHE_MS) {
+    return configFlatCache.flat;
+  }
+  const flat = flattenConfig(parseConfig(root));
+  configFlatCache = { at: now, flat };
+  return flat;
+}
+
 async function getWatchSnapshot() {
   const now = Date.now();
   if (watchCache.data && now - watchCache.at < WATCH_CACHE_MS) return watchCache.data;
@@ -225,7 +244,33 @@ const server = createServer(async (req, res) => {
 
   if (url.pathname === "/api/config" && req.method === "GET") {
     try {
-      sendJson(res, 200, { config: flattenConfig(parseConfig(root)) });
+      sendJson(res, 200, { config: getFlatConfig() });
+    } catch (e) {
+      sendJson(res, 500, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/settings" && req.method === "GET") {
+    try {
+      const env = readEnvMasked(root);
+      sendJson(res, 200, {
+        config: getFlatConfig(),
+        env,
+        setup: setupStatus(env),
+      });
+    } catch (e) {
+      sendJson(res, 500, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/majors/search" && req.method === "GET") {
+    try {
+      const q = url.searchParams.get("q") ?? "";
+      const limit = Math.min(20, Math.max(1, Number(url.searchParams.get("limit") ?? 12)));
+      const data = await searchMajorsSymbols(root, q, limit);
+      sendJson(res, 200, data);
     } catch (e) {
       sendJson(res, 500, { error: e.message ?? String(e) });
     }
@@ -237,6 +282,7 @@ const server = createServer(async (req, res) => {
       const body = await readBody(req, res);
       const updates = body?.updates ?? body;
       const result = await queueConfigWrite(() => applyConfigUpdates(root, updates));
+      bustConfigFlatCache();
       sendJson(res, 200, result);
     } catch (e) {
       sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
@@ -329,6 +375,7 @@ const server = createServer(async (req, res) => {
       const body = await readBody(req, res);
       const resolved = await resolveProfileUpdates(root, body);
       const result = await queueConfigWrite(() => applyProfileUpdates(root, resolved.updates));
+      bustConfigFlatCache();
       watchCache = { at: 0, data: null, building: null };
       sendJson(res, 200, {
         ok: true,
