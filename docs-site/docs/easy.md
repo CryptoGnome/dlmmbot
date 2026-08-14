@@ -26,10 +26,12 @@ Connect the Railway GitHub App to that fork if prompted. Later updates: merge/re
 
 Boot defaults: paper mode, public `PORT`, volume-backed `config.toml` / `.env`.
 
-Set a strong dash token **before** you open the site (do not use a short password):
+Set a strong dash token **before** you open the site (this is your dashboard password — not a short word):
 
-1. Generate one: `node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"`
-2. Railway → Variables → `DASH_TOKEN` = that value → Redeploy
+<DashTokenGen />
+
+1. Use the **Generate** / **Copy** buttons above (or your password manager: create a random password, **32+ characters**).
+2. Railway → your service → **Variables** → add `DASH_TOKEN` = that value → **Redeploy**.
 
 If you skip this, the bot still generates a token onto the volume (logs only show the first 8 characters on purpose — deploy logs get screenshotted). You would then need shell access to `/app/data/.env` to read it. Setting the Railway variable is the safe path.
 
