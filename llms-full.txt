@@ -2,7 +2,8 @@
 
 Product name: DLMM Bot
 Domain: https://dlmmbot.com
-Repository: https://github.com/CryptoGnome/dlmmbot (private may apply; site is public)
+Repository: https://github.com/CryptoGnome/dlmmbot
+License: PolyForm Shield 1.0.0 — you may run, study, and modify it for your own operation; you may not ship a competing bot or hosted copy. https://github.com/CryptoGnome/dlmmbot/blob/main/LICENSE
 Brand: DLMM Bot (not “Meteora Farmer”)
 
 ## What it is

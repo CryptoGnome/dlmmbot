@@ -40,3 +40,5 @@ Also see [STRATEGY.md](https://github.com/CryptoGnome/dlmmbot/blob/main/STRATEGY
 ::: tip Settings profiles
 Dashboard **Settings → Profiles**: official packs, local saves, and a GitHub community gallery. **Share to GitHub** is browser-only (fork when asked). Full guide: [Settings profiles](./profiles).
 :::
+
+License is [PolyForm Shield](https://github.com/CryptoGnome/dlmmbot/blob/main/LICENSE) — run it yourself; do not ship a competing copy.

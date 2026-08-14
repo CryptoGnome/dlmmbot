@@ -83,6 +83,10 @@ Under `data/` on your host or Railway volume (`data/config.toml`, `data/.env`, `
 
 You do. The encrypted wallet (`wallet.enc.json`) lives on **your** volume/host, encrypted with **your** passphrase. Nothing is sent to the project's servers. It is not a hosted trading service.
 
+## Is this open source? Can I copy it?
+
+The code is public to **run, study, and modify for your own bot**. The license is **[PolyForm Shield 1.0.0](https://github.com/CryptoGnome/dlmmbot/blob/main/LICENSE)** — you cannot ship a competing product or hosted copy. Full terms are in the repo `LICENSE`.
+
 ## Related
 
 - [Risk & sizing](./risk) — the full safety model

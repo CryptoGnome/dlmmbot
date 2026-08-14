@@ -5,6 +5,7 @@
 Site: https://dlmmbot.com
 Docs: https://dlmmbot.com/setup/
 GitHub: https://github.com/CryptoGnome/dlmmbot
+License: PolyForm Shield 1.0.0 (https://github.com/CryptoGnome/dlmmbot/blob/main/LICENSE) — run/study/modify for your own use; no competing product
 Railway signup: https://railway.com?referralCode=SCj9lN
 Vultr VPS signup: https://www.vultr.com/?ref=9917878-9J
 Helius RPC (recommended): https://www.helius.dev/

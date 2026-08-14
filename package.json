@@ -2,6 +2,7 @@
   "name": "dlmmbot",
   "version": "0.1.0",
   "private": true,
+  "license": "PolyForm-Shield-1.0.0",
   "description": "Automated Meteora DLMM LP bot for Solana — scan, vet, enter, manage, exit. Paper mode by default.",
   "repository": {
     "type": "git",

@@ -1,53 +1,32 @@
+<p align="center">
+  <img src="docs/assets/readme-banner.png" alt="DLMM Bot — BidAsk liquidity bins" width="100%" />
+</p>
+
+<p align="center">
+  <a href="https://dlmmbot.com"><img src="https://img.shields.io/badge/website-dlmmbot.com-00FF85?style=flat-square&labelColor=141414" alt="Website" /></a>
+  <a href="https://dlmmbot.com/setup/"><img src="https://img.shields.io/badge/docs-setup-1E90FF?style=flat-square&labelColor=141414" alt="Docs" /></a>
+  <a href="https://dlmmbot.com/setup/easy"><img src="https://img.shields.io/badge/deploy-Railway-F4F4F5?style=flat-square&labelColor=141414" alt="Deploy on Railway" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Shield-B56BFF?style=flat-square&labelColor=141414" alt="PolyForm Shield License" /></a>
+</p>
+
 # DLMM Bot
 
-Automated **Meteora DLMM** liquidity bot for Solana.
+Automated [Meteora DLMM](https://meteora.ag) liquidity bot for Solana. Scans, vets, opens one-sided SOL below price, exits by rules. **Paper first.**
 
-**Site:** [dlmmbot.com](https://dlmmbot.com) · **Docs:** [dlmmbot.com/setup](https://dlmmbot.com/setup/)
+**Everything you need is on the site — not in this README.**
 
-Setup docs are **VitePress** (`docs-site/`). Edit markdown there, then `npm run docs:build` (writes into `docs/setup/`). Marketing homepage stays `docs/index.html`.
-
-Scans hot SOL-quoted meme pools, vets the token, opens a **one-sided SOL** LP below price, then exits by fixed rules. PnL lives in SQLite. **Paper first** — live is double-locked (config + env).
-
-> Memecoin LP can wipe a wallet. Not financial advice. Burner only.
->
-> **Usage fee:** see [docs → Fees](https://dlmmbot.com/setup/fees).
-
-## Setup
-
-| Path | Who it’s for | Link |
-|---|---|---|
-| **Easy — Railway** | Most users (one service, automated config) | [Docs → Easy](https://dlmmbot.com/setup/easy) · [Sign up](https://railway.com?referralCode=SCj9lN) |
-| **Advanced — local / VPS / PM2** | You already have a box | [Docs → Advanced](https://dlmmbot.com/setup/advanced) · [Vultr VPS](https://www.vultr.com/?ref=9917878-9J) |
-
-**Railway (shortest path):** Deploy `CryptoGnome/dlmmbot` → attach volume at `/app/data` → Generate domain → open the URL (token is in deploy logs if unset) → first-run setup wizard (Helius RPC, Jupiter API key, encrypted wallet, paper/live) or Settings.
-
-`railway.toml` builds the dash and starts farmer + dashboard together. Paper mode is the default. Runtime config/env/db live on the volume under `/app/data` (repo `config.toml` is only a template). Optional: set `WALLET_PASSPHRASE` on Railway to auto-unlock an encrypted wallet on boot.
-
----
-
-## In this repo
-
-| Doc | What |
+| | |
 |---|---|
-| [dlmmbot.com](https://dlmmbot.com) | Marketing site |
-| [dlmmbot.com/setup](https://dlmmbot.com/setup/) | Full docs — setup, [how it works](https://dlmmbot.com/setup/how-it-works), [strategy](https://dlmmbot.com/setup/strategy), [risk](https://dlmmbot.com/setup/risk), [config](https://dlmmbot.com/setup/configuration), [dashboard](https://dlmmbot.com/setup/dashboard), [CLI](https://dlmmbot.com/setup/cli), [FAQ](https://dlmmbot.com/setup/faq) |
-| [STRATEGY.md](STRATEGY.md) | Full strategy / exits |
-| [DEPLOY.md](DEPLOY.md) | Server / PM2 / Railway |
-| [RELEASE.md](RELEASE.md) | **develop → main** branching + semver releases |
-| [config.toml](config.toml) | Live knobs (hot-reloaded) |
-| [profiles/](profiles/) | Official + community settings packs ([docs](https://dlmmbot.com/setup/profiles)) |
+| Website | [dlmmbot.com](https://dlmmbot.com) |
+| Docs | [dlmmbot.com/setup](https://dlmmbot.com/setup/) |
+| Easy setup | [Railway](https://dlmmbot.com/setup/easy) |
+| Advanced | [local / VPS / PM2](https://dlmmbot.com/setup/advanced) |
+| Fees | [GNME 1% on live wins](https://dlmmbot.com/setup/fees) |
 
----
+## License
 
-## Safety (short)
-
-- Paper needs no wallet (`FARMER_MODE=paper`)
-- Live needs **both** `[exec].mode = "live"` and `FARMER_MODE=live`
-- Prefer the dashboard **encrypted wallet** (create or Phantom import); unlock into `.env` only when trading
-- One bot process per wallet/DB
-
----
+[PolyForm Shield 1.0.0](LICENSE) — run it, read it, modify it for your own operation. You **cannot** ship a competing bot or hosted copy.
 
 ## Disclaimer
 
-Provided as-is. You can lose 100% of funds under this bot’s control. Paper first. Burner only.
+Memecoin LP can wipe a wallet. Not financial advice. Burner only. You can lose 100%.

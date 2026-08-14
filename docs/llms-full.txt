@@ -2,7 +2,8 @@
 
 Product name: DLMM Bot
 Domain: https://dlmmbot.com
-Repository: https://github.com/CryptoGnome/dlmmbot (private may apply; site is public)
+Repository: https://github.com/CryptoGnome/dlmmbot
+License: PolyForm Shield 1.0.0 — you may run, study, and modify it for your own operation; you may not ship a competing bot or hosted copy. https://github.com/CryptoGnome/dlmmbot/blob/main/LICENSE
 Brand: DLMM Bot (not “Meteora Farmer”)
 
 ## What it is
@@ -23,10 +24,16 @@ Operators who want paper trading first, then a burner wallet for live. Not custo
 On first login when RPC + wallet are missing, a setup wizard walks through:
 
 - Confirm dash token
-- Set RPC_URL
+- Helius RPC URL (RPC_URL) + Jupiter API key (JUPITER_API_KEY) — see Required secrets below; optional GMGN at https://dlmmbot.com/setup/api-keys
 - Create a new Solana keypair or import a Phantom base58 private key; encrypt with a passphrase (AES-256-GCM on volume as wallet.enc.json)
 - Choose paper or live (live still needs the double lock)
 - Optional unlock into .env for trading
+
+## Required secrets
+
+- RPC_URL — suggested provider: Helius (https://www.helius.dev/). Sign up at dashboard.helius.dev, create a project, copy mainnet HTTPS URL (https://mainnet.helius-rpc.com/?api-key=…).
+- JUPITER_API_KEY — Jupiter Developer Portal (https://developers.jup.ag/portal): sign in → team → API Keys → Create → copy once. Free tier OK. Setup: https://developers.jup.ag/docs/portal/setup
+- GMGN_API_KEY (optional) — https://gmgn.ai/ai: generate Ed25519 public key, upload, copy API key. Query-only; no private key in bot. Guide: https://dlmmbot.com/setup/api-keys
 
 ## Runtime data
 
@@ -48,13 +55,13 @@ Settings also exposes encrypted wallet create / import / unlock on the Wallet & 
 - Header ON/OFF soft-pauses trading (PAUSE file; positions stay open); HALT closes opens and idles until cleared
 - Changes pending commits tagged by risk (strategy / deps / deploy / dash / docs)
 - Settings: Bot settings (sizing, risk, filters, **profiles**) and Wallet & secrets (vault, encrypted wallet)
-- Settings profiles: official Conservative / Balanced / Aggressive; private local saves under `data/profiles/`; community gallery from GitHub `profiles/community`. Share guide: https://dlmmbot.com/setup/profiles — dashboard **Share to GitHub** (fork if needed) → PR. No git on Railway/VPS. Wiki → Settings profiles for the short tour.
+- Settings profiles: official Conservative / Balanced / Aggressive; private local saves under `data/profiles/`; community gallery from GitHub `profiles/community`. Share guide: https://dlmmbot.com/setup/profiles
 - Research page: public X credits (not partners/signals)
 - Wiki tab: operator manual (sleeves, P0–P5, follow, sizing, dash map); kept in sync with STRATEGY.md
 
 ## Usage fee
 
-On each **live** winning close, **1% of measured net profit** (wallet open cost → close return + fees + rent) buys and burns **GNME** (`BaDjVCpABEVCdt4LT7ivuzA4izBwJCqnDjrLa8XBtT38`) via Jupiter in one transaction. This is a **required product fee**, hardcoded in the bot — not exposed in Settings and not operator-disableable. Paper mode logs the fee without sending swaps. Losses and mark-only closes are not charged.
+See https://dlmmbot.com/setup/fees — 1% GNME buy-and-burn on live winning closes only (hardcoded, not Settings-tunable).
 
 ## Safety model
 
@@ -70,6 +77,7 @@ On each **live** winning close, **1% of measured net profit** (wallet open cost 
 - Docs hub: https://dlmmbot.com/setup/
 - Easy: https://dlmmbot.com/setup/easy
 - Advanced: https://dlmmbot.com/setup/advanced
+- API keys: https://dlmmbot.com/setup/api-keys
 - Profiles: https://dlmmbot.com/setup/profiles
 - How it works: https://dlmmbot.com/setup/how-it-works
 - Strategy reference: https://dlmmbot.com/setup/strategy
@@ -78,10 +86,11 @@ On each **live** winning close, **1% of measured net profit** (wallet open cost 
 - Dashboard guide: https://dlmmbot.com/setup/dashboard
 - CLI reference: https://dlmmbot.com/setup/cli
 - FAQ: https://dlmmbot.com/setup/faq
+- Fees: https://dlmmbot.com/setup/fees
 - Short LLM map: https://dlmmbot.com/llms.txt
 - Railway referral: https://railway.com?referralCode=SCj9lN
+- Vultr VPS referral (advanced / local host): https://www.vultr.com/?ref=9917878-9J — suggested plan: 2 vCPU, 4 GB RAM, 80 GB NVMe, Ubuntu 24.04
 
 ## Disclaimer
 
 Not financial advice. Memecoin LP can wipe a wallet. Paper first. Burner only.
-Usage fee: 1% of measured profit on live wins → buy+burn GNME (required).
