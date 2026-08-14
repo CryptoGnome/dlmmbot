@@ -47,7 +47,7 @@ Open the domain. Log in with the `DASH_TOKEN` you set as a Railway variable (`?t
 
 ## Finish in Settings
 
-First login opens a wizard: **accept the Terms & risk waiver**, then RPC, Jupiter key, **burner wallet**, paper/live. Writes go to `/app/data` — the git checkout stays clean.
+First login opens a wizard: **accept the Terms & risk waiver**, then only the steps still missing (RPC, Jupiter, **burner wallet**, paper/live). If you already set `RPC_URL` / `JUPITER_API_KEY` / `GMGN_API_KEY` as Railway variables (and redeployed), the wizard detects them and skips those prompts — paste only to replace. Writes go to `/app/data` — the git checkout stays clean.
 
 | Key | Required | Get it |
 | --- | --- | --- |

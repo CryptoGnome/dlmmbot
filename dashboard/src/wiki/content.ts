@@ -517,6 +517,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           "Build pill = release version + deploy branch + git SHA + sync (CURRENT / BEHIND / …). Auto on/off switch sits next to it (host pulls vs Changes → Approve).",
           "Host name (and wallet chip when known) sit on the right.",
           "First run (and any install that has not accepted yet): Terms of Service & risk waiver must be accepted before setup continues — free software, you can lose 100%, we are not liable.",
+          "Wizard reads host env (Railway variables / `.env`). Keys already set (RPC, Jupiter, GMGN, wallet) show as ready and those steps are skipped — you only fill what’s missing.",
         ],
       },
     ],

@@ -63,7 +63,7 @@ Canonical steps: [Easy setup](./easy). Summary:
 3. **Volume** — mount `/app/data`. Redeploy once after attaching.
 4. **Domain** — Networking → Generate domain.
 5. **Dash token** — set a strong `DASH_TOKEN` Railway variable (≥24 random chars; `node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"`). Open `https://<domain>/?token=…`. Do not copy tokens from deploy logs (only a prefix is printed).
-6. **Wizard** — human accepts Terms, pastes RPC + Jupiter (+ optional GMGN), creates/imports an encrypted **burner**, stays on **paper**.
+6. **Wizard** — human accepts Terms; only paste RPC/Jupiter/GMGN if not already set as Railway variables (wizard detects env and skips those). Create/import an encrypted **burner**, stay on **paper**.
 
 ### Secrets the human must create
 
