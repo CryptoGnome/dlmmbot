@@ -25,7 +25,7 @@ GMGN API key: https://gmgn.ai/ai (optional — see docs/setup/api-keys)
 ## Docs
 
 - [For AI agents](https://dlmmbot.com/setup/agents): install playbook, hard rules, paste prompt, llms links
-- [Easy setup (Railway)](https://dlmmbot.com/setup/easy): one service, volume at `/app/data`, public domain, dashboard wizard
+- [Easy setup (Railway)](https://dlmmbot.com/setup/easy): one service, volume at `/app/data`, public domain, dashboard wizard; in-browser GMGN Ed25519 public key generator
 - [Advanced setup](https://dlmmbot.com/setup/advanced): local / VPS / PM2
 - [API keys](https://dlmmbot.com/setup/api-keys): Helius RPC, Jupiter, GMGN signup steps (per-module pacing; 429 parks until reset — one key per bot instance)
 - [Settings profiles](https://dlmmbot.com/setup/profiles): official / local / community packs + share via browser PR

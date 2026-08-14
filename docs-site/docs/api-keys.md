@@ -57,7 +57,17 @@ Query-only trending + honeypot/sell-tax checks. The bot never trades through GMG
 
 ### 1. Generate a key pair (Ed25519)
 
-**Terminal (Linux / macOS / WSL / VPS):**
+**Easiest — browser (Railway quickstart):** use the generator on [Easy setup → GMGN key](./easy#gmgn-key-optional) — **Generate** → **Copy public key** → paste at GMGN.
+
+**Terminal — official CLI (same flow GMGN documents):**
+
+```bash
+npx -y gmgn-cli config
+```
+
+Open the link it prints → create the API key on GMGN → then either paste `GMGN_API_KEY` in Settings, or run `npx -y gmgn-cli config --apply YOUR_API_KEY` on that machine (writes `~/.config/gmgn/.env`; the farmer still reads **`GMGN_API_KEY`** from dashboard / Railway env).
+
+**Terminal — OpenSSL (Linux / macOS / WSL / VPS):**
 
 ```bash
 openssl genpkey -algorithm Ed25519 -out gmgn_private.pem
@@ -65,7 +75,7 @@ openssl pkey -in gmgn_private.pem -pubout -out gmgn_public.pem
 cat gmgn_public.pem   # copy this whole block for step 2
 ```
 
-Keep `gmgn_private.pem` off the bot. **GUI:** GMGN’s key-generator app → **Generate 1 Key Pair** → copy the **public** key.
+Keep `gmgn_private.pem` off the bot. **GUI:** GMGN’s desktop key-generator → **Generate 1 Key Pair** → copy the **public** key.
 
 <p class="note warn">Paste the entire public key, including the <code>BEGIN</code> / <code>END PUBLIC KEY</code> lines, into GMGN’s form.</p>
 

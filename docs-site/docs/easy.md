@@ -79,7 +79,18 @@ After Finish, the trading engine stays **OFF** (header toggle). Flip it ON when 
 | --- | --- | --- |
 | `RPC_URL` | Yes | [Helius](https://dashboard.helius.dev/signup) mainnet URL |
 | `JUPITER_API_KEY` | Before live | [Jupiter Portal](https://developers.jup.ag/portal) |
-| `GMGN_API_KEY` | Optional | [gmgn.ai/ai](https://gmgn.ai/ai) |
+| `GMGN_API_KEY` | Optional | [gmgn.ai/ai](https://gmgn.ai/ai) — see below |
+
+### GMGN key (optional)
+
+Trending bonuses + honeypot/sell-tax checks. The bot only needs the **query API key** (`GMGN_API_KEY`) — not a GMGN trading private key.
+
+<GmgnKeyGen />
+
+1. After GMGN shows your API key, add it as a Railway variable **`GMGN_API_KEY`** (or paste in the setup wizard / **Settings → Wallet & secrets**) and redeploy.
+2. Running **two bots** (e.g. staging + production)? Generate a **second** public key above and create a **separate** GMGN API key for the other server.
+
+<p class="note warn">Sharing one <code>GMGN_API_KEY</code> across two live bots doubles API load and triggers rate limits. Use one key per instance.</p>
 
 On the wallet step (or later under **Settings → Wallet & secrets**):
 
