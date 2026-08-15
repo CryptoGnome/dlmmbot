@@ -13,7 +13,8 @@ import { rollupDaily } from "../pnl/rollup.js";
 import { fetchSummary } from "../vetting/rugcheck.js";
 import { planRange, planTrancheRange } from "../ranges/planner.js";
 import { applyBinRentGate } from "../ranges/binRent.js";
-import { fetchCandles, fetchPool } from "../scanner/meteora.js";
+import { fetchPool } from "../scanner/meteora.js";
+import { fetchCandlesDeep } from "../scanner/candles.js";
 import { trendingByMint } from "../scanner/gmgn.js";
 import { feeMomentumPart, opportunityScore, structurePart, turnoverPart } from "../scanner/score.js";
 import { scan } from "../scanner/scan.js";
@@ -1247,7 +1248,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       }
     }
 
-    const candles = await fetchCandles(cand.pool.address, "5m").catch(() => []);
+    const candles = await fetchCandlesDeep(cand.pool.address, "5m").catch(() => []);
     const planned = planRange(cand.pool.price, cand.pool.binStep, candles, cand.pool.decimalsX);
     const rent = await applyBinRentGate({
       range: planned,
