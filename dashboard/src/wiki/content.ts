@@ -508,7 +508,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           { title: "Report", text: "Bug or enhancement — guided GitHub issue with type/area chips, optional screenshots (paste in GitHub), and auto build context.", icon: "alert" },
           { title: "Research", text: "People we studied — not trade signals.", icon: "book" },
           { title: "Wiki", text: "This guided tour.", icon: "bot" },
-          { title: "Changes", text: "Releases (tag + what changed) + commits on this host. Pending Git updates + Approve if auto-update is off. On Railway, lists come from the GitHub API (not local git).", icon: "refresh" },
+          { title: "Changes", text: "GitHub Releases (tag + notes) — pending newer releases when the host is behind. Commit spam is hidden; Approve still works when auto-update is off.", icon: "refresh" },
           { title: "Settings", text: "Knobs + Profiles (official / local / community) + wallet vault. Slow first open shows a live Load status log so you know it isn’t stuck. See Wiki → Settings profiles.", icon: "lock" },
         ],
       },
@@ -522,7 +522,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           "ON/OFF = soft pause (no trades; positions stay open). Starts OFF after setup — you flip ON when ready. HALT = emergency close-all (confirm with dash token).",
           "PAPER / LIVE = mode. Switching live writes both gates; the farmer restarts once so the header flips to LIVE. Overview / Positions / History only show that mode’s book — paper rows stay in the DB but do not mix into live balances or activity. BRAKE appears when the cluster brake paused entries.",
           "HB = farmer alive? Shows seconds since the last finished tick (green = ok, red = stuck/missing). Not a wall clock. WS = this page’s live websocket feed.",
-          "Build pill = release version + deploy branch + git SHA + sync (CURRENT / BEHIND / …). Auto-detects host: PM2/VPS uses local git; Railway/Vercel/etc use platform deploy SHA + GitHub tip for CURRENT. Changes tab shows GitHub Releases (tag + summary) plus commits — release/merge noise is rewritten from release notes when possible. GitHub API blips (403 rate-limit) leave Changes empty briefly but never crash the dash — set optional GITHUB_TOKEN on Railway for a higher limit. Auto on/off switch sits next to the pill (host pulls vs Changes → Approve).",
+          "Build pill = release version + deploy branch + git SHA + sync (CURRENT / BEHIND / …). Auto-detects host: PM2/VPS uses local git; Railway/Vercel/etc use platform deploy SHA + GitHub tip for CURRENT. Changes tab is release-first (tag + notes) — not every merge commit. Pending shows newer release tags when behind; unreleased tip commits are a one-liner. GitHub API blips (403) leave the list empty briefly but never crash the dash — optional GITHUB_TOKEN raises the limit. Auto on/off next to the pill.",
           "Host name (and wallet chip when known) sit on the right.",
           "First run (and any install that has not accepted yet): Terms of Service & risk waiver must be accepted before setup continues — free software, you can lose 100%, we are not liable.",
           "Wizard reads host env (Railway variables / `.env`). Keys already set (RPC, Jupiter, GMGN, wallet) show as ready and those steps are skipped — you only fill what’s missing.",
@@ -547,7 +547,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           },
           {
             title: "Auto-update OFF",
-            text: "Flip the same header switch. You’ll see BEHIND / APPROVE — open Changes, read risk chips, hit Approve.",
+            text: "Flip the same header switch. You’ll see BEHIND / APPROVE — open Changes, read the pending release notes, hit Approve.",
             icon: "lock",
           },
           {
@@ -578,7 +578,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
       },
       {
         type: "p",
-        text: "Risk chips on pending commits (strategy / deps / deploy / core / dash / docs) are a quick “how spicy is this update?” hint — not a substitute for reading the subjects.",
+        text: "When auto-update is off, open Changes and Approve. Prefer reading the pending release notes — that is the operator changelog. Risk chips on raw commits are no longer shown here.",
       },
     ],
   },
