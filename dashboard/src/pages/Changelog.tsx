@@ -230,7 +230,7 @@ export function ChangelogPage({ watch }: { watch: LiveWatch | null }) {
         <ReleasesList
           items={releases}
           currentTag={currentTag || undefined}
-          empty="No GitHub releases yet — they appear after the next poll (or set GITHUB_TOKEN for private repos)."
+          empty="No releases loaded yet. Wait a few seconds for the GitHub poll, or set GITHUB_TOKEN on the host if api.github.com is rate-limiting (common on Railway shared IPs). Last-good notes are cached on the volume once fetched."
         />
       </Panel>
     </div>

@@ -219,8 +219,9 @@ function buildGitInfo(root) {
     branch,
     headFull,
     releasesOnly: !!(originFull && trustLocalGit),
+    root,
   });
-  gh = readGithubHistoryCache();
+  gh = readGithubHistoryCache(root);
   if (gh.fetchedAt) {
     lastOriginFetchAt = gh.fetchedAt;
     lastOriginFetchOk = gh.ok;
