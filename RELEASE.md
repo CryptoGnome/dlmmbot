@@ -50,7 +50,7 @@ Cloudflare Pages (**dlmmbot.com**): production branch **`main`**. Optionally add
 
 Current version lives in root **`package.json`** (`version` field). Tags are **`vMAJOR.MINOR.PATCH`** (e.g. `v0.2.0`).
 
-Operators read releases on the dashboard **Changes** tab. Every release commit, PR, and GitHub Release note must answer: **what changed for the operator?** Never ship a bare `Release vX.Y.Z` or a PR body that only says “Semver bump only.”
+Operators read releases on the dashboard **Changes** tab (release tags + notes only — not every merge commit). Every release commit, PR, and GitHub Release note must answer: **what changed for the operator?** Never ship a bare `Release vX.Y.Z` or a PR body that only says “Semver bump only.”
 
 ### 1. Merge to `main`
 

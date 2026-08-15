@@ -7,48 +7,60 @@ import { ExternalLink, ScrollText, Check, Tag } from "lucide-react";
 import { approveDeployUpdate } from "@/lib/api";
 import { toast } from "@/lib/toast";
 
-type Commit = NonNullable<LiveWatch["build"]["recent"]>[number] & { risk?: string[] };
 type Release = NonNullable<LiveWatch["build"]["releases"]>[number];
 
-const RISK_TONE: Record<string, "danger" | "warn" | "accent" | "ok" | "fg"> = {
-  strategy: "danger",
-  deps: "warn",
-  deploy: "warn",
-  core: "accent",
-  dash: "ok",
-  docs: "fg",
-};
+function parseSemver(raw: string | null | undefined): [number, number, number] | null {
+  const m = /v?(\d+)\.(\d+)\.(\d+)/i.exec(String(raw ?? ""));
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+}
 
-function CommitList({
+/** true if a is strictly newer than b (semver). */
+function semverNewer(a: string, b: string): boolean {
+  const A = parseSemver(a);
+  const B = parseSemver(b);
+  if (!A || !B) return false;
+  for (let i = 0; i < 3; i++) {
+    if (A[i]! > B[i]!) return true;
+    if (A[i]! < B[i]!) return false;
+  }
+  return false;
+}
+
+function hostVersionTag(version: string | undefined): string {
+  const v = String(version ?? "").replace(/^v/i, "");
+  return v ? `v${v}` : "";
+}
+
+function ReleasesList({
   items,
   empty,
-  repoUrl,
-  showRisk,
+  currentTag,
 }: {
-  items: Commit[];
+  items: Release[];
   empty: string;
-  repoUrl?: string | null;
-  showRisk?: boolean;
+  currentTag?: string;
 }) {
   if (!items.length) {
     return <p className="text-[12px] text-dim">{empty}</p>;
   }
   return (
     <ul className="space-y-0">
-      {items.map((c, i) => {
-        const href = c.sha && repoUrl
-          ? `${repoUrl.replace(/\/$/, "")}/commit/${c.sha}`
-          : null;
+      {items.map((r) => {
+        const isCurrent = currentTag
+          && parseSemver(r.tag)
+          && parseSemver(currentTag)
+          && !semverNewer(r.tag, currentTag)
+          && !semverNewer(currentTag, r.tag);
         return (
           <li
-            key={`${c.sha}-${i}`}
-            className="flex items-start gap-3 border-t border-grid py-2 first:border-0"
+            key={r.tag}
+            className="flex items-start gap-3 border-t border-grid py-2.5 first:border-0"
           >
             <span className="w-[7.25rem] shrink-0 text-[10px] leading-tight text-dim">
-              {c.at ? (
+              {r.at ? (
                 <>
-                  <span className="block tabular-nums">{shortTime(c.at)}</span>
-                  <span className="mt-0.5 block">{timeAgo(c.at)}</span>
+                  <span className="block tabular-nums">{shortTime(r.at)}</span>
+                  <span className="mt-0.5 block">{timeAgo(r.at)}</span>
                 </>
               ) : (
                 "—"
@@ -56,24 +68,20 @@ function CommitList({
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-[13px] text-fg">{c.subject}</span>
-                {showRisk && (c.risk?.length ? c.risk : ["docs"]).map((t) => (
-                  <Badge key={t} tone={RISK_TONE[t] ?? "fg"}>{t}</Badge>
-                ))}
-              </div>
-              <div className="mt-0.5 font-mono text-[10px] text-muted">
-                {href ? (
+                <Badge tone={isCurrent ? "ok" : "accent"}>{r.tag}</Badge>
+                {isCurrent && <Badge tone="ok">on this host</Badge>}
+                {r.url ? (
                   <a
-                    href={href}
+                    href={r.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-accent no-underline hover:text-hover"
+                    className="inline-flex items-center gap-1 text-[13px] text-fg no-underline hover:text-hover"
                   >
-                    {c.sha}
-                    <Icon icon={ExternalLink} size={9} className="opacity-60" />
+                    {r.summary || r.name || r.tag}
+                    <Icon icon={ExternalLink} size={10} className="opacity-60" />
                   </a>
                 ) : (
-                  c.sha ?? "—"
+                  <span className="text-[13px] text-fg">{r.summary || r.name || r.tag}</span>
                 )}
               </div>
             </div>
@@ -84,62 +92,13 @@ function CommitList({
   );
 }
 
-function ReleasesList({
-  items,
-  empty,
-}: {
-  items: Release[];
-  empty: string;
-}) {
-  if (!items.length) {
-    return <p className="text-[12px] text-dim">{empty}</p>;
-  }
-  return (
-    <ul className="space-y-0">
-      {items.map((r) => (
-        <li
-          key={r.tag}
-          className="flex items-start gap-3 border-t border-grid py-2 first:border-0"
-        >
-          <span className="w-[7.25rem] shrink-0 text-[10px] leading-tight text-dim">
-            {r.at ? (
-              <>
-                <span className="block tabular-nums">{shortTime(r.at)}</span>
-                <span className="mt-0.5 block">{timeAgo(r.at)}</span>
-              </>
-            ) : (
-              "—"
-            )}
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <Badge tone="accent">{r.tag}</Badge>
-              {r.url ? (
-                <a
-                  href={r.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-[13px] text-fg no-underline hover:text-hover"
-                >
-                  {r.summary || r.name || r.tag}
-                  <Icon icon={ExternalLink} size={10} className="opacity-60" />
-                </a>
-              ) : (
-                <span className="text-[13px] text-fg">{r.summary || r.name || r.tag}</span>
-              )}
-            </div>
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 export function ChangelogPage({ watch }: { watch: LiveWatch | null }) {
   const b = watch?.build;
-  const pending = b?.pending ?? [];
-  const recent = b?.recent ?? [];
   const releases = b?.releases ?? [];
+  const currentTag = hostVersionTag(b?.version);
+  const pendingReleases = currentTag
+    ? releases.filter((r) => semverNewer(r.tag, currentTag))
+    : [];
   const behind = b?.sync === "behind";
   const auto = b?.auto_update !== false;
   const needsApproval = !!b?.needs_approval;
@@ -176,8 +135,9 @@ export function ChangelogPage({ watch }: { watch: LiveWatch | null }) {
           Changes
         </h1>
         <p className="text-[11px] text-dim">
-          What landed on this host — releases first, then commits
+          Operator view = GitHub releases (what changed), not every merge commit
           {b?.branch ? ` · ${b.branch}` : ""}
+          {currentTag ? ` · running ${currentTag}` : ""}
           {b?.release_url ? (
             <>
               {" · "}
@@ -187,20 +147,7 @@ export function ChangelogPage({ watch }: { watch: LiveWatch | null }) {
                 rel="noreferrer"
                 className="text-accent no-underline hover:text-hover"
               >
-                Releases
-              </a>
-            </>
-          ) : null}
-          {b?.commits_url ? (
-            <>
-              {" · "}
-              <a
-                href={b.commits_url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-accent no-underline hover:text-hover"
-              >
-                Commits
+                All releases
               </a>
             </>
           ) : null}
@@ -208,7 +155,6 @@ export function ChangelogPage({ watch }: { watch: LiveWatch | null }) {
           <span className={auto ? "text-ok" : "text-warn"}>
             {auto ? "auto-update on" : "manual approve"}
           </span>
-          <span className="text-dim"> (toggle next to the build pill in the header)</span>
         </p>
       </div>
 
@@ -233,9 +179,11 @@ export function ChangelogPage({ watch }: { watch: LiveWatch | null }) {
                 <Badge tone="ok">approved — deploying</Badge>
               )}
               <Badge tone="warn">
-                {b?.behind_count && b.behind_count > 0
-                  ? `${b.behind_count} commit${b.behind_count === 1 ? "" : "s"}`
-                  : "behind"}
+                {pendingReleases.length > 0
+                  ? `${pendingReleases.length} release${pendingReleases.length === 1 ? "" : "s"}`
+                  : b?.behind_count && b.behind_count > 0
+                    ? "unreleased commits"
+                    : "behind"}
               </Badge>
             </div>
           }
@@ -244,19 +192,24 @@ export function ChangelogPage({ watch }: { watch: LiveWatch | null }) {
             GitHub is ahead of this host
             {b?.origin ? ` (origin ${b.origin}` : ""}
             {b?.head ? `, disk ${b.head}` : ""}
-            {b?.origin ? ")" : ""}.{" "}
+            {b?.origin ? ")" : ""}
+            {b?.behind_count ? ` · ${b.behind_count} commit${b.behind_count === 1 ? "" : "s"}` : ""}
+            .{" "}
             {auto
-              ? "Auto-deploy usually picks these up within a minute."
+              ? "Auto-deploy usually picks this up within a minute."
               : needsApproval
-                ? "Auto-update is off — review the commits, then click Approve (checkmark) to let the host pull."
+                ? "Auto-update is off — review the release notes below, then Approve."
                 : "Approved — waiting for meteora-deploy to pull."}
           </p>
-          <CommitList
-            items={pending}
-            empty="Behind, but no pending commit list yet — refresh shortly."
-            repoUrl={b?.repo_url}
-            showRisk
-          />
+          {pendingReleases.length > 0 ? (
+            <ReleasesList items={pendingReleases} empty="" />
+          ) : (
+            <p className="text-[12px] text-dim">
+              No newer release tag yet — branch tip is ahead of {currentTag || "this host"} with
+              unreleased commits (feature merges / syncs). Deploy still applies; the next cut
+              will show as a release here.
+            </p>
+          )}
         </Panel>
       )}
 
@@ -265,29 +218,19 @@ export function ChangelogPage({ watch }: { watch: LiveWatch | null }) {
         right={
           <span className="inline-flex items-center gap-1 text-[10px] tracking-wider text-muted uppercase">
             <Icon icon={Tag} size={11} />
-            at a glance
+            what shipped
           </span>
         }
-      >
-        <ReleasesList
-          items={releases}
-          empty="No GitHub releases yet — they appear after the next poll (or set GITHUB_TOKEN for private repos)."
-        />
-      </Panel>
-
-      <Panel
-        title="On this host"
-        right={<Badge tone="ok">{b?.describe ?? b?.head ?? "—"}</Badge>}
       >
         {b?.running && b.running !== b.describe && (
           <p className="mb-3 text-[11px] text-warn">
             Farmer process still on {b.running} — restarting after deploy.
           </p>
         )}
-        <CommitList
-          items={recent}
-          empty="No commit history yet — on Railway this loads from GitHub within a few seconds. If it stays empty, set GITHUB_TOKEN (private repos) or check the deploy can reach api.github.com."
-          repoUrl={b?.repo_url}
+        <ReleasesList
+          items={releases}
+          currentTag={currentTag || undefined}
+          empty="No GitHub releases yet — they appear after the next poll (or set GITHUB_TOKEN for private repos)."
         />
       </Panel>
     </div>
