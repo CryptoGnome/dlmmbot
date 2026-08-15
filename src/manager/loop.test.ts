@@ -176,4 +176,65 @@ describe("managePositions contracts", () => {
     await managePositions(exec);
     expect(exec.closed).toEqual([{ id, reason: "P0_safety" }]);
   });
+
+  /**
+   * A tvl_drain exit is cheap insurance and stays. What it must NOT do is what
+   * it did to pos#5 GUNICORN (2026-08-15): one 40%-in-10-min reading on a
+   * 9-minute-old pool permanently banned the token AND its creator, after which
+   * the token round-tripped +260% and its pool stayed the best fee/TVL on the
+   * board. TVL draining is a liquidity condition — a thin pool being traded
+   * through looks identical to a rug — so it earns a cooldown, not a life
+   * sentence. Triggers that actually evidence a rug keep the permanent ban.
+   */
+  describe("P0 blacklist severity", () => {
+    const MINT = "mint1"; // insertOpenPosition hardcodes this
+    const CREATOR = "Creator11111111111111111111111111111111111";
+
+    function seedToken(mint: string) {
+      getDb()
+        .prepare("INSERT OR REPLACE INTO tokens (mint, creator, first_seen) VALUES (?, ?, 0)")
+        .run(mint, CREATOR);
+    }
+    const bl = (key: string) =>
+      getDb().prepare("SELECT reason, expires_ts FROM blacklist WHERE key = ?").get(key) as
+        | { reason: string; expires_ts: number | null } | undefined;
+
+    async function driveTvlDrain(id: number, tvls: number[]) {
+      for (const tvlUsd of tvls) {
+        exec.setMark(id, { valueSol: 0.3, price: 1, activeBinId: 150, tvlUsd, inRange: true });
+        await managePositions(exec);
+      }
+    }
+
+    it("tvl_drain cools the token off and spares the creator", async () => {
+      installConfig((c) => { c.manage.tvl_drain_cooldown_h = 6; });
+      seedToken(MINT);
+      const id = insertOpenPosition({ entrySol: 0.3, minBinId: 100, maxBinId: 200 });
+      // Four healthy samples set the median, then two consecutive -60% readings.
+      await driveTvlDrain(id, [50_000, 50_000, 50_000, 50_000, 20_000, 20_000]);
+
+      expect(exec.closed).toEqual([{ id, reason: "P0_safety" }]);
+      const token = bl(MINT);
+      expect(token?.reason).toMatch(/tvl_drain/);
+      expect(token?.expires_ts).not.toBeNull(); // cooldown, not permanent
+      expect(bl(CREATOR)).toBeUndefined();      // creator untouched
+      const rug = getDb().prepare("SELECT rug_count FROM creators WHERE address = ?").get(CREATOR) as
+        | { rug_count: number } | undefined;
+      expect(rug?.rug_count ?? 0).toBe(0);
+    });
+
+    it("pool_dead still bans the token and the creator permanently", async () => {
+      const mint = MINT;
+      seedToken(mint);
+      const id = insertOpenPosition({ entrySol: 0.3 });
+      exec.setMark(id, { valueSol: 0, price: 0, activeBinId: 0, tvlUsd: 0, belowRange: true, inRange: false });
+      await managePositions(exec);
+
+      expect(bl(mint)?.expires_ts).toBeNull();    // permanent
+      expect(bl(CREATOR)?.expires_ts).toBeNull(); // one strike on the creator
+      const rug = getDb().prepare("SELECT rug_count FROM creators WHERE address = ?").get(CREATOR) as
+        { rug_count: number };
+      expect(rug.rug_count).toBe(1);
+    });
+  });
 });

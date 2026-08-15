@@ -85,6 +85,12 @@ export interface Config {
   manage: {
     poll_s: number;
     safety_tvl_drop_pct: number; safety_wallet_dump_pct: number;
+    /**
+     * Token cooldown (hours) after a P0 `tvl_drain` exit, instead of the
+     * permanent token+creator ban the rug-evidence triggers get. Optional:
+     * defaults in code for installs whose config predates the key.
+     */
+    tvl_drain_cooldown_h?: number;
     safety_new_whale_pct: number; safety_price_crash_pct: number;
     stop_loss_frac: number; loss_reentry_cooldown_h: number;
     rotation_fee_daily_min_pct: number; rotation_polls: number;

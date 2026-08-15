@@ -120,6 +120,14 @@ tranche_max_down_pct = 70
 poll_s = 15
 # P0 safety
 safety_tvl_drop_pct = 40         # in 10 min
+# 2026-08-15: a tvl_drain EXIT is cheap insurance and stays. What it no longer
+# does is permanently ban the token + its creator — TVL draining is a liquidity
+# condition, indistinguishable between "thin pool traded through", "LP churn in
+# a pool minutes old" and a real rug. pos#5 GUNICORN banned a creator for good
+# on one reading; the token then round-tripped +260% and its pool stayed the
+# best fee/TVL on the board. Rug-evidence triggers (pool_dead, price_crash,
+# rugcheck_flip, holder/insider) keep the permanent one-strike ban.
+tvl_drain_cooldown_h = 6         # token cooldown after a tvl_drain exit
 safety_wallet_dump_pct = 3       # single holder's supply-% drop between polls
 safety_new_whale_pct = 10
 holder_poll_s = 120              # GMGN holder-snapshot interval per open position

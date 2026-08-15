@@ -108,7 +108,11 @@ Trigger on any of:
 - Metadata changed, or RugCheck report flips to Danger.
 - Token price -`[60%]` from our entry price in < 15 min (rug in progress).
 
-Action: `removeLiquidity(100%, shouldClaimAndClose)` immediately, market-dump token side via Jupiter with elevated slippage `[10%]`, blacklist token + creator, log incident. Speed over price.
+Action: `removeLiquidity(100%, shouldClaimAndClose)` immediately, market-dump token side via Jupiter with elevated slippage `[10%]`, log incident. Speed over price.
+
+**Blacklist severity is split by what the trigger actually evidences** (2026-08-15):
+- **Rug evidence** — `pool_dead`, `price_crash`, `rugcheck_flip`, holder/insider triggers → permanent token blacklist **+ one-strike creator ban**.
+- **`tvl_drain` — liquidity condition, not fraud** → token cooldown `[6h]` only, creator untouched. TVL falling 40% below its 10-minute median looks identical whether a thin pool is being *traded through*, LPs are churning in a pool minutes old, or liquidity is genuinely fleeing. The exit is cheap insurance and stays; a permanent ban on that reading is not. pos#5 GUNICORN: one reading on a 9-minute-old pool banned its creator for good, after which the token round-tripped +260% and the pool remained the highest fee/TVL on the board. Discriminator worth remembering: a drain with **heavy volume** is being traded through; a drain with **no volume** is liquidity walking.
 
 ### P1 — STOP LOSS
 Position mark-to-market in SOL (both sides valued at current price + unclaimed fees) < entry SOL × `[0.75]` → close, swap token side to SOL, realize loss. Token goes on `[24h]` re-entry cooldown. **No conviction override — the bot always takes Gmet's "conviction deteriorated" branch.**

@@ -549,13 +549,25 @@ export async function managePositions(exec: Executor): Promise<void> {
         // every (grace + failure) minutes while the token kept bleeding.
         await closeAndReport(exec, pos, "P0_safety", config().exec.safety_exit_slippage_bps, "safety_exit", `P0 safety (${trigger})`);
         clearRangeTimers(pos.id);
+        // A TVL drain is a LIQUIDITY condition, not evidence of fraud. It fires
+        // identically on a thin pool being traded through, on LP churn in a pool
+        // minutes old, and on a real rug — and exiting costs ~0.002 SOL either
+        // way, so the exit stays. Banning the token AND every future token by
+        // its creator, permanently, on that one reading is a different price.
+        // GUNICORN (2026-08-15, pos#5): one 40%-in-10-min reading on a 9-minute-old
+        // pool banned its creator for good; the token then round-tripped +260% and
+        // the pool was still the highest fee/TVL board on the scanner. Cool the
+        // token off instead, and keep permanent bans for triggers that actually
+        // evidence a rug.
+        const rugEvidence = trigger !== "tvl_drain";
         // Don't permanent-blacklist majors allowlist tokens on soft P0 signals.
         if (sleeve !== "majors" || trigger === "pool_dead" || trigger === "price_crash" || trigger === "tvl_drain") {
-          blacklist(pos.tokenMint, "token", `P0 safety exit (${trigger})`);
+          const ttlH = rugEvidence ? undefined : (config().manage.tvl_drain_cooldown_h ?? 6);
+          blacklist(pos.tokenMint, "token", `P0 safety exit (${trigger})`, ttlH);
           // STRATEGY §4 P0: token + CREATOR. One strike = permanent — the
           // vetting side (creator blacklist + rug_count) has always read this;
           // nothing wrote it until now, so a rugger's next mint sailed through.
-          if (sleeve !== "majors") {
+          if (sleeve !== "majors" && rugEvidence) {
             const creator = (getDb().prepare("SELECT creator FROM tokens WHERE mint = ?")
               .get(pos.tokenMint) as { creator: string | null } | undefined)?.creator;
             if (creator) recordCreatorRug(creator, `P0 safety exit (${trigger}) on ${pos.symbol}`);
