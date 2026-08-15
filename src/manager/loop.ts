@@ -76,7 +76,7 @@ const RESIDUAL_SWEEP_MIN_SOL = 0.002; // below this, tx fees eat the proceeds
 // Per-position manager state (all in-memory; rebuilt after restart).
 const aboveRangeSince = new Map<number, number>();   // P3 sustain timer
 const belowRangeSince = new Map<number, number>();   // P5 grace timer
-const tvlHistory = new Map<number, Array<{ ts: number; tvl: number }>>(); // P0 TVL-drop window
+const tvlHistory = new Map<number, Array<{ ts: number; tvl: number; price: number }>>(); // P0 TVL-drop window
 const decayStreak = new Map<number, number>();        // P2 consecutive decay polls
 const rugcheckLastCheck = new Map<number, number>();  // P0 rugcheck-flip throttle
 const everInRange = new Set<number>();                // P3 win-vs-missed classification
@@ -359,18 +359,73 @@ function bankProfit(pos: Position, exitSol: number, context: string): void {
  * Requires the last TWO readings to confirm so one glitchy datapi value can't
  * trigger a safety exit; a real drain persists across consecutive 15s polls.
  */
-function tvlDropTriggered(posId: number, tvlNow: number): boolean {
+export interface TvlDrainCheck {
+  triggered: boolean;
+  /** Recorded on the decision row — this window is in-memory and dies with the process. */
+  evidence: {
+    samples: number;
+    medianTvl: number;
+    tvlNow: number;
+    tvlDropPct: number;
+    medianPrice: number;
+    priceNow: number;
+    priceChangePct: number;
+    vetoedByPriceRise: boolean;
+  } | null;
+}
+
+const median = (xs: number[]): number => {
+  const s = [...xs].sort((a, b) => a - b);
+  return s[Math.floor(s.length / 2)] ?? 0;
+};
+
+/**
+ * P0 TVL drain, with a price-rise veto.
+ *
+ * TVL falling is ambiguous on its own, and the tie-breaker is PRICE, not
+ * volume. A pool whose price is running up is having its ask-side inventory
+ * bought out — TVL falls because the pool is being *traded through*, and the
+ * LPs who just got filled walk. A rug drains TVL too, but always alongside a
+ * price collapse. Both cases carry heavy volume (a rug is a stampede), so
+ * volume cannot separate them — pos#5 GUNICORN drained 40% while printing $85k
+ * of 30m volume against $8.5k of TVL, and its price was +261%. It did not rug;
+ * it round-tripped.
+ *
+ * The veto is deliberately asymmetric: staying in a real rug is catastrophic
+ * and exiting early costs ~0.002 SOL, so it only suppresses the exit on STRONG
+ * evidence of a buy-out (a large price rise). Flat or falling price still fires.
+ */
+function tvlDropTriggered(posId: number, tvlNow: number, priceNow: number): TvlDrainCheck {
   const m = config().manage;
   const windowS = 600; // 10 min per spec
   const hist = tvlHistory.get(posId) ?? [];
-  hist.push({ ts: now(), tvl: tvlNow });
+  hist.push({ ts: now(), tvl: tvlNow, price: priceNow });
   while (hist.length && hist[0]!.ts < now() - windowS) hist.shift();
   tvlHistory.set(posId, hist);
-  if (hist.length < 4) return false;
-  const sorted = hist.map((h) => h.tvl).sort((a, b) => a - b);
-  const median = sorted[Math.floor(sorted.length / 2)]!;
-  const dropped = (t: number) => median > 0 && ((median - t) / median) * 100 >= m.safety_tvl_drop_pct;
-  return dropped(tvlNow) && dropped(hist[hist.length - 2]!.tvl);
+  if (hist.length < 4) return { triggered: false, evidence: null };
+
+  const medTvl = median(hist.map((h) => h.tvl));
+  const dropped = (t: number) => medTvl > 0 && ((medTvl - t) / medTvl) * 100 >= m.safety_tvl_drop_pct;
+  const drained = dropped(tvlNow) && dropped(hist[hist.length - 2]!.tvl);
+
+  const medPrice = median(hist.map((h) => h.price).filter((p) => p > 0));
+  const priceChangePct = medPrice > 0 && priceNow > 0 ? ((priceNow - medPrice) / medPrice) * 100 : 0;
+  const vetoPct = m.tvl_drain_price_rise_veto_pct ?? 25;
+  const vetoedByPriceRise = drained && vetoPct > 0 && priceChangePct >= vetoPct;
+
+  return {
+    triggered: drained && !vetoedByPriceRise,
+    evidence: {
+      samples: hist.length,
+      medianTvl: medTvl,
+      tvlNow,
+      tvlDropPct: medTvl > 0 ? ((medTvl - tvlNow) / medTvl) * 100 : 0,
+      medianPrice: medPrice,
+      priceNow,
+      priceChangePct,
+      vetoedByPriceRise,
+    },
+  };
 }
 
 /** P0 RugCheck-flip check, throttled to one call per position per 5 min. */
@@ -536,11 +591,21 @@ export async function managePositions(exec: Executor): Promise<void> {
       // veto here false-closed pos#61 in 7s. Keep hard P0 (dead/crash/TVL) for majors.
       const crashed = mark.price > 0 && pos.entryPrice > 0 &&
         ((mark.price - pos.entryPrice) / pos.entryPrice) * 100 <= m.safety_price_crash_pct;
-      const tvlDrained = mark.tvlUsd > 0 && tvlDropTriggered(pos.id, mark.tvlUsd);
+      const drain = mark.tvlUsd > 0
+        ? tvlDropTriggered(pos.id, mark.tvlUsd, mark.price)
+        : { triggered: false, evidence: null } satisfies TvlDrainCheck;
+      const tvlDrained = drain.triggered;
+      if (drain.evidence?.vetoedByPriceRise) {
+        const e = drain.evidence;
+        console.log(
+          `[manager] pos#${pos.id} ${pos.symbol}: TVL -${e.tvlDropPct.toFixed(0)}% but price ` +
+          `+${e.priceChangePct.toFixed(0)}% — traded through, not drained; P0 tvl_drain vetoed`
+        );
+      }
       const rugFlip = sleeve !== "majors" && !crashed && !tvlDrained && mark.valueSol > 0
         && await rugcheckFlipped(pos.id, pos.tokenMint);
       const holderTrig = sleeve !== "majors" && exec.mode === "live" && !crashed && !tvlDrained && !rugFlip
-        ? await holderCheck(pos.id, pos.tokenMint) : null;
+        ? await holderCheck(pos.id, pos.tokenMint, pos.poolAddress) : null;
       if (mark.valueSol === 0 || crashed || tvlDrained || rugFlip || holderTrig) {
         const trigger = mark.valueSol === 0 ? "pool_dead" : crashed ? "price_crash" : tvlDrained ? "tvl_drain" : rugFlip ? "rugcheck_flip" : `${holderTrig!.kind} (${holderTrig!.detail})`;
         // Timers clear AFTER the close succeeds (here and in P1–P5 below): a
@@ -549,19 +614,35 @@ export async function managePositions(exec: Executor): Promise<void> {
         // every (grace + failure) minutes while the token kept bleeding.
         await closeAndReport(exec, pos, "P0_safety", config().exec.safety_exit_slippage_bps, "safety_exit", `P0 safety (${trigger})`);
         clearRangeTimers(pos.id);
+        // A TVL drain is a LIQUIDITY condition, not evidence of fraud. It fires
+        // identically on a thin pool being traded through, on LP churn in a pool
+        // minutes old, and on a real rug — and exiting costs ~0.002 SOL either
+        // way, so the exit stays. Banning the token AND every future token by
+        // its creator, permanently, on that one reading is a different price.
+        // GUNICORN (2026-08-15, pos#5): one 40%-in-10-min reading on a 9-minute-old
+        // pool banned its creator for good; the token then round-tripped +260% and
+        // the pool was still the highest fee/TVL board on the scanner. Cool the
+        // token off instead, and keep permanent bans for triggers that actually
+        // evidence a rug.
+        const rugEvidence = trigger !== "tvl_drain";
         // Don't permanent-blacklist majors allowlist tokens on soft P0 signals.
         if (sleeve !== "majors" || trigger === "pool_dead" || trigger === "price_crash" || trigger === "tvl_drain") {
-          blacklist(pos.tokenMint, "token", `P0 safety exit (${trigger})`);
+          const ttlH = rugEvidence ? undefined : (config().manage.tvl_drain_cooldown_h ?? 6);
+          blacklist(pos.tokenMint, "token", `P0 safety exit (${trigger})`, ttlH);
           // STRATEGY §4 P0: token + CREATOR. One strike = permanent — the
           // vetting side (creator blacklist + rug_count) has always read this;
           // nothing wrote it until now, so a rugger's next mint sailed through.
-          if (sleeve !== "majors") {
+          if (sleeve !== "majors" && rugEvidence) {
             const creator = (getDb().prepare("SELECT creator FROM tokens WHERE mint = ?")
               .get(pos.tokenMint) as { creator: string | null } | undefined)?.creator;
             if (creator) recordCreatorRug(creator, `P0 safety exit (${trigger}) on ${pos.symbol}`);
           }
         }
-        recordDecision(pos.tokenMint, pos.poolAddress, "exited", `P0_safety_${trigger}`, null, { mark, pos, sleeve });
+        // The TVL window lives in memory and dies with the process, so without
+        // this a tvl_drain exit leaves nothing to audit after the fact.
+        recordDecision(pos.tokenMint, pos.poolAddress, "exited", `P0_safety_${trigger}`, null, {
+          mark, pos, sleeve, drain: drain.evidence,
+        });
         continue;
       }
 

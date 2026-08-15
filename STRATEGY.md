@@ -108,7 +108,15 @@ Trigger on any of:
 - Metadata changed, or RugCheck report flips to Danger.
 - Token price -`[60%]` from our entry price in < 15 min (rug in progress).
 
-Action: `removeLiquidity(100%, shouldClaimAndClose)` immediately, market-dump token side via Jupiter with elevated slippage `[10%]`, blacklist token + creator, log incident. Speed over price.
+Action: `removeLiquidity(100%, shouldClaimAndClose)` immediately, market-dump token side via Jupiter with elevated slippage `[10%]`, log incident. Speed over price.
+
+**Blacklist severity is split by what the trigger actually evidences** (2026-08-15):
+- **Rug evidence** — `pool_dead`, `price_crash`, `rugcheck_flip`, holder/insider triggers → permanent token blacklist **+ one-strike creator ban**.
+**`tvl_drain` also carries a price-rise veto** `[25%]`: if TVL fell but price rose ≥25% over the same 10-minute window, the pool is having its ask-side inventory **bought out** — traded through, not drained — and P0 does not fire. Note the tie-breaker is *price*, not volume: a rug is a stampede and prints heavy volume too, so volume cannot separate the cases. The veto bar is deliberately high because the error costs are asymmetric — exiting early costs ~0.002 SOL, sitting in a real rug does not. Flat or falling price still fires. The window is in-memory, so the median TVL, current TVL, price change and veto flag are now written to the decision row; before this a `tvl_drain` exit left nothing to audit.
+
+- **`tvl_drain` — liquidity condition, not fraud** → token cooldown `[6h]` only, creator untouched.
+
+**Holder-watch excludes non-wallets by identity, not by tag** (2026-08-15): the DLMM pool we are in is the largest holder of a fresh meme token, and its balance *falls* every time price runs up — buyers taking inventory out. Read as a wallet, that is a `wallet_dump` (a permanent token+creator ban) on a pool being traded through — the same failure shape as the `tvl_drain` false positive. GMGN's exchange tag is honoured but never relied on: our own pool address, every AMM program the vetting side knows, and burn sinks are excluded regardless of tagging. TVL falling 40% below its 10-minute median looks identical whether a thin pool is being *traded through*, LPs are churning in a pool minutes old, or liquidity is genuinely fleeing. The exit is cheap insurance and stays; a permanent ban on that reading is not. pos#5 GUNICORN: one reading on a 9-minute-old pool banned its creator for good, after which the token round-tripped +260% and the pool remained the highest fee/TVL on the board. Discriminator worth remembering: a drain with **heavy volume** is being traded through; a drain with **no volume** is liquidity walking.
 
 ### P1 — STOP LOSS
 Position mark-to-market in SOL (both sides valued at current price + unclaimed fees) < entry SOL × `[0.75]` → close, swap token side to SOL, realize loss. Token goes on `[24h]` re-entry cooldown. **No conviction override — the bot always takes Gmet's "conviction deteriorated" branch.**

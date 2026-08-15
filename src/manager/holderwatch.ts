@@ -1,9 +1,29 @@
 import { config, env } from "../config.js";
 import { gmgnCli, gmgnIsBanned, gmgnTokenBudgetOk } from "../scanner/gmgn.js";
+import { AMM_PROGRAM_IDS, BURN_ADDRESSES } from "../vetting/knownAccounts.js";
 
 // P0 wallet-dump / new-whale triggers (STRATEGY.md §4) via GMGN holder polling.
 // Top holders snapshotted every holder_poll_s; confirm-then-fire against the
 // SAME baseline before P0 (TVL-glitch lesson: one bad read must never exit).
+
+/**
+ * Addresses that must never count as a "wallet" for dump/whale detection.
+ *
+ * The DLMM pool we are IN is the single largest holder of a fresh meme token,
+ * and its balance falls every time price runs up — buyers are taking inventory
+ * out of it. That is the pool being traded through, not a whale dumping. The
+ * GMGN feed does tag exchanges, but a tag is a best-effort label on someone
+ * else's server; excluding our own pool address, and anything the vetting side
+ * already knows to be an AMM or burn sink, cannot depend on it. Same failure
+ * shape as the tvl_drain false positive (pos#5 GUNICORN): a pool being consumed
+ * looks like a rug to a rule that only reads one number.
+ */
+export function isNonWalletHolder(addr: string, poolAddress: string | null | undefined): boolean {
+  if (poolAddress && addr === poolAddress) return true;
+  if (AMM_PROGRAM_IDS.has(addr)) return true;
+  if (BURN_ADDRESSES.has(addr)) return true;
+  return false;
+}
 
 export interface HolderTrigger {
   kind: "wallet_dump" | "new_whale";
@@ -24,20 +44,32 @@ export function clearHolderWatch(posId: number): void {
   snapshots.delete(posId);
 }
 
-async function fetchHolderPct(mint: string): Promise<Map<string, number> | null> {
+/** Parse a GMGN holders payload into wallet → % of supply, dropping non-wallets. */
+export function parseHolderPct(
+  raw: string,
+  poolAddress: string | null | undefined,
+): Map<string, number> | null {
+  const j = JSON.parse(raw) as Record<string, unknown>;
+  const data = j.data as Record<string, unknown> | Array<Record<string, unknown>> | undefined;
+  const list = (Array.isArray(j) ? j : (j.list ?? (Array.isArray(data) ? data : data?.list) ?? [])) as Array<Record<string, unknown>>;
+  if (!list.length) return null;
+  const pct = new Map<string, number>();
+  for (const h of list) {
+    const addr = String(h.address);
+    // GMGN's own tags first, then our independent knowledge — never rely on the
+    // tag alone (see isNonWalletHolder).
+    if (Number(h.addr_type ?? 0) === 2 || String(h.exchange ?? "")) continue;
+    if (isNonWalletHolder(addr, poolAddress)) continue;
+    pct.set(addr, Number(h.amount_percentage ?? 0) * 100);
+  }
+  return pct;
+}
+
+async function fetchHolderPct(mint: string, poolAddress: string | null | undefined): Promise<Map<string, number> | null> {
   if (gmgnIsBanned() || !gmgnTokenBudgetOk(5)) return null;
   try {
     const raw = await gmgnCli(["token", "holders", "--chain", "sol", "--address", mint, "--limit", "20", "--raw"]);
-    const j = JSON.parse(raw) as Record<string, unknown>;
-    const data = j.data as Record<string, unknown> | Array<Record<string, unknown>> | undefined;
-    const list = (Array.isArray(j) ? j : (j.list ?? (Array.isArray(data) ? data : data?.list) ?? [])) as Array<Record<string, unknown>>;
-    if (!list.length) return null;
-    const pct = new Map<string, number>();
-    for (const h of list) {
-      if (Number(h.addr_type ?? 0) === 2 || String(h.exchange ?? "")) continue;
-      pct.set(String(h.address), Number(h.amount_percentage ?? 0) * 100);
-    }
-    return pct;
+    return parseHolderPct(raw, poolAddress);
   } catch {
     return null;
   }
@@ -84,7 +116,7 @@ function raceBudget<T>(p: Promise<T>, ms: number): Promise<T | null> {
   ]);
 }
 
-async function holderCheckInner(posId: number, mint: string): Promise<HolderTrigger | null> {
+async function holderCheckInner(posId: number, mint: string, poolAddress: string | null | undefined): Promise<HolderTrigger | null> {
   if (!env().gmgnApiKey) return null;
   const m = config().manage;
   const prev = snapshots.get(posId);
@@ -98,7 +130,7 @@ async function holderCheckInner(posId: number, mint: string): Promise<HolderTrig
   }
   if (Date.now() < prev.nextPollAt) return null;
 
-  const cur = await fetchHolderPct(mint);
+  const cur = await fetchHolderPct(mint, poolAddress);
   if (!cur) return null;
   if (prev.at === 0 || prev.pct.size === 0) {
     snapshots.set(posId, { at: Date.now(), pct: cur, nextPollAt: Date.now() + pollMs });
@@ -111,7 +143,7 @@ async function holderCheckInner(posId: number, mint: string): Promise<HolderTrig
     return null;
   }
 
-  const confirm = gmgnTokenBudgetOk(5) ? await fetchHolderPct(mint) : null;
+  const confirm = gmgnTokenBudgetOk(5) ? await fetchHolderPct(mint, poolAddress) : null;
   snapshots.set(posId, { at: Date.now(), pct: confirm ?? cur, nextPollAt: Date.now() + pollMs });
   if (!confirm) return null;
   return confirmHolderTrigger(
@@ -123,8 +155,12 @@ async function holderCheckInner(posId: number, mint: string): Promise<HolderTrig
  * Poll-if-due and evaluate. Returns a confirmed trigger or null. Never throws;
  * all failures (API down, budget exceeded) degrade to "no signal this cycle".
  */
-export async function holderCheck(posId: number, mint: string): Promise<HolderTrigger | null> {
-  return raceBudget(holderCheckInner(posId, mint), HOLDER_CHECK_BUDGET_MS);
+export async function holderCheck(
+  posId: number,
+  mint: string,
+  poolAddress?: string | null,
+): Promise<HolderTrigger | null> {
+  return raceBudget(holderCheckInner(posId, mint, poolAddress), HOLDER_CHECK_BUDGET_MS);
 }
 
 /** Test hook — reset in-memory snapshots. */

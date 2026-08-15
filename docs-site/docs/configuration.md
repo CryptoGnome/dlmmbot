@@ -123,6 +123,8 @@ Thresholds:
 |---|---|---|
 | `poll_s` | `15` | Seconds between position polls |
 | `safety_tvl_drop_pct` | `40` | P0: pool TVL drop in 10 min |
+| `tvl_drain_price_rise_veto_pct` | `25` | Suppress a `tvl_drain` exit when price rose ≥ this % over the same 10-min window — the pool is being **traded through** (ask-side inventory bought out), not drained. Price is the tie-breaker, not volume: a rug prints heavy volume too. `0` disables |
+| `tvl_drain_cooldown_h` | `6` | Token cooldown after a `tvl_drain` exit. That trigger is a **liquidity** condition — a thin pool being traded through looks identical to a rug — so it no longer permanently bans the token and its creator. Rug-evidence triggers (`pool_dead`, `price_crash`, `rugcheck_flip`, holder/insider) keep the permanent one-strike ban |
 | `safety_wallet_dump_pct` | `3` | P0: single holder's supply-% drop between polls |
 | `safety_new_whale_pct` | `10` | P0: new wallet exceeding this % of supply |
 | `holder_poll_s` | `90` | Holder-snapshot interval per open position |
