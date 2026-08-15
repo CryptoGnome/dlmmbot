@@ -605,7 +605,7 @@ export async function managePositions(exec: Executor): Promise<void> {
       const rugFlip = sleeve !== "majors" && !crashed && !tvlDrained && mark.valueSol > 0
         && await rugcheckFlipped(pos.id, pos.tokenMint);
       const holderTrig = sleeve !== "majors" && exec.mode === "live" && !crashed && !tvlDrained && !rugFlip
-        ? await holderCheck(pos.id, pos.tokenMint) : null;
+        ? await holderCheck(pos.id, pos.tokenMint, pos.poolAddress) : null;
       if (mark.valueSol === 0 || crashed || tvlDrained || rugFlip || holderTrig) {
         const trigger = mark.valueSol === 0 ? "pool_dead" : crashed ? "price_crash" : tvlDrained ? "tvl_drain" : rugFlip ? "rugcheck_flip" : `${holderTrig!.kind} (${holderTrig!.detail})`;
         // Timers clear AFTER the close succeeds (here and in P1–P5 below): a
