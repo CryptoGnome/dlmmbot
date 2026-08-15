@@ -110,6 +110,7 @@ Thresholds:
 | `bin_rent_budget_sol` | `0.075` | Soft rent budget (one bin array) — shrink range first |
 | `bin_rent_hard_sol` | `0.15` | Hard budget (two arrays), only when score qualifies |
 | `bin_rent_hard_score_min` | `80` | Score needed for the two-array budget |
+| `bin_rent_max_pos_pct` | `25` | Rent is non-refundable, so it may not exceed this % of the position either. Identical to the soft budget at a 0.3 SOL entry; only binds on smaller ones. `0` = no cap |
 | `liquidity_slippage_pct` | `5.0` | Active-bin slippage at open (≈5 bins at step 100; 1% caused 100% of live open failures) |
 | `tranche_enabled` | `true` | Second, deeper BidAsk pocket for top scores |
 | `tranche_score_min` | `85` | Score needed for a tranche |
@@ -160,8 +161,10 @@ Thresholds:
 |---|---|---|
 | `mode` | `"kelly"` | `"kelly"` (ledger) or `"fixed"` (per-sleeve SOL / % of deployable) |
 | `max_positions` | `5` | Max concurrent positions (tranches count) |
-| `min_position_sol` | `0.3` | Floor — below it, fees can't beat tx+rent overhead (Fixed skips instead of bumping) |
-| `min_reentry_sol` | `0.2` | Separate viability floor for re-entries (reused accounts are cheaper) |
+| `min_position_sol` | `0.3` | **Ceiling** on the position floor — the floor itself scales with your wallet (Fixed skips instead of bumping) |
+| `min_position_pct` | `1.0` | Floor as a % of equity. Effective floor = `max(min_position_floor_sol, min(min_position_sol, equity × this))`. `0` = flat floor |
+| `min_position_floor_sol` | `0.05` | Hard economic floor — below it, fees can't beat tx+rent overhead at any bankroll |
+| `min_reentry_sol` | `0.2` | Separate viability floor for re-entries (reused accounts are cheaper); also capped by the scaled floor |
 | `kelly_enabled` | `true` | Mirror of `mode=="kelly"` (compat for older profiles) |
 | `kelly_fraction` | `0.25` | Quarter-Kelly (half-Kelly assumes a *proven* edge) |
 | `kelly_lookback` | `50` | Closed positions in the rolling estimate |
@@ -178,6 +181,7 @@ Thresholds:
 | `fixed_majors_unit` / `_sol` / `_pct` | `sol` / `0.75` / `10` | Majors when `mode=fixed` |
 | `fixed_follow_unit` / `_sol` / `_pct` | `sol` / `0.25` / `2` | Follow legs when `mode=fixed` |
 | `reserve_sol` | `1.0` | Operational reserve, never deployed |
+| `reserve_max_pct` | `25` | Caps the flat `reserve_sol` at this % of equity, so a small wallet still has a bankroll (no effect at or above 4 SOL) |
 | `reserve_pct` | `10` | Plus this % of bankroll held back for rent/fees |
 | `per_token_max_pct` | `40` | Max % of deployable in one token incl. tranche |
 | `score_mult_low` / `mid` / `high` | `0.5` / `1.0` / `1.5` | Size tilt for score 60–70 / 70–85 / 85+ (Kelly only) |

@@ -25,6 +25,19 @@ Three reasons:
 2. **The promotion gate needs data.** `npm run status` tracks consecutive profitable paper days; eligibility is **7 in a row** (after simulated costs). That scoreboard is how you decide with evidence instead of hope.
 3. **Live is double-locked on purpose.** Real trading requires **both** `[exec] mode = "live"` in config **and** `FARMER_MODE=live` in the environment. One switch alone stays safe — no single mis-click starts spending SOL.
 
+## How much SOL do I need?
+
+There is no hard minimum — the sizing floors scale with your wallet, so the bot runs the same strategy at 1 SOL as at 30:
+
+| Wallet | Position floor | Reserve held back | Slots you can actually fill |
+|---|---|---|---|
+| 1 SOL | 0.05 | 0.35 | 5 |
+| 5 SOL | 0.05 | 1.5 | 5 |
+| 10 SOL | 0.10 | 2.0 | 5 |
+| 30 SOL+ | 0.30 | 1.0 + 10% | 5 |
+
+Smaller wallets take proportionally smaller positions, and they only enter pools whose bin arrays are already initialised — non-refundable rent is capped at 25% of the position, which a fresh pool can't satisfy at small size. Below about **0.5 SOL** the per-trade overhead (a new mint's token account plus fees, ~0.002 SOL) starts eating a real share of each position, so that's the practical bottom rather than a coded limit. See [Risk & sizing](./risk).
+
 ## What's the usage fee?
 
 See **[Fees](./fees)** — 1% of live wins buys and burns GNME (CryptoGnome’s mining-game token).

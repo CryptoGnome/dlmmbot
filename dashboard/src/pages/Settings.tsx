@@ -89,8 +89,16 @@ const GROUPS: Group[] = [
         help: "Kelly learns from your ledger. Fixed uses exact SOL or % of deployable per sleeve.",
       },
       { path: "sizing.max_positions", label: "Max open positions", kind: "int", min: 1, max: 10 },
-      { path: "sizing.min_position_sol", label: "Minimum size", kind: "sol", min: 0.1, max: 2, step: 0.1 },
-      { path: "sizing.reserve_sol", label: "Wallet reserve", kind: "sol", min: 0.5, max: 5, step: 0.5, help: "Left alone for rent & fees." },
+      {
+        path: "sizing.min_position_sol", label: "Minimum size", kind: "sol", min: 0.05, max: 2, step: 0.05,
+        help: "Ceiling on the floor. The real floor scales with your wallet (min_position_pct), so a small bankroll still trades.",
+      },
+      {
+        path: "sizing.min_position_pct", label: "Minimum size (% of wallet)", kind: "pct", scale: "pct",
+        min: 0, max: 5, step: 0.5,
+        help: "Floor as a % of equity, capped by Minimum size. 0 = flat floor.",
+      },
+      { path: "sizing.reserve_sol", label: "Wallet reserve", kind: "sol", min: 0.1, max: 5, step: 0.1, help: "Left alone for rent & fees. Capped at 25% of the wallet." },
     ],
   },
   {

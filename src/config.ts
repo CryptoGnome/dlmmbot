@@ -75,6 +75,8 @@ export interface Config {
     fib_bottom: number; max_down_pct: number; min_down_pct: number;
     max_position_accounts: number; bin_rent_budget_sol: number;
     bin_rent_hard_sol: number; bin_rent_hard_score_min: number;
+    /** Non-refundable bin rent may not exceed this % of the position (0 = no cap). */
+    bin_rent_max_pos_pct?: number;
     liquidity_slippage_pct: number;
     tranche_enabled: boolean; tranche_score_min: number; tranche_size_pct: number;
     /** Target depth for second tranche (clamped by P0 safety margin like primary). */
@@ -102,6 +104,13 @@ export interface Config {
   };
   sizing: {
     max_positions: number; min_position_sol: number; min_reentry_sol: number;
+    /**
+     * Bankroll-scaled position floor (§5). The effective floor is
+     * `max(min_position_floor_sol, min(min_position_sol, equity × min_position_pct))`
+     * — see `minPositionSol()`. Optional: installs whose volume config predates
+     * these keys fall back to the same defaults in code.
+     */
+    min_position_pct?: number; min_position_floor_sol?: number;
     /** Global sizing: kelly (ledger) or fixed per-sleeve SOL / % of deployable. */
     mode: "kelly" | "fixed";
     /** Mirror of mode==="kelly" — kept for older profiles / snapshots. */
@@ -116,7 +125,10 @@ export interface Config {
     fixed_micro_unit: "sol" | "pct"; fixed_micro_sol: number; fixed_micro_pct: number;
     fixed_majors_unit: "sol" | "pct"; fixed_majors_sol: number; fixed_majors_pct: number;
     fixed_follow_unit: "sol" | "pct"; fixed_follow_sol: number; fixed_follow_pct: number;
-    reserve_sol: number; reserve_pct: number; per_token_max_pct: number;
+    reserve_sol: number; reserve_pct: number;
+    /** Cap on the flat `reserve_sol` as a % of equity, so a small wallet keeps a deployable bankroll. */
+    reserve_max_pct?: number;
+    per_token_max_pct: number;
     score_mult_low: number; score_mult_mid: number; score_mult_high: number;
     circuit_daily_loss_pct: number; circuit_pause_h: number;
     circuit_weekly_triggers_halt: number;

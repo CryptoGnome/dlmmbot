@@ -6,7 +6,7 @@ import { txErrorDetail } from "../executor/live.js";
 import { sol24hChangePct } from "../market.js";
 import { planFollowRange } from "../ranges/planner.js";
 import { fetchPool } from "../scanner/meteora.js";
-import { circuitBreakerTripped, clusterBrakeTripped, computeBankroll, fixedSleeveSize, kellySleeveBase, kellyStats, openPositionCount, regimeFactor, sizingMode } from "../risk/limits.js";
+import { circuitBreakerTripped, clusterBrakeTripped, computeBankroll, fixedSleeveSize, kellySleeveBase, kellyStats, minPositionSol, minReentrySol, openPositionCount, regimeFactor, sizingMode } from "../risk/limits.js";
 import type { Position } from "../types.js";
 import { vetToken } from "../vetting/vet.js";
 
@@ -221,12 +221,12 @@ async function openFollowLeg(
       const s = config().sizing;
       const k = kellyStats();
       if (k.regime === "negative_edge" && s.kelly_block_negative) return 0;
-      const kellyBase = Math.max(bankroll.walletSol * k.appliedFraction, s.min_position_sol);
+      const kellyBase = Math.max(bankroll.walletSol * k.appliedFraction, minPositionSol(bankroll.walletSol));
       return kellySleeveBase("follow", bankroll.deployableSol, kellyBase);
     })();
   if (base <= 0) return;
   const size = base * regime;
-  if (size < config().sizing.min_reentry_sol) return;
+  if (size < minReentrySol(bankroll.walletSol)) return;
   if (bankroll.deployableSol < size) return;
   if (openPositionCount() >= bankroll.effectiveSlots) return;
 

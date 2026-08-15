@@ -1,5 +1,5 @@
 import { config } from "../config.js";
-import { fixedSleeveSize, kellySleeveBase, kellyStats, sizingMode } from "./limits.js";
+import { fixedSleeveSize, kellySleeveBase, kellyStats, minPositionSol, sizingMode } from "./limits.js";
 import { openSleeveExposure } from "./sleeve.js";
 
 export function majorsSleeveExposure() {
@@ -10,7 +10,7 @@ function kellyMajorsBase(deployableSol: number, walletSol: number): number {
   const s = config().sizing;
   const k = kellyStats();
   if (k.regime === "negative_edge" && s.kelly_block_negative) return 0;
-  const kellyBase = Math.max(walletSol * k.appliedFraction, s.min_position_sol);
+  const kellyBase = Math.max(walletSol * k.appliedFraction, minPositionSol(walletSol));
   return kellySleeveBase("majors", deployableSol, kellyBase);
 }
 

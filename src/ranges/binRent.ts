@@ -35,14 +35,33 @@ function rpc(): Connection {
   return sharedConn;
 }
 
+/**
+ * Ceiling on rent as a share of the position it is spent on.
+ *
+ * Bin-array rent is non-refundable, so an absolute budget alone is only safe
+ * while positions are big: at the 0.075 SOL soft budget a 0.3 SOL entry can
+ * sink 25% of itself into rent, and once position floors scale down with the
+ * bankroll a small operator would be spending most of the position to open it.
+ * At the default 25% this is exactly the old soft budget for a 0.3 SOL entry —
+ * it binds only on positions smaller than that, which is the regime it exists
+ * for. Small positions therefore self-select into pools whose bin arrays are
+ * already initialised (actual rent ≈ 0).
+ */
+export function positionRentCapSol(sizeSol: number | undefined): number {
+  const pct = config().entry.bin_rent_max_pos_pct ?? 25;
+  if (sizeSol == null || !(sizeSol > 0) || !(pct > 0)) return Infinity;
+  return sizeSol * (pct / 100);
+}
+
 /** Soft = one array; hard = two arrays when score ≥ hard_score_min. */
-export function tierBinRentBudget(score: number): { budgetSol: number; tier: "soft" | "hard" } {
+export function tierBinRentBudget(score: number, sizeSol?: number): { budgetSol: number; tier: "soft" | "hard" } {
   const e = config().entry;
   const soft = e.bin_rent_budget_sol;
   const hard = e.bin_rent_hard_sol ?? soft * 2;
   const minScore = e.bin_rent_hard_score_min ?? 80;
-  if (score >= minScore) return { budgetSol: hard, tier: "hard" };
-  return { budgetSol: soft, tier: "soft" };
+  const cap = positionRentCapSol(sizeSol);
+  if (score >= minScore) return { budgetSol: Math.min(hard, cap), tier: "hard" };
+  return { budgetSol: Math.min(soft, cap), tier: "soft" };
 }
 
 export type BinRentQuoteSource = "quote" | "estimate" | "error";
@@ -107,11 +126,13 @@ export async function applyBinRentGate(opts: {
   binStep: number;
   decimalsX: number;
   minDownPct: number;
+  /** Planned position size — caps rent as a share of it. Omit to skip that cap. */
+  sizeSol?: number;
   /** Test hook — defaults to on-chain quote. */
   quote?: typeof quoteActualBinArrayRent;
 }): Promise<BinRentGateResult> {
-  const softBudget = config().entry.bin_rent_budget_sol;
-  const { budgetSol, tier } = tierBinRentBudget(opts.score);
+  const softBudget = Math.min(config().entry.bin_rent_budget_sol, positionRentCapSol(opts.sizeSol));
+  const { budgetSol, tier } = tierBinRentBudget(opts.score, opts.sizeSol);
   let range = opts.range;
   let shrunk = false;
 

@@ -404,8 +404,14 @@ export const WIKI_SECTIONS: WikiSection[] = [
           { label: "Apply fraction", detail: "Bet kelly_fraction × f*, capped at max share of wallet." },
           { label: "Per-sleeve tweak", detail: "Settings → Kelly per-sleeve: Kelly (adaptive × mult), fixed SOL, or % deployable per core/micro/majors/follow." },
           { label: "Score tilt", detail: "Scan score picks low/mid/high multiplier on the result." },
-          { label: "Floors", detail: "Never below min position size; negative edge can block or clamp to floor." },
+          { label: "Floors", detail: "Never below the min position size; negative edge can block or clamp to the floor." },
         ],
+      },
+      {
+        type: "callout",
+        tone: "fg",
+        title: "The minimum size scales with your wallet",
+        text: "The floor is max(0.05 SOL, min(Minimum size, 1% of equity)) — 0.05 on a 1 SOL wallet, 0.10 at 10 SOL, 0.30 once past 30 SOL. A flat floor is used in four places at once (the Kelly base, the entry cutoff, the override on the 10%-of-wallet cap, and the slot divisor), so a small wallet used to either never enter — the flat reserve ate the whole bankroll — or enter at 15% of equity with the risk cap bypassed, and no bankroll under 20 SOL could take a 60-70 score. Small positions are protected instead by capping bin rent at 25% of the position, so they only enter pools whose bin arrays are already paid for. Set Minimum size (% of wallet) to 0 for a flat floor.",
       },
       {
         type: "cards",

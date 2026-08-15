@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   regimeFactor, clusterBrakeTripped, circuitBreakerTripped, kellyStats, positionSize, computeBankroll,
-  fixedSleeveSize, kellySleeveBase, sizingMode,
+  fixedSleeveSize, kellySleeveBase, sizingMode, minPositionSol, minReentrySol, reserveSol,
 } from "./limits.js";
 import { installConfig, restoreConfig } from "../test/config.js";
 import { useMemoryDb, resetTestDb, insertClosedPosition } from "../test/db.js";
@@ -284,6 +284,108 @@ describe("kelly per-sleeve sizing", () => {
   it("majors uses kelly_majors_sol in kelly mode", () => {
     const br = computeBankroll(20);
     expect(majorsPositionSize(br.deployableSol, br.walletSol)).toBeCloseTo(1);
+  });
+});
+
+// A flat 0.3 SOL floor meant "the bot silently does nothing" for small
+// operators: reserve ate the whole bankroll, effectiveSlots went to 0, and the
+// low score tier was unreachable below 20 SOL. These lock in that every
+// bankroll gets a working, proportional configuration — and that books at or
+// above 30 SOL keep exactly the sizing they had.
+describe("bankroll-scaled floors", () => {
+  beforeEach(() => {
+    useMemoryDb();
+    installConfig((c) => {
+      c.sizing.mode = "kelly";
+      c.sizing.kelly_enabled = true;
+      c.sizing.kelly_min_samples = 50;
+      c.sizing.kelly_cold_start_frac = 0.03;
+      c.sizing.kelly_max_position_frac = 0.10;
+      c.sizing.kelly_block_negative = false;
+      c.sizing.kelly_core_unit = "kelly";
+      c.sizing.kelly_core_mult = 1;
+      c.sizing.min_position_sol = 0.3;
+      c.sizing.min_position_pct = 1.0;
+      c.sizing.min_position_floor_sol = 0.05;
+      c.sizing.min_reentry_sol = 0.2;
+      c.sizing.max_positions = 5;
+      c.sizing.reserve_sol = 1.0;
+      c.sizing.reserve_max_pct = 25;
+      c.sizing.reserve_pct = 10;
+      c.sizing.score_mult_low = 0.5;
+      c.sizing.score_mult_mid = 1.0;
+      c.sizing.score_mult_high = 1.5;
+    });
+  });
+  afterEach(() => {
+    resetTestDb();
+    restoreConfig();
+  });
+
+  it("scales the floor with equity and never below the hard floor", () => {
+    expect(minPositionSol(1)).toBeCloseTo(0.05);   // hard floor, not 1% = 0.01
+    expect(minPositionSol(10)).toBeCloseTo(0.10);
+    expect(minPositionSol(20)).toBeCloseTo(0.20);
+    expect(minPositionSol(30)).toBeCloseTo(0.30);  // target binds
+    expect(minPositionSol(100)).toBeCloseTo(0.30); // and never exceeds it
+  });
+
+  it("keeps the floor at the operator's target when they set one below the hard floor", () => {
+    installConfig((c) => { c.sizing.min_position_sol = 0.02; });
+    expect(minPositionSol(100)).toBeCloseTo(0.02);
+  });
+
+  it("min_position_pct = 0 restores the flat floor", () => {
+    installConfig((c) => { c.sizing.min_position_pct = 0; });
+    expect(minPositionSol(1)).toBeCloseTo(0.3);
+    expect(minPositionSol(50)).toBeCloseTo(0.3);
+  });
+
+  it("re-entry floor tracks the entry floor and never exceeds it", () => {
+    expect(minReentrySol(30)).toBeCloseTo(0.2);  // min_reentry_sol binds
+    expect(minReentrySol(2)).toBeCloseTo(0.05);  // scaled floor binds
+  });
+
+  it("caps the flat reserve so a small wallet still has a bankroll", () => {
+    expect(reserveSol(1)).toBeCloseTo(0.35);   // 0.25 capped flat + 0.10 pct
+    expect(reserveSol(10)).toBeCloseTo(2.0);   // unchanged: 1.0 + 1.0
+    expect(reserveSol(30)).toBeCloseTo(4.0);   // unchanged: 1.0 + 3.0
+  });
+
+  it("a 1 SOL wallet gets deployable capital and real slots", () => {
+    const br = computeBankroll(1);
+    expect(br.deployableSol).toBeCloseTo(0.65);
+    expect(br.effectiveSlots).toBe(5);
+    expect(positionSize(br, 75)).toBeGreaterThan(0);
+  });
+
+  it("sizes a small wallet proportionally instead of blowing past the wallet cap", () => {
+    const br = computeBankroll(2);
+    const size = positionSize(br, 75);
+    // Old behaviour floored the Kelly base at 0.3 and raised the cap to match:
+    // 15% of a 2 SOL wallet. The 10% cap must actually bind now.
+    expect(size).toBeLessThanOrEqual(2 * 0.10 + 1e-9);
+    expect(size).toBeGreaterThan(0);
+  });
+
+  it("makes the 60-70 score tier reachable below 20 SOL", () => {
+    // Half of a base pinned to a flat floor is always under that floor — the
+    // low tier was dead at every bankroll under 20 SOL.
+    expect(positionSize(computeBankroll(10), 65)).toBeCloseTo(0.15);
+    expect(positionSize(computeBankroll(5), 65)).toBeCloseTo(0.075);
+  });
+
+  it("leaves a 30 SOL book on exactly its previous sizing", () => {
+    const br = computeBankroll(30);
+    expect(br.deployableSol).toBeCloseTo(26);        // 30 - (1.0 + 3.0)
+    expect(positionSize(br, 75)).toBeCloseTo(0.9);   // 3% cold-start
+    expect(positionSize(br, 90)).toBeCloseTo(1.35);
+    expect(positionSize(br, 65)).toBeCloseTo(0.45);
+  });
+
+  it("still refuses a position under the hard economic floor", () => {
+    installConfig((c) => { c.sizing.kelly_cold_start_frac = 0.001; });
+    expect(positionSize(computeBankroll(1), 65)).toBe(0);
   });
 });
 
