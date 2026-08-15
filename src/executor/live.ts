@@ -703,6 +703,7 @@ export class LiveExecutor implements Executor {
       tvlUsd: dp?.tvlUsd ?? 0,
       feeTvl30mPct: dp?.feeTvl30mPct ?? 0,
       vol30mUsd: dp?.vol30mUsd ?? 0,
+      poolAgeS: dp?.createdAt ? Math.max(0, (Date.now() - Date.parse(dp.createdAt)) / 1000) : null,
     };
   }
 

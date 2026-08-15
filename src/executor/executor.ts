@@ -26,6 +26,8 @@ export interface PositionMark {
   tvlUsd: number;
   feeTvl30mPct: number;
   vol30mUsd: number;
+  /** Seconds since the pool was created; null when the listing has no created_at. Feeds the P0 tvl_drain age floor. */
+  poolAgeS?: number | null;
 }
 
 export interface Executor {

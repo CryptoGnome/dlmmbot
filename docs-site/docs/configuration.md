@@ -21,6 +21,7 @@ Every knob the bot obeys lives in one TOML file. Key facts before the tables:
 | `interval_s` | `60` | Seconds between scanner sweeps |
 | `pages` | `3` | Meteora datapi pages per sweep (100 pools/page) |
 | `copycat_ignore_h` | `24` | Losers of symbol dedupe ignored this long (hours) |
+| `sibling_tvl_tie_pct` | `25` | Among a token's gate-passing pools, the **deepest** wins; fee/TVL breaks ties only within this % of the deepest pool's TVL. Replaces "highest fee/TVL", which structurally picked the thinnest sibling — thin pools earn less and their TVL swings 40–50% on ordinary LP moves, which P0 `tvl_drain` reads as a rug |
 
 ## `[gates]` — pool hard gates
 
@@ -123,6 +124,8 @@ Thresholds:
 |---|---|---|
 | `poll_s` | `15` | Seconds between position polls |
 | `safety_tvl_drop_pct` | `40` | P0: pool TVL drop in 10 min |
+| `tvl_drain_min_tvl_usd` | `20000` | Skip `tvl_drain` when the pool's median TVL over the window is below this — a thin pool's TVL is a handful of LPs and swings 40–50% on ordinary repositioning (measured: same token, same 4 min, $8k pool −51% vs $67k pool −9%). `pool_dead` / `price_crash` still cover a real collapse |
+| `tvl_drain_min_pool_age_min` | `20` | Skip `tvl_drain` on a pool younger than this — the 10-min median of a newborn pool is its own birth. Unknown age does not suppress |
 | `tvl_drain_price_rise_veto_pct` | `25` | Suppress a `tvl_drain` exit when price rose ≥ this % over the same 10-min window — the pool is being **traded through** (ask-side inventory bought out), not drained. Price is the tie-breaker, not volume: a rug prints heavy volume too. `0` disables |
 | `tvl_drain_cooldown_h` | `6` | Token cooldown after a `tvl_drain` exit. That trigger is a **liquidity** condition — a thin pool being traded through looks identical to a rug — so it no longer permanently bans the token and its creator. Rug-evidence triggers (`pool_dead`, `price_crash`, `rugcheck_flip`, holder/insider) keep the permanent one-strike ban |
 | `safety_wallet_dump_pct` | `3` | P0: single holder's supply-% drop between polls |

@@ -15,7 +15,7 @@ Runs every `[60s]`.
 1. **Pool sweep** — `GET dlmm.datapi.meteora.ag/pools`
    `filter_by: is_blacklisted=false && tvl > [5000]`, `sort_by: fee_tvl_ratio_30m:desc`, first `[3]` pages.
 2. **Dedupe to canonical token** — group pools by token mint; if multiple tokens share a symbol (copycats), only the one with the highest 24h volume is considered; the rest are ignored for `[24h]`.
-3. **Per-token: pick the best pool** — highest `fee_tvl_ratio_24h` among that token's pools that pass pool gates (§2.1). One pool per token.
+3. **Per-token: pick the best pool** — the **deepest** (highest TVL) among that token's pools that pass pool gates (§2.1); `fee_tvl_ratio_24h` breaks ties only within `[25%]` of the deepest pool's TVL. One pool per token. *Was* "highest fee/TVL" — and since fee/TVL is inversely proportional to TVL, that structurally picked the *thinnest* sibling (measured 2026-08-15: 11 of 18 multi-pool mints on the board, and in 9 of those the deeper pool also had more absolute volume). Thin pools cost twice: less fee income, because volume happens where depth is; and TVL that swings 40–50% on ordinary LP repositioning, which is exactly what P0 `tvl_drain` reads as a rug — same token, same 4 minutes, an $8k pool swung 51% while its $67k sibling moved 9%. The gates are the family boundary: a bin-20 pool is never an alternative to a bin-100 pool because `bin_step_new` rejects it, so depth is compared only across shapes the strategy already accepts.
 4. Output: scored candidates → vetting (§3) → entry queue.
 
 Optional secondary source `[off by default]`: GMGN trending list as a *discovery* input (requires API key). Never a substitute for our own vetting.
@@ -112,6 +112,8 @@ Action: `removeLiquidity(100%, shouldClaimAndClose)` immediately, market-dump to
 
 **Blacklist severity is split by what the trigger actually evidences** (2026-08-15):
 - **Rug evidence** — `pool_dead`, `price_crash`, `rugcheck_flip`, holder/insider triggers → permanent token blacklist **+ one-strike creator ban**.
+**`tvl_drain` needs a meaningful baseline** — it is skipped when the pool's median TVL over the window is under `[$20k]` or the pool is younger than `[20 min]`. Measured 2026-08-15 with no rug happening: a thin pool's TVL is a handful of LPs, so one repositioning is a 40% event (same token, same 4 minutes: $8k pool swung 51%, $67k pool 9%); a pool younger than the 10-minute window has its own birth as the baseline. Below either floor the drain read is noise; `pool_dead` and `price_crash` still cover a real collapse there. Unknown pool age does **not** suppress the trigger.
+
 **`tvl_drain` also carries a price-rise veto** `[25%]`: if TVL fell but price rose ≥25% over the same 10-minute window, the pool is having its ask-side inventory **bought out** — traded through, not drained — and P0 does not fire. Note the tie-breaker is *price*, not volume: a rug is a stampede and prints heavy volume too, so volume cannot separate the cases. The veto bar is deliberately high because the error costs are asymmetric — exiting early costs ~0.002 SOL, sitting in a real rug does not. Flat or falling price still fires. The window is in-memory, so the median TVL, current TVL, price change and veto flag are now written to the decision row; before this a `tvl_drain` exit left nothing to audit.
 
 - **`tvl_drain` — liquidity condition, not fraud** → token cooldown `[6h]` only, creator untouched.
