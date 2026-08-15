@@ -427,6 +427,39 @@ export function recordCreatorRug(creator: string, reason = "rugged token (P0)"):
   blacklist(creator, "creator", reason); // no TTL = permanent
 }
 
+/**
+ * Bound the two append-only tables that grow every sweep.
+ *
+ * Nothing pruned them before: the Railway volume was 83% full inside a day and
+ * a 200-hour local run had 27 MB of `decisions` — ~100 gate-rejection rows an
+ * hour, each carrying a full serialised pool object (fixed at the write site
+ * too). Retention is what the readers actually need:
+ *  - `entered` / `exited` rows are the audit trail and are rare: kept forever.
+ *  - `skipped` rows feed the dashboard funnel, whose longest range is 30 days.
+ *  - `pool_snapshots` is read `ORDER BY ts DESC LIMIT 1` per pool; the rest is
+ *    an offline replay dataset that no one has replayed. Kept a few days.
+ * Returns the row counts removed so the caller can log a non-zero sweep.
+ */
+export function pruneHistory(opts: { skippedDays: number; snapshotDays: number }): { decisions: number; snapshots: number; vacuumed: boolean } {
+  const db = getDb();
+  const t = now();
+  const decisions = db.prepare(
+    "DELETE FROM decisions WHERE action = 'skipped' AND ts < ?"
+  ).run(t - opts.skippedDays * 86_400).changes;
+  const snapshots = db.prepare(
+    "DELETE FROM pool_snapshots WHERE ts < ?"
+  ).run(t - opts.snapshotDays * 86_400).changes;
+  // DELETE frees pages inside the file; the file itself does not shrink until
+  // VACUUM rewrites it. Only worth the rewrite (and the disk it briefly needs)
+  // when a real amount was released — a volume already at 83% is exactly the
+  // case where the first pass has to give the space back.
+  let vacuumed = false;
+  if (decisions + snapshots >= 10_000) {
+    try { db.exec("VACUUM"); vacuumed = true; } catch { /* busy or read-only — try next pass */ }
+  }
+  return { decisions, snapshots, vacuumed };
+}
+
 export function recordDecision(
   mint: string,
   pool: string | null,

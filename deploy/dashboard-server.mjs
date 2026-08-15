@@ -44,6 +44,7 @@ import {
   snapshotAllowlistedConfig, shareMeta,
 } from "./lib/profiles.mjs";
 import { requestHalt, clearHalt, readHaltState } from "./lib/halt.mjs";
+import { clearBlacklist, listBlacklist } from "./lib/blacklist.mjs";
 import { requestPause, clearPause, readPauseState } from "./lib/pause.mjs";
 import { searchMajorsSymbols } from "./lib/majors-search.mjs";
 import { execFileSync } from "node:child_process";
@@ -687,6 +688,33 @@ const server = createServer(async (req, res) => {
       const state = action === "resume" ? clearHalt(root) : requestHalt(root);
       watchCache = { at: 0, data: null, building: null };
       sendJson(res, 200, { ok: true, ...state, ...readPauseState(root) });
+    } catch (e) {
+      sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/blacklist" && req.method === "GET") {
+    try {
+      sendJson(res, 200, { entries: listBlacklist(root) });
+    } catch (e) {
+      sendJson(res, 500, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  // Lifting a ban is a deliberate act — same re-enter-the-token bar as HALT.
+  if (url.pathname === "/api/blacklist/clear" && req.method === "POST") {
+    try {
+      const body = await readBody(req, res);
+      const confirm = typeof body?.confirm === "string" ? body.confirm : "";
+      if (!token || !safeEqual(confirm, token)) {
+        sendJson(res, 403, { error: "re-enter dash token to lift a blacklist entry" });
+        return;
+      }
+      const result = clearBlacklist(root, body?.keys);
+      watchCache = { at: 0, data: null, building: null };
+      sendJson(res, 200, { ok: true, ...result });
     } catch (e) {
       sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
     }

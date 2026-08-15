@@ -36,6 +36,12 @@ export interface Config {
      * defaults in code for installs whose config predates the key.
      */
     sibling_tvl_tie_pct?: number;
+    /**
+     * DB retention for the two append-only tables that grow every sweep.
+     * `entered`/`exited` decisions are never pruned. Optional: defaults in code.
+     */
+    retain_skipped_days?: number;
+    retain_snapshots_days?: number;
   };
   gates: {
     tvl_min_usd: number; tvl_max_usd: number; mcap_min_usd: number;

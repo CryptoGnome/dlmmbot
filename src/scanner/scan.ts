@@ -199,8 +199,17 @@ export async function scan(opts: { withTiming?: boolean } = {}): Promise<ScanRes
     if (gateFailures.length === 0) candidates.push(cand);
     else {
       rejected.push(cand);
+      // Every rejected pool, every sweep, used to serialise the WHOLE pool
+      // object here (~1 KB/row, ~100 rows/hour, no retention) — the Railway
+      // volume hit 83% inside a day and the local DB grew 27 MB in 200 hours
+      // of `decisions` alone. The pool's numbers for this exact sweep are
+      // already in pool_snapshots; the decision row only needs the reason and
+      // the few numbers the funnel reads to explain it.
       recordDecision(p.mintX, p.address, "skipped", gateFailures[0]?.gate ?? null, score, {
-        symbol, pool: p, gateFailures, scoreParts: weighted,
+        symbol, gateFailures,
+        tvlUsd: Math.round(p.tvlUsd), vol30mUsd: Math.round(p.vol30mUsd),
+        feeTvl24hPct: +p.feeTvl24hPct.toFixed(2), feeTvl30mPct: +p.feeTvl30mPct.toFixed(2),
+        binStep: p.binStep, mcapUsd: Math.round(p.marketCapUsd ?? 0),
       });
     }
   }

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { getDb, isBlacklisted, REALIZED_PNL_SQL, logError, recordCreatorRug, upsertTokenMeta } from "./db.js";
+import { getDb, isBlacklisted, REALIZED_PNL_SQL, logError, now, pruneHistory, recordCreatorRug, recordDecision, upsertTokenMeta } from "./db.js";
 import { useMemoryDb, resetTestDb, insertClosedPosition } from "../test/db.js";
 
 function pnlFor(id: number): number | null {
@@ -151,5 +151,58 @@ describe("logError", () => {
     expect(row.symbol).toBe("AAA");
     expect(row.name).toBe("Token A");
     expect(row.icon_url).toBe("https://x/a.png");
+  });
+});
+
+/**
+ * Nothing pruned these tables before: the Railway volume hit 83% inside a day.
+ * Retention must be exactly what the readers need — and must never touch the
+ * entered/exited audit trail.
+ */
+describe("pruneHistory", () => {
+  beforeEach(() => useMemoryDb());
+  afterEach(() => resetTestDb());
+
+  const DAY = 86_400;
+  const count = (sql: string) => (getDb().prepare(sql).get() as { c: number }).c;
+
+  it("prunes old skipped decisions and snapshots, keeps recent ones", () => {
+    const db = getDb();
+    const t = now();
+    const ins = db.prepare("INSERT INTO decisions (ts, mint, pool, action, failed_gate, score, features_json) VALUES (?,?,?,?,?,?,?)");
+    ins.run(t - 40 * DAY, "m1", "p1", "skipped", "vol_30m", 50, "{}");   // old skip → prune
+    ins.run(t - 1 * DAY,  "m2", "p2", "skipped", "vol_30m", 50, "{}");   // recent skip → keep
+    const snap = db.prepare("INSERT INTO pool_snapshots (pool, ts, tvl_usd, price, vol_30m, vol_1h, vol_24h, fee_tvl_30m, fee_tvl_24h) VALUES (?,?,?,?,?,?,?,?,?)");
+    snap.run("p1", t - 5 * DAY, 1, 1, 1, 1, 1, 1, 1);  // old → prune
+    snap.run("p1", t - 1 * DAY, 1, 1, 1, 1, 1, 1, 1);  // recent → keep
+
+    const r = pruneHistory({ skippedDays: 30, snapshotDays: 3 });
+    expect(r).toEqual({ decisions: 1, snapshots: 1, vacuumed: false });
+    expect(count("SELECT COUNT(*) c FROM decisions")).toBe(1);
+    expect(count("SELECT COUNT(*) c FROM pool_snapshots")).toBe(1);
+  });
+
+  it("never prunes entered or exited rows, however old", () => {
+    const db = getDb();
+    const t = now();
+    const ins = db.prepare("INSERT INTO decisions (ts, mint, pool, action, failed_gate, score, features_json) VALUES (?,?,?,?,?,?,?)");
+    ins.run(t - 400 * DAY, "m1", "p1", "entered", null, 80, "{}");
+    ins.run(t - 400 * DAY, "m1", "p1", "exited", "P3_above_win", null, "{}");
+    ins.run(t - 400 * DAY, "m1", "p1", "skipped", "vol_30m", 50, "{}");
+    const r = pruneHistory({ skippedDays: 30, snapshotDays: 3 });
+    expect(r.decisions).toBe(1);
+    expect(count("SELECT COUNT(*) c FROM decisions WHERE action IN ('entered','exited')")).toBe(2);
+  });
+
+  it("gate rejections no longer carry a serialised pool object", () => {
+    // The write site used to pass `pool: p` — ~1 KB per row, ~100 rows/hour.
+    recordDecision("m1", "p1", "skipped", "vol_30m", 50, {
+      symbol: "X", gateFailures: [{ gate: "vol_30m", value: "100", limit: "25000" }],
+      tvlUsd: 5000, vol30mUsd: 100, feeTvl24hPct: 1.2, feeTvl30mPct: 0.1, binStep: 100, mcapUsd: 200000,
+    });
+    const row = getDb().prepare("SELECT LENGTH(features_json) l, features_json f FROM decisions").get() as { l: number; f: string };
+    expect(row.l).toBeLessThan(400);
+    expect(JSON.parse(row.f).pool).toBeUndefined();
+    expect(JSON.parse(row.f).gateFailures[0].gate).toBe("vol_30m"); // the reason survives
   });
 });

@@ -4,7 +4,7 @@ import { resolveBuildLabel } from "../buildLabel.js";
 import { config, currentMode, isLive, syncFarmerModeFromDisk } from "../config.js";
 import { reconcileLive } from "./reconcile.js";
 import { alert, type AlertKind } from "../alerts.js";
-import { blacklist, getDb, now, recordCreatorRug, recordDecision, REALIZED_PNL_SQL, logError, installProcessErrorHooks } from "../db/db.js";
+import { blacklist, getDb, now, pruneHistory, recordCreatorRug, recordDecision, REALIZED_PNL_SQL, logError, installProcessErrorHooks } from "../db/db.js";
 import type { Executor } from "../executor/executor.js";
 import { LiveExecutor } from "../executor/live.js";
 import { executeProfitBurn, profitBurnSpendSol, accrueProfitBurn, readProfitBurnAccrued, writeProfitBurnAccrued, PROFIT_BURN } from "../executor/profitBurn.js";
@@ -72,6 +72,8 @@ async function withBusy<T>(fn: () => Promise<T>): Promise<T> {
 // Residual sweep: retry-sell tokens stranded by failed zap-out swaps.
 const RESIDUAL_SWEEP_INTERVAL_MS = 10 * 60 * 1000;
 const RESIDUAL_SWEEP_MIN_SOL = 0.002; // below this, tx fees eat the proceeds
+/** DB retention runs hourly; the pruned tables only matter at day granularity. */
+const RETENTION_INTERVAL_MS = 60 * 60 * 1000;
 
 // Per-position manager state (all in-memory; rebuilt after restart).
 const aboveRangeSince = new Map<number, number>();   // P3 sustain timer
@@ -1464,6 +1466,7 @@ export async function runLoop(): Promise<void> {
   startSmartFlow();
   let lastScan = 0;
   let lastSweep = 0;
+  let lastRetention = 0;
   let haltCloseDone = false;
   let haltCloseAttempts = 0;
   let pauseLogged = false;
@@ -1592,6 +1595,17 @@ export async function runLoop(): Promise<void> {
           }
         } else {
           console.warn(`[farmer] deferring residual sweep — tick already ${Date.now() - tickStart}ms`);
+        }
+      }
+      if (Date.now() - lastRetention > RETENTION_INTERVAL_MS) {
+        lastRetention = Date.now();
+        const r = config().scanner;
+        const pruned = pruneHistory({
+          skippedDays: r.retain_skipped_days ?? 30,
+          snapshotDays: r.retain_snapshots_days ?? 3,
+        });
+        if (pruned.decisions || pruned.snapshots) {
+          console.log(`[farmer] retention: pruned ${pruned.decisions} skipped decisions, ${pruned.snapshots} pool snapshots${pruned.vacuumed ? " (vacuumed)" : ""}`);
         }
       }
     } catch (e) {
