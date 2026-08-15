@@ -128,6 +128,14 @@ safety_tvl_drop_pct = 40         # in 10 min
 # best fee/TVL on the board. Rug-evidence triggers (pool_dead, price_crash,
 # rugcheck_flip, holder/insider) keep the permanent one-strike ban.
 tvl_drain_cooldown_h = 6         # token cooldown after a tvl_drain exit
+# Price is the tie-breaker, not volume. A pool whose price is RUNNING UP is
+# having its ask-side inventory bought out — TVL falls because it is being
+# traded through. A rug drains TVL alongside a price COLLAPSE. Both print heavy
+# volume (a rug is a stampede), so volume cannot separate them: pos#5 GUNICORN
+# drained 40% while doing $85k/30m against $8.5k TVL, price +261%, and did not
+# rug. Set high on purpose — exiting early costs ~0.002 SOL, sitting in a real
+# rug does not. 0 disables the veto.
+tvl_drain_price_rise_veto_pct = 25
 safety_wallet_dump_pct = 3       # single holder's supply-% drop between polls
 safety_new_whale_pct = 10
 holder_poll_s = 120              # GMGN holder-snapshot interval per open position

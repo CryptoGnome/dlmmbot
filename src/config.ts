@@ -91,6 +91,13 @@ export interface Config {
      * defaults in code for installs whose config predates the key.
      */
     tvl_drain_cooldown_h?: number;
+    /**
+     * Suppress a `tvl_drain` exit when price has risen at least this % over the
+     * same 10-min window — the pool is being traded through, not drained. 0
+     * disables the veto. Deliberately high: exiting early is cheap, staying in
+     * a rug is not.
+     */
+    tvl_drain_price_rise_veto_pct?: number;
     safety_new_whale_pct: number; safety_price_crash_pct: number;
     stop_loss_frac: number; loss_reentry_cooldown_h: number;
     rotation_fee_daily_min_pct: number; rotation_polls: number;

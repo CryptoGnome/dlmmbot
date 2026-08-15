@@ -199,9 +199,11 @@ describe("managePositions contracts", () => {
       getDb().prepare("SELECT reason, expires_ts FROM blacklist WHERE key = ?").get(key) as
         | { reason: string; expires_ts: number | null } | undefined;
 
-    async function driveTvlDrain(id: number, tvls: number[]) {
-      for (const tvlUsd of tvls) {
-        exec.setMark(id, { valueSol: 0.3, price: 1, activeBinId: 150, tvlUsd, inRange: true });
+    async function driveTvlDrain(id: number, tvls: number[], prices?: number[]) {
+      for (let i = 0; i < tvls.length; i++) {
+        exec.setMark(id, {
+          valueSol: 0.3, price: prices?.[i] ?? 1, activeBinId: 150, tvlUsd: tvls[i]!, inRange: true,
+        });
         await managePositions(exec);
       }
     }
@@ -221,6 +223,67 @@ describe("managePositions contracts", () => {
       const rug = getDb().prepare("SELECT rug_count FROM creators WHERE address = ?").get(CREATOR) as
         | { rug_count: number } | undefined;
       expect(rug?.rug_count ?? 0).toBe(0);
+    });
+
+    /**
+     * The pos#5 GUNICORN shape: TVL -40%+ while price runs +261%. The pool was
+     * being traded through — its ask-side inventory bought out — not drained.
+     * Volume cannot separate the two (a rug is a stampede and prints volume
+     * too); price direction can.
+     */
+    it("does not fire when TVL falls but price is running up", async () => {
+      installConfig((c) => { c.manage.tvl_drain_price_rise_veto_pct = 25; });
+      seedToken(MINT);
+      const id = insertOpenPosition({ entrySol: 0.3, minBinId: 100, maxBinId: 200 });
+      await driveTvlDrain(
+        id,
+        [50_000, 50_000, 50_000, 50_000, 20_000, 20_000],
+        [1, 1, 1, 1, 2.6, 3.6], // +260% over the window
+      );
+      expect(exec.closed).toHaveLength(0);
+      expect(bl(MINT)).toBeUndefined();
+    });
+
+    it("still fires when TVL falls and price is flat or falling", async () => {
+      installConfig((c) => { c.manage.tvl_drain_price_rise_veto_pct = 25; });
+      seedToken(MINT);
+      const id = insertOpenPosition({ entrySol: 0.3, minBinId: 100, maxBinId: 200 });
+      // A real rug drains TVL with price going the other way — veto must not save it.
+      await driveTvlDrain(
+        id,
+        [50_000, 50_000, 50_000, 50_000, 20_000, 20_000],
+        [1, 1, 1, 1, 0.8, 0.7],
+      );
+      expect(exec.closed).toEqual([{ id, reason: "P0_safety" }]);
+    });
+
+    it("a price rise under the veto threshold does not save it", async () => {
+      installConfig((c) => { c.manage.tvl_drain_price_rise_veto_pct = 25; });
+      seedToken(MINT);
+      const id = insertOpenPosition({ entrySol: 0.3, minBinId: 100, maxBinId: 200 });
+      await driveTvlDrain(
+        id,
+        [50_000, 50_000, 50_000, 50_000, 20_000, 20_000],
+        [1, 1, 1, 1, 1.1, 1.1], // +10%, below the 25% bar
+      );
+      expect(exec.closed).toEqual([{ id, reason: "P0_safety" }]);
+    });
+
+    it("records the drain window on the decision row so it can be audited", async () => {
+      seedToken(MINT);
+      const id = insertOpenPosition({ entrySol: 0.3, minBinId: 100, maxBinId: 200 });
+      await driveTvlDrain(id, [50_000, 50_000, 50_000, 50_000, 20_000, 20_000]);
+      const row = getDb().prepare(
+        "SELECT features_json f FROM decisions WHERE failed_gate = 'P0_safety_tvl_drain' ORDER BY id DESC LIMIT 1"
+      ).get() as { f: string } | undefined;
+      expect(row).toBeDefined();
+      const drain = JSON.parse(row!.f).drain;
+      // The window is in-memory and dies with the process — without this row a
+      // tvl_drain exit leaves nothing to diagnose afterwards.
+      expect(drain.medianTvl).toBe(50_000);
+      expect(drain.tvlNow).toBe(20_000);
+      expect(drain.tvlDropPct).toBeCloseTo(60);
+      expect(drain.vetoedByPriceRise).toBe(false);
     });
 
     it("pool_dead still bans the token and the creator permanently", async () => {

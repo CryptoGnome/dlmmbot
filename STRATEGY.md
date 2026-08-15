@@ -112,6 +112,8 @@ Action: `removeLiquidity(100%, shouldClaimAndClose)` immediately, market-dump to
 
 **Blacklist severity is split by what the trigger actually evidences** (2026-08-15):
 - **Rug evidence** — `pool_dead`, `price_crash`, `rugcheck_flip`, holder/insider triggers → permanent token blacklist **+ one-strike creator ban**.
+**`tvl_drain` also carries a price-rise veto** `[25%]`: if TVL fell but price rose ≥25% over the same 10-minute window, the pool is having its ask-side inventory **bought out** — traded through, not drained — and P0 does not fire. Note the tie-breaker is *price*, not volume: a rug is a stampede and prints heavy volume too, so volume cannot separate the cases. The veto bar is deliberately high because the error costs are asymmetric — exiting early costs ~0.002 SOL, sitting in a real rug does not. Flat or falling price still fires. The window is in-memory, so the median TVL, current TVL, price change and veto flag are now written to the decision row; before this a `tvl_drain` exit left nothing to audit.
+
 - **`tvl_drain` — liquidity condition, not fraud** → token cooldown `[6h]` only, creator untouched. TVL falling 40% below its 10-minute median looks identical whether a thin pool is being *traded through*, LPs are churning in a pool minutes old, or liquidity is genuinely fleeing. The exit is cheap insurance and stays; a permanent ban on that reading is not. pos#5 GUNICORN: one reading on a 9-minute-old pool banned its creator for good, after which the token round-tripped +260% and the pool remained the highest fee/TVL on the board. Discriminator worth remembering: a drain with **heavy volume** is being traded through; a drain with **no volume** is liquidity walking.
 
 ### P1 — STOP LOSS
