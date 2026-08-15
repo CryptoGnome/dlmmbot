@@ -28,6 +28,7 @@ describe("bin rent tiers", () => {
       c.entry.bin_rent_budget_sol = 0.075;
       c.entry.bin_rent_hard_sol = 0.15;
       c.entry.bin_rent_hard_score_min = 80;
+      c.entry.bin_rent_max_pos_pct = 25;
       c.entry.min_down_pct = 40;
     });
   });
@@ -78,6 +79,35 @@ describe("bin rent tiers", () => {
     };
     expect((await applyBinRentGate({ ...base, score: 70 })).ok).toBe(false);
     expect((await applyBinRentGate({ ...base, score: 85 })).ok).toBe(true);
+  });
+
+  // Rent is non-refundable, so it is capped as a share of the position too —
+  // otherwise a bankroll-scaled 0.05 SOL entry could spend 0.075 SOL to open.
+  it("caps rent as a share of the position when sizeSol is given", () => {
+    expect(tierBinRentBudget(70, 0.3)).toEqual({ budgetSol: 0.075, tier: "soft" });   // unchanged
+    expect(tierBinRentBudget(70, 0.1)).toEqual({ budgetSol: 0.025, tier: "soft" });
+    expect(tierBinRentBudget(85, 0.2)).toEqual({ budgetSol: 0.05, tier: "hard" });    // below hard budget
+    expect(tierBinRentBudget(70)).toEqual({ budgetSol: 0.075, tier: "soft" });        // no size = no cap
+  });
+
+  it("rejects rent a small position cannot carry, and allows it when free", async () => {
+    const base = {
+      range: fatRange(),
+      score: 75,
+      poolAddress: "Pool111111111111111111111111111111111111111",
+      price: 1, binStep: 20, decimalsX: 9, minDownPct: 40,
+    };
+    const paid = vi.fn().mockResolvedValue({ actualSol: 0.075, arrays: 1, source: "quote" });
+    expect((await applyBinRentGate({ ...base, sizeSol: 0.05, quote: paid })).ok).toBe(false);
+    expect((await applyBinRentGate({ ...base, sizeSol: 0.4, quote: paid })).ok).toBe(true);
+    // Initialised arrays cost nothing — small positions can still enter there.
+    const free = vi.fn().mockResolvedValue({ actualSol: 0, arrays: 0, source: "quote" });
+    expect((await applyBinRentGate({ ...base, sizeSol: 0.05, quote: free })).ok).toBe(true);
+  });
+
+  it("bin_rent_max_pos_pct = 0 disables the share cap", async () => {
+    installConfig((c) => { c.entry.bin_rent_max_pos_pct = 0; });
+    expect(tierBinRentBudget(70, 0.05)).toEqual({ budgetSol: 0.075, tier: "soft" });
   });
 
   it("fails closed when quote returns estimate over hard budget", async () => {

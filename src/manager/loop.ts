@@ -21,7 +21,7 @@ import { flowFor, startSmartFlow } from "../scanner/smartflow.js";
 import { armFollowChain, hasActiveFollowChain, onFollowLegClosed, tickFollowChains } from "./follow.js";
 import { clearHolderWatch, holderCheck } from "./holderwatch.js";
 import { sol24hChangePct, solUsdPrice } from "../market.js";
-import { circuitBreakerTripped, clusterBrakeTripped, computeBankroll, kellyStats, openPositionCount, positionSize, regimeFactor, sizingMode, tokenExposureSol } from "../risk/limits.js";
+import { circuitBreakerTripped, clusterBrakeTripped, computeBankroll, kellyStats, minPositionSol, minReentrySol, openPositionCount, positionSize, regimeFactor, sizingMode, tokenExposureSol } from "../risk/limits.js";
 import { applyMicroSize, isMicroMcap, microPoolSharePct, microSleeveExposure } from "../risk/micro.js";
 import { enterMajorsPositions } from "./majorsEntry.js";
 import { manageForSleeve } from "../risk/majorsManage.js";
@@ -1100,13 +1100,14 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     // Viability floor, applied once, here — AFTER the ladder and regime have
     // had their say. A re-entry gets the lower floor because it reuses a token
     // account the first entry already paid rent for (see min_reentry_sol).
-    // `?? min_position_sol`, not a bare read: config() is a hot-reloaded raw
-    // TOML parse cast to Config, so a missing key is undefined at runtime — and
-    // `size < undefined` is false, which would remove the floor entirely rather
-    // than fall back to it.
+    // Both floors scale with equity (minPositionSol) so a small bankroll gets a
+    // proportionally smaller floor instead of being silently frozen out; the
+    // helpers also absorb the missing-key fallback, which matters because
+    // config() is a hot-reloaded raw TOML parse and `size < undefined` is
+    // false — a bare read would remove the floor rather than fall back to it.
     const sizeFloor = priorEntries24h > 0
-      ? (config().sizing.min_reentry_sol ?? config().sizing.min_position_sol)
-      : config().sizing.min_position_sol;
+      ? minReentrySol(bankroll.walletSol)
+      : minPositionSol(bankroll.walletSol);
     if (size < sizeFloor) {
       recordDecision(cand.tokenMint, cand.pool.address, "skipped", "ladder_below_min", score, { priorEntries24h, size, sizeFloor });
       continue;
@@ -1161,6 +1162,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       binStep: cand.pool.binStep,
       decimalsX: cand.pool.decimalsX,
       minDownPct: config().entry.min_down_pct,
+      sizeSol: size,
     });
     if (!rent.ok) {
       recordDecision(cand.tokenMint, cand.pool.address, "skipped", "bin_rent", score, {
@@ -1259,7 +1261,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     const te = config().entry;
     if (te.tranche_enabled && score >= te.tranche_score_min && !isMicro) {
       const tSize = size * (te.tranche_size_pct / 100);
-      const tFloor = config().sizing.min_position_sol;
+      const tFloor = minPositionSol(bankroll.walletSol);
       const slotsLeft = bankroll.effectiveSlots - openPositionCount();
       const roomCap = (bankroll.deployableSol + bankroll.deployedSol) * (config().sizing.per_token_max_pct / 100);
       const roomTok = roomCap - tokenExposureSol(cand.tokenMint);
@@ -1276,6 +1278,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
             binStep: cand.pool.binStep,
             decimalsX: cand.pool.decimalsX,
             minDownPct: Math.abs(tPlan.bottomPricePct),
+            sizeSol: tSize,
           });
           if (tRent.ok) {
             try {

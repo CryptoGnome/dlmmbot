@@ -12,6 +12,9 @@ import { applyConfigUpdates, flattenConfig, parseConfig } from "./config-edit.mj
 export const PROFILE_ALLOWLIST = new Set([
   "sizing.max_positions",
   "sizing.min_position_sol",
+  "sizing.min_position_pct",
+  "sizing.min_position_floor_sol",
+  "sizing.min_reentry_sol",
   "sizing.mode",
   "sizing.kelly_enabled",
   "sizing.kelly_fraction",
@@ -52,6 +55,8 @@ export const PROFILE_ALLOWLIST = new Set([
   "sizing.score_mult_mid",
   "sizing.score_mult_high",
   "sizing.reserve_sol",
+  "sizing.reserve_max_pct",
+  "sizing.reserve_pct",
   // Portfolio caps + brakes: without these a "risk tier" only changes gates,
   // not what happens when the market turns — the levers that actually define
   // conservative vs aggressive.
@@ -74,6 +79,7 @@ export const PROFILE_ALLOWLIST = new Set([
   "gates.max_pool_share_pct",
   "entry.bin_rent_budget_sol",
   "entry.bin_rent_hard_sol",
+  "entry.bin_rent_max_pos_pct",
   "vetting.age_min_enabled",
   "vetting.age_min_minutes",
   "vetting.age_max_enabled",

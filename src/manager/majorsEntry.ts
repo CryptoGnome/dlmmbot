@@ -6,7 +6,7 @@ import { solUsdPrice } from "../market.js";
 import { majorsEntryTiming, majorsRangeForPool } from "../ranges/majorsPlanner.js";
 import { applyBinRentGate } from "../ranges/binRent.js";
 import { majorsPositionSize, majorsPoolSharePct, majorsSleeveExposure } from "../risk/majors.js";
-import { type Bankroll, openPositionCount, tokenExposureSol } from "../risk/limits.js";
+import { type Bankroll, minPositionSol, openPositionCount, tokenExposureSol } from "../risk/limits.js";
 import { majorsSlotBudget } from "../risk/sleeve.js";
 import { scanMajors } from "../scanner/majorsScan.js";
 import { fetchCandles } from "../scanner/meteora.js";
@@ -40,6 +40,32 @@ export async function enterMajorsPositions(exec: Executor, bankroll: Bankroll): 
       continue;
     }
 
+    // Size first: the bin-rent gate caps non-refundable rent as a share of the
+    // position, so it needs to know how big the position will be.
+    const floor = minPositionSol(bankroll.walletSol);
+    let size = majorsPositionSize(bankroll.deployableSol, bankroll.walletSol);
+    const exp = majorsSleeveExposure();
+    if (exp.deployedSol + size > capSol) {
+      size = Math.max(0, capSol - exp.deployedSol);
+      if (size < floor) {
+        recordDecision(cand.tokenMint, cand.pool.address, "skipped", "majors_deploy_cap", cand.score, { sleeve: "majors", exp, capSol });
+        continue;
+      }
+    }
+    if (size < floor) continue;
+
+    const solUsd = await solUsdPrice();
+    if (solUsd !== null && solUsd > 0) {
+      const shareCapSol = (cand.pool.tvlUsd * (majorsPoolSharePct() / 100)) / solUsd;
+      if (size > shareCapSol) {
+        if (shareCapSol < floor) {
+          recordDecision(cand.tokenMint, cand.pool.address, "skipped", "majors_pool_share", cand.score, { shareCapSol, sleeve: "majors" });
+          continue;
+        }
+        size = shareCapSol;
+      }
+    }
+
     const planned = majorsRangeForPool(cand.pool.price, cand.pool.binStep, cand.pool.decimalsX);
     const rent = await applyBinRentGate({
       range: planned,
@@ -49,6 +75,7 @@ export async function enterMajorsPositions(exec: Executor, bankroll: Bankroll): 
       binStep: cand.pool.binStep,
       decimalsX: cand.pool.decimalsX,
       minDownPct: mj.range_below_pct,
+      sizeSol: size,
     });
     if (!rent.ok) {
       recordDecision(cand.tokenMint, cand.pool.address, "skipped", "majors_bin_rent", cand.score, {
@@ -57,29 +84,6 @@ export async function enterMajorsPositions(exec: Executor, bankroll: Bankroll): 
       continue;
     }
     const range = rent.range;
-
-    let size = majorsPositionSize(bankroll.deployableSol, bankroll.walletSol);
-    const exp = majorsSleeveExposure();
-    if (exp.deployedSol + size > capSol) {
-      size = Math.max(0, capSol - exp.deployedSol);
-      if (size < config().sizing.min_position_sol) {
-        recordDecision(cand.tokenMint, cand.pool.address, "skipped", "majors_deploy_cap", cand.score, { sleeve: "majors", exp, capSol });
-        continue;
-      }
-    }
-    if (size < config().sizing.min_position_sol) continue;
-
-    const solUsd = await solUsdPrice();
-    if (solUsd !== null && solUsd > 0) {
-      const shareCapSol = (cand.pool.tvlUsd * (majorsPoolSharePct() / 100)) / solUsd;
-      if (size > shareCapSol) {
-        if (shareCapSol < config().sizing.min_position_sol) {
-          recordDecision(cand.tokenMint, cand.pool.address, "skipped", "majors_pool_share", cand.score, { shareCapSol, sleeve: "majors" });
-          continue;
-        }
-        size = shareCapSol;
-      }
-    }
 
     let pos;
     try {

@@ -167,7 +167,7 @@ Mechanical, no discussion: hold for `[15 min]` grace (wick tolerance). If price 
 
 ## 5. Position sizing & portfolio limits
 
-- **Bankroll**: whatever the dedicated burner wallet holds. Operational reserve `[1.0 SOL]` + `[10%]` of bankroll held back for rent, priority fees, and claim txs — never deployed.
+- **Bankroll**: whatever the dedicated burner wallet holds. Operational reserve `[1.0 SOL]` + `[10%]` of bankroll held back for rent, priority fees, and claim txs — never deployed. The flat part is capped at `[25%]` of equity, so a small wallet keeps a deployable bankroll (at 1.0 SOL flat, a 1 SOL wallet reserved *everything* and could never enter); no effect at or above 4 SOL.
 - **Max concurrent positions**: `[7]` (range 6–8; tranches count toward this). Note the interaction with min position size: at 0.5 SOL minimum per position, running 7 slots needs a deployable bankroll of ≥ ~3.5 SOL to actually fill them — with less, the bot simply runs fewer, larger slots (`effective_slots = min(7, floor(deployable / min_position))`).
 - **Base size — mode** `[kelly|fixed]`: default **Kelly**. Settings may flip the whole book to **Fixed**, where each sleeve (core / micro / majors / follow) uses exact SOL or % of deployable — no Kelly, no score size tilt. Fixed sizes below `min_position_sol` skip the entry (no silent bump). Hard wallet % cap, deployable, slots, and brakes still apply.
 - **Kelly criterion** `[on when mode=kelly]`: per-position fraction of wallet = `f* × [0.25]` (quarter-Kelly shipped), where `f* = p − (1−p)/b` is estimated from our **own rolling closed-position ledger** (`[50]` most recent, `p` = win rate, `b` = avgWin/avgLoss as return fractions). Rationale: fractional Kelly keeps most of optimal growth with far smaller drawdowns, and buffers estimation error — over-betting past full Kelly turns long-run growth negative.
@@ -175,10 +175,11 @@ Mechanical, no discussion: hold for `[15 min]` grace (wick tolerance). If price 
   - **Cold start** (< `[50]` closed positions): flat `[3%]` of wallet per position.
   - **Hard cap**: `[10%]` of wallet per position regardless of how good f* looks.
   - **Negative-edge brake** `[off by default]`: if the ledger says f* ≤ 0 and armed, new entries stop; shipped off so sizing can fall to the min floor while the sample rebuilds.
-  - **Small-bankroll floor**: min position `[0.3 SOL]` beats strict Kelly when the wallet is small (below it, fees can't beat tx+rent overhead).
+  - **Small-bankroll floor**: min position beats strict Kelly when the wallet is small (below the floor, fees can't beat tx+rent overhead). The floor **scales with equity** — see *Min position* below.
 - **Score multiplier** (Kelly only): score 60–70 → `[0.5×]`, 70–85 → `[1.0×]`, 85+ → `[1.5×]` (still capped by the 10% wallet cap and deployable).
 - **Per-token cap**: `[1]` primary position (+ optional tranche). Never two tokens from the same creator. Never > `[40%]` of deployable in one token including its tranche.
-- **Min position**: `[0.5 SOL]` — below this, fees don't beat tx+rent overhead.
+- **Min position** — scales with the bankroll: `max([0.05 SOL], min([0.3 SOL], equity × [1%]))`. A flat floor silently switched the bot off for small operators: it is read as the Kelly base floor, as the entry cutoff, as the 10%-wallet-cap override, *and* as the slot divisor, so a 2 SOL wallet either never entered or entered at 15% of equity with the risk cap bypassed — and no bankroll under 20 SOL could take a 60–70 score, because half of a base pinned to the floor is always under the floor. Worked examples: 1 SOL → 0.05 | 5 → 0.05 | 10 → 0.10 | 20 → 0.20 | 30+ → 0.30 (unchanged). The `[0.05 SOL]` absolute floor is what per-trade overhead demands — a fresh mint's token-account rent + fees measured 0.00212 SOL, ~4% of it. `min_position_pct = 0` restores the flat floor.
+- **Rent vs position**: non-refundable bin-array rent may not exceed `[25%]` of the position it buys, on top of the absolute `bin_rent_budget_sol`. At a 0.3 SOL entry the two are identical; it binds only on smaller positions, so a scaled-down entry self-selects into pools whose bin arrays are already initialised (actual rent ≈ 0) instead of spending most of itself to open.
 - **Circuit breaker**: realized loss > `[10%]` of bankroll in rolling 24h → no new entries for `[12h]` (open positions still managed). Two triggers in 7 days → full halt until manually resumed.
 - **Cluster brake** `[on]`: ≥ `[2]` P0/P1 exits in `[6h]` → pause new entries `[6h]` from the trip exit. Catches a dump cluster before the wallet-% breaker (Aug 12 printed −0.159 SOL on a ~24 SOL book — under a 3% line).
 - **Regime filter** `[on]`: SOL/USD -`[8%]` in 24h → halve all new position sizes; -`[15%]` → pause new entries (meme liquidity dies in SOL crashes).
@@ -291,7 +292,7 @@ Tables:
 | `kelly_block_negative` | on | **off** (clamp to min size instead of hard stop) |
 | `house_money_rule` | on | **off** |
 | `circuit_daily_loss_pct` | 10 | **3** |
-| `min_position_sol` | 0.5 | **0.3** (+ `min_reentry_sol = 0.2`) |
+| `min_position_sol` | 0.5 | **0.3 ceiling on a bankroll-scaled floor** (`min_position_pct = 1%`, hard floor `0.05`; + `min_reentry_sol = 0.2`) |
 | `max_down_pct` | 65 | **50** |
 
 **Do not:** meme BidAsk→Spot/Curve, SOL-USDC, more slots, house-money, weaken P1, Zap SDK flip without review. Range-shape stopping sample is met; integrity (a) still fails on 3 historical poll gaps; the P&L split above is the decision.

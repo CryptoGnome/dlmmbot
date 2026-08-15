@@ -28,7 +28,22 @@ Position size is a fraction of the wallet, learned from **your own rolling close
 2. **Estimate f\*** — from the 50 most recent closes: `f* = p − (1−p)/b`, where `p` = win rate and `b` = average win / average loss (as return fractions). The estimator uses **measured wallet-delta PnL**, not notional marks.
 3. **Apply a fraction of it** — the bot bets `kelly_fraction × f*`. Shipped default is **0.25 (quarter-Kelly)**: half-Kelly is calibrated for a *known* edge, and a young book hasn't demonstrated one. Fractional Kelly keeps most of the growth with far smaller drawdowns and buffers estimation error — betting past full Kelly turns long-run growth negative.
 4. **Score tilt** — the scan score multiplies the result: 0.5× (score 60–70), 1.0× (70–85), 1.5× (85+).
-5. **Clamps** — hard cap **10% of wallet** per position no matter how good f\* looks; floor of **0.3 SOL** (below it, fees can't beat tx + rent overhead; re-entries get a separate 0.2 SOL floor).
+5. **Clamps** — hard cap **10% of wallet** per position no matter how good f\* looks; plus a viability floor that **scales with your bankroll** (below it, fees can't beat tx + rent overhead; re-entries get a separate, lower floor).
+
+### The floor scales with your wallet
+
+The floor is `max(0.05 SOL, min(0.3 SOL, 1% of equity))` — so it is **0.05 SOL on a 1 SOL wallet** and **0.3 SOL once you're past 30 SOL**:
+
+| Wallet | Position floor | Reserve | Notes |
+|---|---|---|---|
+| 1 SOL | 0.05 | 0.35 | flat reserve capped at 25% of equity |
+| 5 SOL | 0.05 | 1.5 | |
+| 10 SOL | 0.10 | 2.0 | |
+| 30 SOL+ | 0.30 | 1.0 + 10% | unchanged from earlier releases |
+
+This matters more than it looks: a flat floor is read as the Kelly base floor, the entry cutoff, the override on the 10%-of-wallet cap, **and** the slot divisor. At a flat 0.3 SOL a small wallet either never entered at all (the 1.0 SOL reserve consumed the whole bankroll) or entered at 15% of equity with the risk cap bypassed — and *no* bankroll under 20 SOL could take a 60–70 score, since half of a base pinned to the floor is always below the floor. Scaling fixes all of it at once, and small positions are additionally protected by a cap on **rent as a share of the position** (25%), so they only enter pools whose bin arrays are already initialised.
+
+Set `min_position_pct = 0` to go back to a flat floor.
 
 **Negative edge:** if the ledger says f\* ≤ 0, the shipped behavior (`kelly_block_negative = false`) clamps sizing to the minimum floor — small size while the sample rebuilds. The alternative hard block (`true`) stops new entries entirely until the strategy re-earns its sizing; it's off by default because blocked entries produce no new closes, so f\* could never recover on its own.
 

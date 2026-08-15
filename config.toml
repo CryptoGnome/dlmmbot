@@ -96,6 +96,11 @@ max_position_accounts = 2
 bin_rent_budget_sol = 0.075
 bin_rent_hard_sol = 0.15
 bin_rent_hard_score_min = 80
+# Rent is non-refundable, so it is also capped as a share of the position it
+# buys. 25% of a 0.3 SOL entry IS the 0.075 soft budget — this only binds on
+# smaller positions, which is the point: a scaled-down floor must not let a
+# 0.05 SOL entry spend most of itself on rent. 0 = no cap.
+bin_rent_max_pos_pct = 25
 # Bin slippage at open: SDK maps pct -> bins via ceil(pct / (binStep/100)).
 # At bin_step=100 (meme default), 1% = 1 bin — every active-bin tick fails
 # ExceededBinSlippageTolerance (6004). That was 100% of 3255 sim failures in
@@ -169,7 +174,17 @@ below_range_grace_min = 15
 max_positions = 5        # 2026-08-13: raised 3→5 so concurrent meme opportunities aren't
                          # left on the table. Still well under the old 7 (70% wallet at 10%
                          # Kelly cap). Majors still keep meme_reserve_slots=2 free; micro ≤1.
-min_position_sol = 0.3   # 0.5 made the 0.75x re-entry ladder unreachable at ~6.5 SOL bankroll (10% cap * 0.75 < 0.5)
+min_position_sol = 0.3   # Floor for a LARGE bankroll. 0.5 made the 0.75x re-entry ladder
+                         # unreachable at ~6.5 SOL bankroll (10% cap * 0.75 < 0.5).
+# 2026-08-15: the floor now SCALES with equity — as a flat number it silently
+# switched the bot off for small operators. Effective floor is
+#   max(min_position_floor_sol, min(min_position_sol, equity * min_position_pct))
+# 1 SOL -> 0.05 | 5 -> 0.05 | 10 -> 0.10 | 20 -> 0.20 | 30+ -> 0.30 (unchanged).
+# Set min_position_pct = 0 to go back to the flat floor.
+min_position_pct = 1.0        # floor as % of equity
+min_position_floor_sol = 0.05 # hard economic floor: a new mint's token-account
+                              # rent + fees measured 0.00212 SOL, ~4% of 0.05 —
+                              # below this, fees cannot beat per-trade overhead.
 min_reentry_sol = 0.2    # 2026-08-09: viability floor for a re-entry, checked AFTER the ladder
                          # multiplier. The 0.3 floor exists to cover per-position overhead, but
                          # the dominant piece of that was the 0.00204 SOL token-account rent, and
@@ -224,6 +239,10 @@ kelly_follow_sol = 0.25
 kelly_follow_pct = 2
 kelly_follow_mult = 1.0
 reserve_sol = 1.0
+reserve_max_pct = 25     # 2026-08-15: cap the FLAT reserve at 25% of equity. At 1.0 SOL
+                         # flat, a 1 SOL wallet reserved its whole bankroll — zero
+                         # deployable, zero slots, no entries, no log line. No effect at or
+                         # above reserve_sol / (reserve_max_pct/100) = 4 SOL.
 reserve_pct = 10
 per_token_max_pct = 40
 score_mult_low = 0.5             # score 60-70
