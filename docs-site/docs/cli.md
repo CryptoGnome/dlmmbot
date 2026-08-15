@@ -35,6 +35,10 @@ Toggles the `HALT` file. First run: the farmer closes **all** positions, swaps t
 
 Toggles the `PAUSE` file — the soft pause. Trading engine OFF, **positions stay open** and watched; run again to turn back ON. Same file as the dashboard header ON/OFF toggle. Use this for "stop making new decisions"; use `halt` for "get me out of everything".
 
+### `npm run blacklist [-- clear <key> [key…]]`
+
+Lists every blacklist entry (token mints and creator addresses, with expiry or `PERMANENT`), or lifts the ones you name. **P0 can be wrong** — a TVL drain on a thin pool looks like a rug — and until this existed there was no way to disagree with a ban short of editing the DB. Lifting a **creator** ban also resets that creator's rug count, because vetting fails `creator_rug_history` on any count above zero and would silently re-ban the creator on its next mint. The dashboard exposes the same thing at `GET /api/blacklist` and `POST /api/blacklist/clear` (re-enter the dash token, same bar as HALT).
+
 ### `npm run force-close -- <id> "<reason>"`
 
 Recovery tool for a DB row stuck `open` with **nothing behind it on chain** (the manager refuses to guess about such rows on its own). In live mode it checks the chain first and **refuses** if any tracked position account still exists — it cannot be used to write off a real position. The row's exit values are left NULL on purpose: the outcome is unknown, so it contributes 0 to realized PnL rather than a fabricated number. The command prints the exact undo SQL.

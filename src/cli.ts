@@ -200,8 +200,33 @@ async function main(): Promise<void> {
       }
       break;
     }
+    case "blacklist": {
+      // `npm run blacklist` lists; `npm run blacklist -- clear <key> [key…]`
+      // lifts entries. Lifting a creator ban also resets its rug_count, or
+      // vet.ts would re-ban it on the next mint (creator_rug_history).
+      // @ts-expect-error deploy/*.mjs sits outside src rootDir — no ambient types
+      const bl = (await import("../deploy/lib/blacklist.mjs")) as {
+        listBlacklist(root: string): Array<{ key: string; kind: string; reason: string; permanent: boolean; expires_at: string | null }>;
+        clearBlacklist(root: string, keys: string[]): { removed: Array<{ key: string; kind: string; reason: string }>; notFound: string[] };
+      };
+      const { clearBlacklist, listBlacklist } = bl;
+      const root = process.env.FARMER_ROOT || process.cwd();
+      const args = process.argv.slice(3);
+      if (args[0] === "clear") {
+        const keys = args.slice(1);
+        if (!keys.length) { console.error("usage: npm run blacklist -- clear <mint|creator> [more…]"); process.exit(1); }
+        const r = clearBlacklist(root, keys);
+        for (const x of r.removed) console.log(`lifted ${x.kind} ${x.key} (${x.reason})`);
+        for (const k of r.notFound) console.log(`not blacklisted: ${k}`);
+        break;
+      }
+      const rows = listBlacklist(root);
+      if (!rows.length) { console.log("blacklist is empty"); break; }
+      for (const r of rows) console.log(`${r.kind.padEnd(8)} ${r.key}  ${r.permanent ? "PERMANENT" : `until ${r.expires_at}`}  ${r.reason}`);
+      break;
+    }
     default:
-      console.log("usage: npm run <scan|vet -- <mint>|run|status|halt|pause|release [-- <sol> [note]]>");
+      console.log("usage: npm run <scan|vet -- <mint>|run|status|halt|pause|release [-- <sol> [note]]|blacklist [-- clear <key>…]>");
   }
 }
 

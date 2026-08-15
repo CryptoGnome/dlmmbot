@@ -14,6 +14,14 @@ copycat_ignore_h = 24      # losers of symbol dedupe ignored this long
 # token's gate-passing pools of the SAME bin step, take the deepest; fee/TVL
 # breaks ties only within this % of the deepest pool's TVL.
 sibling_tvl_tie_pct = 25
+# DB retention (2026-08-15). Nothing pruned these before: the Railway volume
+# hit 83% inside a day. Every gate rejection every sweep wrote a full pool
+# object (~1 KB, ~100/h) into `decisions`, and every sweep wrote ~300 rows
+# into `pool_snapshots`. entered/exited rows are the audit trail — never
+# pruned. skipped rows feed the dashboard funnel (longest range 30d).
+# pool_snapshots is read LIMIT 1 per pool; the rest is an offline dataset.
+retain_skipped_days = 30
+retain_snapshots_days = 3
 
 [gates]                    # STRATEGY.md §2.1 — pool hard gates
 tvl_min_usd = 5000
