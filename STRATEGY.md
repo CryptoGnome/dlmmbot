@@ -112,8 +112,9 @@ Action: `removeLiquidity(100%, shouldClaimAndClose)` immediately, market-dump to
 Position mark-to-market in SOL (both sides valued at current price + unclaimed fees) < entry SOL × `[0.75]` → close, swap token side to SOL, realize loss. Token goes on `[24h]` re-entry cooldown. **No conviction override — the bot always takes Gmet's "conviction deteriorated" branch.**
 
 ### P2 — ROTATION EXIT (opportunity died)
-- Pool `fee_tvl_ratio_30m` annualized < `[5%]`/day for `[3]` consecutive polls, or volume 30m < `[$5,000]` → close (position is dead weight; capital rotates to the queue).
-- Position age > `[48h]` in meme mode → forced re-evaluation: stays only if it would qualify as a *fresh entry* today.
+- **Meme/micro:** pool `fee_tvl_ratio_30m` annualized < `[5%]`/day for `[3]` consecutive polls, **or** volume 30m < `[$5,000]` → close (fast capital).
+- **Majors (spot parking):** both fee **and** volume must be dead — fee annualized < `[0.02%]`/day **and** vol30m < `[$1,500]` for `[120]` polls (~30 min at 15s). Fee floor sits below entry (`[0.05%]`/d) on purpose (hysteresis); equal floors churned PUMP every ~15–45m while volume was still healthy.
+- Position age > `[48h]` meme / `[168h]` majors → forced re-evaluation / max hold.
 
 ### P3 — PRICE ABOVE RANGE → TAKE PROFIT
 Two distinct cases, because they mean opposite things:
