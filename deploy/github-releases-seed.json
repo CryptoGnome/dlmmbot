@@ -1,0 +1,113 @@
+{
+  "at": 1786793069800,
+  "releases": [
+    {
+      "tag": "v0.3.17",
+      "name": "v0.3.17 — Changes tab shows releases only",
+      "summary": "Changes tab shows GitHub releases (tag + notes) instead of merge-commit spam · Pending update lists newer release tags when the host is behind",
+      "body": "- Changes tab shows GitHub releases (tag + notes) instead of merge-commit spam\n- Pending update lists newer release tags when the host is behind\r\n",
+      "at": "2026-08-15T11:19:35.000Z",
+      "ts": 1786792775,
+      "url": "https://github.com/CryptoGnome/dlmmbot/releases/tag/v0.3.17"
+    },
+    {
+      "tag": "v0.3.16",
+      "name": "v0.3.16 — Stop majors P2 churn on PUMP fee dips",
+      "summary": "Majors P2 requires both fee and volume dead (no more rotate-on-fee-dip-alone) · Lower rotation fee floor + ~30 min sustained polls to stop PUMP open/close rent burn",
+      "body": "- Majors P2 requires both fee and volume dead (no more rotate-on-fee-dip-alone)\n- Lower rotation fee floor + ~30 min sustained polls to stop PUMP open/close rent burn\r\n",
+      "at": "2026-08-15T11:13:09.000Z",
+      "ts": 1786792389,
+      "url": "https://github.com/CryptoGnome/dlmmbot/releases/tag/v0.3.16"
+    },
+    {
+      "tag": "v0.3.15",
+      "name": "v0.3.15 — Fix dash crash on GitHub API 403",
+      "summary": "Dashboard no longer crashes when GitHub rate-limits the Changes history fetch (403) · Changes may be empty briefly under rate-limit; set optional GITHUB_TOKEN on Railway for a higher quota",
+      "body": "- Dashboard no longer crashes when GitHub rate-limits the Changes history fetch (403)\n- Changes may be empty briefly under rate-limit; set optional GITHUB_TOKEN on Railway for a higher quota\r\n",
+      "at": "2026-08-14T23:23:07.000Z",
+      "ts": 1786749787,
+      "url": "https://github.com/CryptoGnome/dlmmbot/releases/tag/v0.3.15"
+    },
+    {
+      "tag": "v0.3.14",
+      "name": "v0.3.14 — Reload toast when dashboard UI is stale after deploy",
+      "summary": "Sticky toast with Reload when your open dashboard tab is still on the old UI after a SPA deploy · Bot-only deploys do not prompt · index.html served no-store so Reload picks up the new shell",
+      "body": "- Sticky toast with Reload when your open dashboard tab is still on the old UI after a SPA deploy\n- Bot-only deploys do not prompt\n- index.html served no-store so Reload picks up the new shell\r\n",
+      "at": "2026-08-14T23:18:41.000Z",
+      "ts": 1786749521,
+      "url": "https://github.com/CryptoGnome/dlmmbot/releases/tag/v0.3.14"
+    },
+    {
+      "tag": "v0.3.13",
+      "name": "v0.3.13 — Changes tab shows releases and what landed",
+      "summary": "Changes tab: Releases panel (tag + summary) so operators see what shipped at a glance · Commit list rewrites merge / bare Release subjects using GitHub release notes · RELEASE.md + agent rule: release commits and PRs must include an operator one-liner",
+      "body": "- Changes tab: Releases panel (tag + summary) so operators see what shipped at a glance\n- Commit list rewrites merge / bare Release subjects using GitHub release notes\n- RELEASE.md + agent rule: release commits and PRs must include an operator one-liner",
+      "at": "2026-08-14T22:53:31.000Z",
+      "ts": 1786748011,
+      "url": "https://github.com/CryptoGnome/dlmmbot/releases/tag/v0.3.13"
+    },
+    {
+      "tag": "v0.3.12",
+      "name": "DLMM Bot v0.3.12",
+      "summary": "Railway redeploys exit cleanly on SIGTERM so auto-updates no longer trigger false Deploy Crashed emails. Optional: set `RAILWAY_DEPLOYMENT_DRAINING_SECONDS=5` on the service.",
+      "body": "Railway redeploys exit cleanly on SIGTERM so auto-updates no longer trigger false Deploy Crashed emails. Optional: set `RAILWAY_DEPLOYMENT_DRAINING_SECONDS=5` on the service.",
+      "at": "2026-08-14T22:35:54.000Z",
+      "ts": 1786746954,
+      "url": "https://github.com/CryptoGnome/dlmmbot/releases/tag/v0.3.12"
+    },
+    {
+      "tag": "v0.3.11",
+      "name": "DLMM Bot v0.3.11",
+      "summary": "Errors tab: **Clear log** permanently deletes error_log rows (Dismiss still only hides). Confirms before delete.",
+      "body": "Errors tab: **Clear log** permanently deletes error_log rows (Dismiss still only hides). Confirms before delete.",
+      "at": "2026-08-14T22:22:32.000Z",
+      "ts": 1786746152,
+      "url": "https://github.com/CryptoGnome/dlmmbot/releases/tag/v0.3.11"
+    },
+    {
+      "tag": "v0.3.10",
+      "name": "DLMM Bot v0.3.10",
+      "summary": "Clear log button on Errors tab — permanently deletes error_log rows. (v0.3.9 was an empty version bump.)",
+      "body": "Clear log button on Errors tab — permanently deletes error_log rows. (v0.3.9 was an empty version bump.)",
+      "at": "2026-08-14T22:20:15.000Z",
+      "ts": 1786746015,
+      "url": "https://github.com/CryptoGnome/dlmmbot/releases/tag/v0.3.10"
+    },
+    {
+      "tag": "v0.3.9",
+      "name": "DLMM Bot v0.3.9",
+      "summary": "Release v0.3.9 by @CryptoGnome in https://github.com/CryptoGnome/dlmmbot/pull/57 · **Full Changelog**: https://github.com/CryptoGnome/dlmmbot/compare/v0.3.8...v0.3.9",
+      "body": "## What's Changed\n* Release v0.3.9 by @CryptoGnome in https://github.com/CryptoGnome/dlmmbot/pull/57\n\n\n**Full Changelog**: https://github.com/CryptoGnome/dlmmbot/compare/v0.3.8...v0.3.9",
+      "at": "2026-08-14T22:18:55.000Z",
+      "ts": 1786745935,
+      "url": "https://github.com/CryptoGnome/dlmmbot/releases/tag/v0.3.9"
+    },
+    {
+      "tag": "v0.3.8",
+      "name": "DLMM Bot v0.3.8",
+      "summary": "Add Smart flow dashboard tab by @CryptoGnome in https://github.com/CryptoGnome/dlmmbot/pull/54 · Release v0.3.8 by @CryptoGnome in https://github.com/CryptoGnome/dlmmbot/pull/55 · **Full Changelog**: https://github.com/CryptoGnome/dlmmbot/compare/v0.3.7...v0.3.8",
+      "body": "## What's Changed\n* Add Smart flow dashboard tab by @CryptoGnome in https://github.com/CryptoGnome/dlmmbot/pull/54\n* Release v0.3.8 by @CryptoGnome in https://github.com/CryptoGnome/dlmmbot/pull/55\n\n\n**Full Changelog**: https://github.com/CryptoGnome/dlmmbot/compare/v0.3.7...v0.3.8",
+      "at": "2026-08-14T22:15:37.000Z",
+      "ts": 1786745737,
+      "url": "https://github.com/CryptoGnome/dlmmbot/releases/tag/v0.3.8"
+    },
+    {
+      "tag": "v0.3.7",
+      "name": "DLMM Bot v0.3.7",
+      "summary": "Fix false GMGN rate-limit parks by @CryptoGnome in https://github.com/CryptoGnome/dlmmbot/pull/52 · Release v0.3.7 by @CryptoGnome in https://github.com/CryptoGnome/dlmmbot/pull/53 · **Full Changelog**: https://github.com/CryptoGnome/dlmmbot/compare/v0.3.6...v0.3.7",
+      "body": "## What's Changed\n* Fix false GMGN rate-limit parks by @CryptoGnome in https://github.com/CryptoGnome/dlmmbot/pull/52\n* Release v0.3.7 by @CryptoGnome in https://github.com/CryptoGnome/dlmmbot/pull/53\n\n\n**Full Changelog**: https://github.com/CryptoGnome/dlmmbot/compare/v0.3.6...v0.3.7",
+      "at": "2026-08-14T20:25:21.000Z",
+      "ts": 1786739121,
+      "url": "https://github.com/CryptoGnome/dlmmbot/releases/tag/v0.3.7"
+    },
+    {
+      "tag": "v0.3.6",
+      "name": "DLMM Bot v0.3.6",
+      "summary": "Fix Railway Changes tab commit history by @CryptoGnome in https://github.com/CryptoGnome/dlmmbot/pull/50 · Release v0.3.6 by @CryptoGnome in https://github.com/CryptoGnome/dlmmbot/pull/51 · **Full Changelog**: https://github.com/CryptoGnome/dlmmbot/compare/v0.3.5...v0.3.6",
+      "body": "## What's Changed\n* Fix Railway Changes tab commit history by @CryptoGnome in https://github.com/CryptoGnome/dlmmbot/pull/50\n* Release v0.3.6 by @CryptoGnome in https://github.com/CryptoGnome/dlmmbot/pull/51\n\n\n**Full Changelog**: https://github.com/CryptoGnome/dlmmbot/compare/v0.3.5...v0.3.6",
+      "at": "2026-08-14T20:07:37.000Z",
+      "ts": 1786738057,
+      "url": "https://github.com/CryptoGnome/dlmmbot/releases/tag/v0.3.6"
+    }
+  ]
+}

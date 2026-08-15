@@ -4,8 +4,13 @@
  * shown on the Changes tab.
  *
  * Failures (403 rate-limit, network) must never crash the dashboard process.
+ * Last-good releases are mirrored to data/github-releases-cache.json so a
+ * cold start under rate-limit still paints the Changes tab.
  */
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { shortSha, shasMatch } from "./git-source.mjs";
+import { runtimePaths } from "./runtime-paths.mjs";
 import {
   labelCommits,
   normalizeGithubRelease,
@@ -15,6 +20,8 @@ import {
 const GH_TTL_MS = Number(process.env.DASH_GIT_POLL_MS || 30_000);
 /** Back off longer after hard failures so we don't hammer a 403 rate-limit. */
 const GH_ERR_TTL_MS = Math.max(GH_TTL_MS, 120_000);
+/** Releases change slowly — don't burn the unauthenticated 60/hr quota. */
+const RELEASE_TTL_MS = Math.max(GH_TTL_MS, Number(process.env.DASH_RELEASE_POLL_MS || 300_000));
 
 /** @type {{
  *   at: number,
@@ -24,9 +31,11 @@ const GH_ERR_TTL_MS = Math.max(GH_TTL_MS, 120_000);
  *   recent: object[],
  *   pending: object[],
  *   releases: object[],
+ *   releasesAt: number,
  *   behindCount: number,
  *   inflight: Promise<void> | null,
  *   errAt: number,
+ *   root: string | null,
  * }} */
 let cache = {
   at: 0,
@@ -36,9 +45,11 @@ let cache = {
   recent: [],
   pending: [],
   releases: [],
+  releasesAt: 0,
   behindCount: 0,
   inflight: null,
   errAt: 0,
+  root: null,
 };
 
 export function clearGithubHistoryCacheForTests() {
@@ -50,10 +61,52 @@ export function clearGithubHistoryCacheForTests() {
     recent: [],
     pending: [],
     releases: [],
+    releasesAt: 0,
     behindCount: 0,
     inflight: null,
     errAt: 0,
+    root: null,
   };
+}
+
+function releasesDiskPath(root) {
+  return join(runtimePaths(root).dataDir, "github-releases-cache.json");
+}
+
+export function loadDiskReleases(root) {
+  if (!root) return [];
+  try {
+    const raw = JSON.parse(readFileSync(releasesDiskPath(root), "utf8"));
+    const list = Array.isArray(raw?.releases) ? raw.releases.filter((r) => r?.tag) : [];
+    if (list.length) return list;
+  } catch { /* fall through to bundled seed */ }
+  try {
+    const seedPath = join(root, "deploy", "github-releases-seed.json");
+    const raw = JSON.parse(readFileSync(seedPath, "utf8"));
+    return Array.isArray(raw?.releases) ? raw.releases.filter((r) => r?.tag) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveDiskReleases(root, releases) {
+  if (!root || !Array.isArray(releases) || !releases.length) return;
+  try {
+    mkdirSync(runtimePaths(root).dataDir, { recursive: true });
+    writeFileSync(
+      releasesDiskPath(root),
+      JSON.stringify({ at: Date.now(), releases }),
+    );
+  } catch { /* volume may be read-only in odd setups */ }
+}
+
+function ensureDiskReleases() {
+  if (cache.releases.length || !cache.root) return;
+  const disk = loadDiskReleases(cache.root);
+  if (disk.length) {
+    cache.releases = disk;
+    cache.releasesAt = Date.now();
+  }
 }
 
 function githubHeaders() {
@@ -131,6 +184,7 @@ function parseGithubUrl(repoUrl) {
 }
 
 function markFail(key) {
+  ensureDiskReleases();
   cache = {
     ...cache,
     at: Date.now(),
@@ -142,12 +196,20 @@ function markFail(key) {
 
 /**
  * Stale-while-revalidate cache of tip + commits + releases for Changes.
- * @param {{ repoUrl: string, branch: string, headFull: string | null, releasesOnly?: boolean }} opts
- * releasesOnly: local-git hosts — fetch tip + releases only (skip commit lists).
+ * @param {{ repoUrl: string, branch: string, headFull: string | null, releasesOnly?: boolean, root?: string }} opts
  */
-export function scheduleGithubHistory({ repoUrl, branch, headFull, releasesOnly = false }) {
+export function scheduleGithubHistory({
+  repoUrl,
+  branch,
+  headFull,
+  releasesOnly = false,
+  root = null,
+} = {}) {
   const parsed = parseGithubUrl(repoUrl);
   if (!parsed || !branch) return;
+  if (root) cache.root = root;
+  ensureDiskReleases();
+
   const key = `${parsed.owner}/${parsed.repo}@${branch}|${headFull || ""}|${releasesOnly ? "r" : "f"}`;
   const now = Date.now();
   const ttl = cache.errAt && now - cache.errAt < GH_ERR_TTL_MS ? GH_ERR_TTL_MS : GH_TTL_MS;
@@ -158,14 +220,17 @@ export function scheduleGithubHistory({ repoUrl, branch, headFull, releasesOnly 
     try {
       const { owner, repo } = parsed;
       const base = `https://api.github.com/repos/${owner}/${repo}`;
+      const needReleases = !cache.releases.length
+        || (now - cache.releasesAt) > RELEASE_TTL_MS;
 
-      // Await together so a failed sibling cannot become an unhandled rejection.
-      const [tip, relRaw] = await Promise.all([
-        githubJson(`${base}/commits/${encodeURIComponent(branch)}`),
-        githubJson(`${base}/releases?per_page=12`),
-      ]);
+      const tipP = githubJson(`${base}/commits/${encodeURIComponent(branch)}`);
+      const relP = needReleases
+        ? githubJson(`${base}/releases?per_page=12`)
+        : Promise.resolve(null);
 
-      if (!tip && !Array.isArray(relRaw)) {
+      const [tip, relRaw] = await Promise.all([tipP, relP]);
+
+      if (!tip && needReleases && !Array.isArray(relRaw)) {
         markFail(key);
         return;
       }
@@ -175,9 +240,22 @@ export function scheduleGithubHistory({ repoUrl, branch, headFull, releasesOnly 
         ? subjectFromCommitMessage(String(tip?.commit?.message ?? ""))
         : null;
 
-      const releases = Array.isArray(relRaw)
-        ? relRaw.map(normalizeGithubRelease).filter(Boolean)
-        : [];
+      let releases = cache.releases;
+      let releasesAt = cache.releasesAt;
+      if (needReleases) {
+        if (Array.isArray(relRaw)) {
+          const next = relRaw.map(normalizeGithubRelease).filter(Boolean);
+          if (next.length) {
+            releases = next;
+            releasesAt = Date.now();
+            saveDiskReleases(cache.root, releases);
+          }
+        } else {
+          // Keep memory/disk releases; tip may still have succeeded.
+          ensureDiskReleases();
+          releases = cache.releases;
+        }
+      }
 
       let recent = cache.recent;
       let pending = cache.pending;
@@ -226,10 +304,12 @@ export function scheduleGithubHistory({ repoUrl, branch, headFull, releasesOnly 
         tipMessage: tipMessage ?? cache.tipMessage,
         recent,
         pending,
-        releases: releases.length ? releases : cache.releases,
+        releases,
+        releasesAt,
         behindCount,
         inflight: null,
-        errAt: 0,
+        errAt: tip || (needReleases && Array.isArray(relRaw)) ? 0 : cache.errAt,
+        root: cache.root,
       };
     } catch {
       markFail(key);
@@ -240,7 +320,9 @@ export function scheduleGithubHistory({ repoUrl, branch, headFull, releasesOnly 
 }
 
 /** Snapshot of last successful GitHub history fetch (may be empty on first hit). */
-export function readGithubHistoryCache() {
+export function readGithubHistoryCache(root = null) {
+  if (root) cache.root = root;
+  ensureDiskReleases();
   return {
     tipSha: cache.tipSha,
     tipMessage: cache.tipMessage,

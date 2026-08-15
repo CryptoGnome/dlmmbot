@@ -22,6 +22,7 @@ export function summarizeReleaseBody(body, maxLen = 220) {
   if (!body || typeof body !== "string") return null;
   const skip = /^(#{1,3}\s|full changelog|\*\*full changelog|what's changed|<!--|semver bump|release v?\d)/i;
   const lines = body
+    .replace(/^\uFEFF/, "")
     .replace(/\r/g, "")
     .split("\n")
     .map((l) => l

@@ -53,4 +53,26 @@ describe("github-history", () => {
       globalThis.fetch = orig;
     }
   });
+
+  it("persists releases to disk cache helpers", async () => {
+    const { mkdtempSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const {
+      clearGithubHistoryCacheForTests,
+      loadDiskReleases,
+      saveDiskReleases,
+    } = await import("../../deploy/lib/github-history.mjs");
+    clearGithubHistoryCacheForTests();
+    const root = mkdtempSync(join(tmpdir(), "gh-rel-"));
+    // runtimePaths uses root/data when no volume env
+    process.env.FARMER_DB_PATH = join(root, "data", "farmer.db");
+    try {
+      saveDiskReleases(root, [{ tag: "v0.3.17", name: "v0.3.17", summary: "x", at: null, ts: null, url: null }]);
+      expect(loadDiskReleases(root)[0]?.tag).toBe("v0.3.17");
+    } finally {
+      delete process.env.FARMER_DB_PATH;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
