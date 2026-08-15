@@ -177,6 +177,17 @@ export interface Config {
     mode: "paper" | "live"; use_zap: boolean;
     exit_slippage_bps: number; safety_exit_slippage_bps: number;
     tx_retries: number; paper_promotion_days: number;
+    /**
+     * Priority fee + compute budget (see src/executor/priorityFee.ts). Optional:
+     * installs whose volume config predates these keys use the same defaults
+     * from code.
+     */
+    priority_fee_percentile?: number;
+    priority_fee_floor_microlamports?: number;
+    priority_fee_cap_microlamports?: number;
+    priority_fee_retry_mult?: number;
+    compute_unit_margin_pct?: number;
+    compute_unit_fallback?: number;
   };
   gmgn: {
     enabled: boolean; intervals: Array<"1m" | "5m" | "1h" | "6h" | "24h">;

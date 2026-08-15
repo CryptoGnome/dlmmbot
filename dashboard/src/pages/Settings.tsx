@@ -524,6 +524,41 @@ const GROUPS: Group[] = [
     ],
   },
   {
+    title: "Priority fees",
+    blurb: "What we pay to get transactions landed. Fees are sampled for the accounts each tx writes, then escalated per retry. The cap is the one to raise on a congested day.",
+    cols: 3,
+    fields: [
+      {
+        path: "exec.priority_fee_cap_microlamports",
+        label: "Fee cap",
+        kind: "int",
+        min: 10_000,
+        max: 20_000_000,
+        step: 50_000,
+        suffix: "µlam/CU",
+        help: "Ceiling on the priority price. 1,000,000 ≈ 0.0002 SOL at a 200k compute-unit limit.",
+      },
+      {
+        path: "exec.priority_fee_percentile",
+        label: "Fee percentile",
+        kind: "int",
+        min: 50,
+        max: 99,
+        step: 5,
+        help: "Of the nonzero fees seen on the accounts we're writing. Higher = lands more often, costs more.",
+      },
+      {
+        path: "exec.priority_fee_retry_mult",
+        label: "Retry multiplier",
+        kind: "dec",
+        min: 1,
+        max: 3,
+        step: 0.1,
+        help: "Fee is multiplied by this on each retry. 1.0 = never escalate.",
+      },
+    ],
+  },
+  {
     title: "Mode",
     cols: 2,
     fields: [

@@ -354,6 +354,23 @@ exit_slippage_bps = 50
 safety_exit_slippage_bps = 1000
 tx_retries = 3
 paper_promotion_days = 7
+# --- Priority fee & compute budget (src/executor/priorityFee.ts) ---
+# A prioritization fee is price × REQUESTED compute-unit limit, charged on what
+# the tx asks for, not what it burns — so both halves are set deliberately.
+# Fees are sampled for the accounts the tx actually writes (a network-wide
+# median under-prices a contended pool, which is the only kind we transact on).
+priority_fee_percentile = 75          # of NONZERO samples; the zero-fee majority
+                                      # says nothing about the cost to compete
+priority_fee_floor_microlamports = 10000    # ~0.000002 SOL at a 200k CU limit
+priority_fee_cap_microlamports = 1000000    # ~0.0002 SOL at a 200k CU limit
+priority_fee_retry_mult = 1.5         # per retry attempt; re-sending the same
+                                      # fee cannot fix a fee-caused non-landing
+compute_unit_margin_pct = 20          # over simulated consumption
+compute_unit_fallback = 600000        # when simulation fails or reports nothing.
+                                      # Only applies to tx WE build (zap swap,
+                                      # unwrap, close-account) — the DLMM SDK
+                                      # already sets its own simulated limit and
+                                      # a second one would fail the tx.
 
 # Product fee (not Settings-tunable): 1% of measured net profit on each winning
 # close buys+burns GNME (BaDjVCpABEVCdt4LT7ivuzA4izBwJCqnDjrLa8XBtT38) in one
