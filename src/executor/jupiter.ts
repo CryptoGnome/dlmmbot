@@ -28,6 +28,40 @@ type IxPayload = {
   data: string;
 };
 
+/** `/swap-instructions` response shape (the parts we assemble). */
+export interface SwapInstructionsBody {
+  error?: string;
+  computeBudgetInstructions?: IxPayload[];
+  setupInstructions?: IxPayload[];
+  swapInstruction?: IxPayload;
+  cleanupInstruction?: IxPayload | null;
+  addressLookupTableAddresses?: string[];
+}
+
+/**
+ * Order the pieces `/swap-instructions` returns into one instruction list.
+ *
+ * `setupInstructions` is not optional garnish: it creates and initialises the
+ * token accounts the swap writes into (the wSOL account, on a token→SOL exit).
+ * Submitting `swapInstruction` alone hands the program an uninitialised account
+ * and it fails with 6025 `InvalidTokenAccount` — reproduced by simulation, and
+ * exactly what @meteora-ag/zap-sdk's buildJupiterSwapTransaction does: it keeps
+ * the swap instruction and drops setup, cleanup, compute budget and lookup
+ * tables. Dropping `cleanupInstruction` is separately how zap-path exits used
+ * to strand their proceeds as wSOL.
+ */
+export function assembleSwapIxs(body: SwapInstructionsBody): TransactionInstruction[] {
+  if (body.error || !body.swapInstruction) {
+    throw new Error(`jupiter swap-instructions: ${body.error ?? "missing swapInstruction"}`);
+  }
+  return [
+    ...(body.computeBudgetInstructions ?? []).map(deserializeIx),
+    ...(body.setupInstructions ?? []).map(deserializeIx),
+    deserializeIx(body.swapInstruction),
+    ...(body.cleanupInstruction ? [deserializeIx(body.cleanupInstruction)] : []),
+  ];
+}
+
 function deserializeIx(ix: IxPayload): TransactionInstruction {
   return new TransactionInstruction({
     programId: new PublicKey(ix.programId),
@@ -191,6 +225,58 @@ export async function buildSwapFromSolTx(
   const tx = new VersionedTransaction(msg);
   tx.sign([wallet]);
   return { tx, minOutRaw, outAmountRaw: BigInt(quote.outAmount) };
+}
+
+/**
+ * token → SOL as a plain instruction list, for callers that need to add their
+ * own compute budget and send through the shared retry/fate path.
+ *
+ * Direct routes and a modest account cap on purpose: the caller assembles a
+ * LEGACY transaction, which cannot carry address lookup tables, so the account
+ * count has to fit unaided. An oversized or multi-hop route is left to the
+ * versioned `/swap` path (`swapToSolEscalating`), which handles both.
+ */
+export async function buildSwapToSolIxs(
+  userPublicKey: PublicKey,
+  inputMint: string,
+  amountRaw: bigint,
+  slippageBps: number,
+  maxAccounts = 30,
+): Promise<{ ixs: TransactionInstruction[]; outAmountRaw: bigint } | null> {
+  if (amountRaw <= 0n || inputMint === SOL_MINT) return null;
+  const base = config().apis.jupiter_quote;
+  const params = new URLSearchParams({
+    inputMint,
+    outputMint: SOL_MINT,
+    amount: amountRaw.toString(),
+    slippageBps: String(slippageBps),
+    maxAccounts: String(maxAccounts),
+    onlyDirectRoutes: "true",
+    restrictIntermediateTokens: "true",
+  });
+  const quoteRes = await fetch(`${base}/quote?${params}`, {
+    headers: headers(), signal: AbortSignal.timeout(15_000),
+  });
+  if (!quoteRes.ok) throw new Error(`jupiter quote HTTP ${quoteRes.status}`);
+  const quote = (await quoteRes.json()) as QuoteResponse;
+
+  const swapRes = await fetch(`${base}/swap-instructions`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({
+      quoteResponse: quote,
+      userPublicKey: userPublicKey.toBase58(),
+      // Unwrap the proceeds back to native SOL in the same tx — the dropped
+      // cleanup instruction is what used to strand them as wSOL.
+      wrapAndUnwrapSol: true,
+      dynamicComputeUnitLimit: true,
+      prioritizationFeeLamports: "auto",
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!swapRes.ok) throw new Error(`jupiter swap-instructions HTTP ${swapRes.status}`);
+  const body = (await swapRes.json()) as SwapInstructionsBody;
+  return { ixs: assembleSwapIxs(body), outAmountRaw: BigInt(quote.outAmount) };
 }
 
 /** Quote-only: lamports of SOL `amountRaw` of `inputMint` would fetch, or null if unquotable. */

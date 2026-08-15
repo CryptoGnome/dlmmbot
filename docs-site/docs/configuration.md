@@ -263,7 +263,7 @@ Thresholds:
 | Key | Default | Meaning |
 |---|---|---|
 | `mode` | `paper` \| `live` | Live **also** requires `FARMER_MODE=live` in the environment — both switches or nothing trades |
-| `use_zap` | `true` | Meteora Zap SDK (Jupiter V6) for token→SOL; lite-Jupiter fallback on failure |
+| `use_zap` | `false` | Opt into the legacy-transaction zap path for token→SOL. Off by default: the versioned `/swap` path handles multi-hop and oversized routes and is what closes positions today. Jupiter fallback either way |
 | `exit_slippage_bps` | `50` | Normal exit swap slippage |
 | `safety_exit_slippage_bps` | `1000` | P0 safety exits: speed over price |
 | `tx_retries` | `3` | Network retries before abandoning and re-quoting |

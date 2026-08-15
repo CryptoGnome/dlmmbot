@@ -349,7 +349,13 @@ displacement_max_per_6h = 2
 
 [exec]                     # STRATEGY.md §3.6/§8
 mode = "live"                    # paper | live (live also requires FARMER_MODE=live env)
-use_zap = true                   # Meteora Zap SDK (Jupiter V6); falls back to lite swap on failure
+use_zap = false                  # 2026-08-15: was true. The zap token->SOL path is now correct
+                                 # (it assembles Jupiter's setup/cleanup instructions itself instead
+                                 # of the zap SDK's swap-instruction-only transaction, which failed
+                                 # every close with 6025 InvalidTokenAccount), but it builds a LEGACY
+                                 # tx: direct routes only, no lookup tables. The versioned /swap path
+                                 # below handles multi-hop and oversized routes too and is what has
+                                 # actually closed live positions. Set true to opt back in.
 exit_slippage_bps = 50
 safety_exit_slippage_bps = 1000
 tx_retries = 3
