@@ -6,6 +6,7 @@ import {
 import { installConfig, restoreConfig } from "../test/config.js";
 import { useMemoryDb, resetTestDb, insertClosedPosition } from "../test/db.js";
 import { getDb, now } from "../db/db.js";
+import { config } from "../config.js";
 import { majorsPositionSize } from "./majors.js";
 
 describe("regimeFactor", () => {
@@ -381,6 +382,33 @@ describe("bankroll-scaled floors", () => {
     expect(positionSize(br, 75)).toBeCloseTo(0.9);   // 3% cold-start
     expect(positionSize(br, 90)).toBeCloseTo(1.35);
     expect(positionSize(br, 65)).toBeCloseTo(0.45);
+  });
+
+  // The live Railway/PM2 installs copied config.toml once, before these keys
+  // existed — data/config.toml is never re-seeded. That volume config is the
+  // configuration the fix has to work under, so it gets its own test rather
+  // than trusting that `?? DEFAULT` reads right.
+  it("scales for an install whose config predates the new keys", () => {
+    installConfig((c) => {
+      delete c.sizing.min_position_pct;
+      delete c.sizing.min_position_floor_sol;
+      delete c.sizing.reserve_max_pct;
+    });
+    // Guard the guard: the numbers below match the shipped config.toml, so
+    // without this the test would still pass if the delete silently no-op'd
+    // and we were reading the keys rather than the code fallbacks.
+    expect(config().sizing.min_position_pct).toBeUndefined();
+    expect(config().sizing.min_position_floor_sol).toBeUndefined();
+    expect(config().sizing.reserve_max_pct).toBeUndefined();
+    expect(minPositionSol(1)).toBeCloseTo(0.05);
+    expect(minPositionSol(10)).toBeCloseTo(0.10);
+    expect(minPositionSol(30)).toBeCloseTo(0.30);
+    expect(reserveSol(1)).toBeCloseTo(0.35);
+    expect(reserveSol(10)).toBeCloseTo(2.0);
+    const br = computeBankroll(10);
+    expect(br.effectiveSlots).toBe(5);
+    expect(positionSize(br, 65)).toBeCloseTo(0.15);
+    expect(positionSize(br, 75)).toBeCloseTo(0.30);
   });
 
   it("still refuses a position under the hard economic floor", () => {
