@@ -3,6 +3,7 @@ import { applyMicroSize, isMicroMcap, microPoolSharePct, microSleeveExposure } f
 import { installConfig, restoreConfig } from "../test/config.js";
 import { useMemoryDb, resetTestDb } from "../test/db.js";
 import { getDb, now, recordDecision } from "../db/db.js";
+import { currentMode } from "../config.js";
 
 describe("isMicroMcap", () => {
   beforeEach(() => installConfig((c) => {
@@ -61,13 +62,13 @@ describe("microSleeveExposure", () => {
     getDb().prepare(
       `INSERT INTO positions (mode, pool, token_mint, symbol, entry_ts, entry_price, entry_sol,
         min_bin_id, max_bin_id, state, fees_claimed_sol, rent_paid_sol)
-       VALUES ('live', 'poolA', 'mintA', 'A', ?, 1, 0.35, 1, 10, 'open', 0, 0)`
-    ).run(ts);
+       VALUES (?, 'poolA', 'mintA', 'A', ?, 1, 0.35, 1, 10, 'open', 0, 0)`
+    ).run(currentMode(), ts);
     getDb().prepare(
       `INSERT INTO positions (mode, pool, token_mint, symbol, entry_ts, entry_price, entry_sol,
         min_bin_id, max_bin_id, state, fees_claimed_sol, rent_paid_sol)
-       VALUES ('live', 'poolB', 'mintB', 'B', ?, 1, 0.55, 1, 10, 'open', 0, 0)`
-    ).run(ts);
+       VALUES (?, 'poolB', 'mintB', 'B', ?, 1, 0.55, 1, 10, 'open', 0, 0)`
+    ).run(currentMode(), ts);
     recordDecision("mintA", "poolA", "entered", null, 80, { pool: { marketCapUsd: 150_000 }, sleeve: "micro" });
     recordDecision("mintB", "poolB", "entered", null, 85, { pool: { marketCapUsd: 350_000 }, sleeve: "meme" });
 

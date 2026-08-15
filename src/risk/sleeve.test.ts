@@ -3,6 +3,7 @@ import { majorsSlotBudget, openSleeveExposure, sleeveAtEntry } from "./sleeve.js
 import { installConfig, restoreConfig } from "../test/config.js";
 import { useMemoryDb, resetTestDb } from "../test/db.js";
 import { getDb, now, recordDecision } from "../db/db.js";
+import { currentMode } from "../config.js";
 
 describe("sleeveAtEntry", () => {
   beforeEach(() => {
@@ -57,21 +58,38 @@ describe("openSleeveExposure", () => {
   });
   afterEach(() => { resetTestDb(); restoreConfig(); });
 
+  const insertOpen = (mode: string, mint: string, pool: string, sol: number, sleeve: string) => {
+    getDb().prepare(
+      `INSERT INTO positions (mode, pool, token_mint, symbol, entry_ts, entry_price, entry_sol,
+        min_bin_id, max_bin_id, state, fees_claimed_sol, rent_paid_sol)
+       VALUES (?, ?, ?, 'T', ?, 1, ?, 1, 10, 'open', 0, 0)`
+    ).run(mode, pool, mint, now(), sol);
+    recordDecision(mint, pool, "entered", null, 80, { sleeve });
+  };
+
   it("counts by sleeve tag", () => {
-    const ts = now();
-    for (const [mint, pool, sol, sleeve] of [
-      ["m1", "p1", 0.4, "micro"],
-      ["m2", "p2", 0.75, "majors"],
-      ["m3", "p3", 0.5, "meme"],
-    ] as const) {
-      getDb().prepare(
-        `INSERT INTO positions (mode, pool, token_mint, symbol, entry_ts, entry_price, entry_sol,
-          min_bin_id, max_bin_id, state, fees_claimed_sol, rent_paid_sol)
-         VALUES ('live', ?, ?, 'T', ?, 1, ?, 1, 10, 'open', 0, 0)`
-      ).run(pool, mint, ts, sol);
-      recordDecision(mint, pool, "entered", null, 80, { sleeve });
-    }
+    const mode = currentMode();
+    insertOpen(mode, "m1", "p1", 0.4, "micro");
+    insertOpen(mode, "m2", "p2", 0.75, "majors");
+    insertOpen(mode, "m3", "p3", 0.5, "meme");
     expect(openSleeveExposure("majors")).toEqual({ slots: 1, deployedSol: 0.75 });
     expect(openSleeveExposure("meme")).toEqual({ slots: 1, deployedSol: 0.5 });
+  });
+
+  /**
+   * The Railway bot: a paper-mode majors row left `open` from before the flip
+   * to live sat in the volume DB and counted as the majors sleeve's single
+   * allowed slot — "[majors] already parked (1/1 slots, 0.75 SOL)" on a book
+   * every live counter reported as empty. Majors never entered anything.
+   * This was the one open-position reader without a mode filter.
+   */
+  it("ignores open rows from the other mode", () => {
+    const mine = currentMode();
+    const other = mine === "live" ? "paper" : "live";
+    insertOpen(other, "m2", "p2", 0.75, "majors"); // the phantom
+    expect(openSleeveExposure("majors")).toEqual({ slots: 0, deployedSol: 0 });
+    expect(majorsSlotBudget(0)).toBeGreaterThan(0); // and majors may still enter
+    insertOpen(mine, "m9", "p9", 0.75, "majors");
+    expect(openSleeveExposure("majors")).toEqual({ slots: 1, deployedSol: 0.75 });
   });
 });

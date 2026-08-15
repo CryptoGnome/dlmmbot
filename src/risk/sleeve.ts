@@ -1,4 +1,4 @@
-import { config } from "../config.js";
+import { config, currentMode } from "../config.js";
 import { getDb } from "../db/db.js";
 import { isMicroMcap } from "./micro.js";
 
@@ -27,10 +27,19 @@ export function sleeveAtEntry(pos: { tokenMint: string; poolAddress: string; ent
 }
 
 export function openSleeveExposure(sleeve: Sleeve): { slots: number; deployedSol: number } {
+  // `AND mode = ?` — this was the one open-position reader without it. Every
+  // other counter (openPositionCount, reconcile, the dashboard) filters by
+  // the current mode; this one summed paper AND live rows. On the Railway bot
+  // a paper-mode majors position left `open` from before the flip to live sat
+  // in the volume DB and counted as the majors sleeve's single allowed slot:
+  // "[majors] already parked (1/1 slots, 0.75 SOL)" on a book every live
+  // counter reported as empty, so majors never entered anything, ever. The
+  // 2026-08-14 audit fixed paper/live cross-contamination everywhere else;
+  // this reader was missed.
   const open = getDb().prepare(`
     SELECT token_mint, pool, entry_ts, entry_sol FROM positions
-    WHERE state IN ('pending','open','closing')
-  `).all() as OpenRow[];
+    WHERE state IN ('pending','open','closing') AND mode = ?
+  `).all(currentMode()) as OpenRow[];
   let slots = 0, deployedSol = 0;
   for (const p of open) {
     if (sleeveAtEntry({ tokenMint: p.token_mint, poolAddress: p.pool, entryTs: p.entry_ts }) !== sleeve) continue;
