@@ -264,6 +264,12 @@ export const WIKI_SECTIONS: WikiSection[] = [
         type: "p",
         text: "Very high scores may add a second, deeper “tranche” pocket. Tranches count toward your max open slots.",
       },
+      {
+        type: "callout",
+        tone: "fg",
+        title: "What we pay to get a transaction landed",
+        text: "A Solana priority fee is price × the compute budget the transaction ASKS for — you pay for what you reserve, not what you use. So we set both: the price is the 75th percentile of recent nonzero fees on the specific accounts our transaction writes (a network-wide average under-prices a busy pool, and a busy pool is the only kind we trade), and the compute budget comes from simulating the transaction and adding 20%. Each retry multiplies the fee by 1.5 — re-sending the same fee is the one thing that cannot fix a transaction that failed to land. Raise Settings → Priority fees → Fee cap on a congested day.",
+      },
     ],
   },
   {

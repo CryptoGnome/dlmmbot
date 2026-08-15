@@ -267,6 +267,16 @@ Thresholds:
 | `exit_slippage_bps` | `50` | Normal exit swap slippage |
 | `safety_exit_slippage_bps` | `1000` | P0 safety exits: speed over price |
 | `tx_retries` | `3` | Network retries before abandoning and re-quoting |
+| `priority_fee_percentile` | `75` | Percentile of the **nonzero** recent fees on the accounts the tx writes. The zero-fee majority says nothing about the cost to compete |
+| `priority_fee_floor_microlamports` | `10000` | Never bid below this (≈0.000002 SOL at a 200k CU limit) |
+| `priority_fee_cap_microlamports` | `1000000` | Never bid above this (≈0.0002 SOL at a 200k CU limit). Raise on a congested day |
+| `priority_fee_retry_mult` | `1.5` | Fee is multiplied by this per retry attempt. `1.0` disables escalation |
+| `compute_unit_margin_pct` | `20` | Headroom over simulated consumption when we set the CU limit |
+| `compute_unit_fallback` | `600000` | CU limit when simulation fails. Applies only to transactions **we** build — the DLMM SDK sets its own |
+
+::: tip Why both halves matter
+A prioritization fee is `price × requested compute-unit limit`, and you're charged on what the transaction *asks for*, not what it burns. Leaving the limit unset means paying for the implicit 200k-per-instruction default — and, worse, under-reserving a multi-hop swap route so it fails on compute exhaustion. The DLMM SDK simulates and sets its own limit; for the zap swap and the small hand-built transactions the bot now simulates and sets one too.
+:::
 | `paper_promotion_days` | `7` | Consecutive profitable paper days for live eligibility |
 
 <p class="note ok">The 1% GNME buy-and-burn fee is hardcoded in <code>src/executor/profitBurn.ts</code> — not a config key. See <a href="./fees">Fees</a>.</p>

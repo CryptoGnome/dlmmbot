@@ -80,6 +80,14 @@ export const PROFILE_ALLOWLIST = new Set([
   "entry.bin_rent_budget_sol",
   "entry.bin_rent_hard_sol",
   "entry.bin_rent_max_pos_pct",
+  // Execution cost/reliability, not a risk tier — but a profile built for a
+  // congested market wants to move these with everything else.
+  "exec.priority_fee_percentile",
+  "exec.priority_fee_floor_microlamports",
+  "exec.priority_fee_cap_microlamports",
+  "exec.priority_fee_retry_mult",
+  "exec.compute_unit_margin_pct",
+  "exec.compute_unit_fallback",
   "vetting.age_min_enabled",
   "vetting.age_min_minutes",
   "vetting.age_max_enabled",

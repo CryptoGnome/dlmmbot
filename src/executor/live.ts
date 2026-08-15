@@ -1,5 +1,5 @@
 import {
-  ComputeBudgetProgram, Connection, Keypair, PublicKey, Transaction,
+  Connection, Keypair, PublicKey, Transaction,
   sendAndConfirmTransaction, SendTransactionError,
 } from "@solana/web3.js";
 import type { ParsedTransactionWithMeta } from "@solana/web3.js";
@@ -16,6 +16,10 @@ import type { ExitReason, Position } from "../types.js";
 import type { Executor, OpenParams, PositionMark } from "./executor.js";
 import { quoteToSolLamports, swapToSolEscalating } from "./jupiter.js";
 import { zapToSolEscalating } from "./zap.js";
+import {
+  computeUnitLimitFor, computeUnitLimitIx, escalate, hasComputeUnitLimit,
+  priorityFeeSettings, recentFeeMicroLamports, setComputeUnitPrice, writableAccountsOf,
+} from "./priorityFee.js";
 import { loadKeypair } from "./wallet.js";
 
 // CJS require (see reconcile.ts): the SDK's ESM build crashes on anchor's
@@ -230,12 +234,36 @@ export class LiveExecutor implements Executor {
     return lamports / 1e9;
   }
 
-  private async priorityFeeIx() {
-    const fees = await this.connection.getRecentPrioritizationFees().catch(() => []);
-    const nonzero = fees.map((f) => f.prioritizationFee).filter((f) => f > 0).sort((a, b) => a - b);
-    const median = nonzero.length ? nonzero[Math.floor(nonzero.length / 2)]! : 10_000;
-    const microLamports = Math.min(Math.max(median, 10_000), 1_000_000); // floor 0.00001, cap 0.001 SOL/200k CU
-    return ComputeBudgetProgram.setComputeUnitPrice({ microLamports });
+  /**
+   * Size the compute budget for a tx we are about to send.
+   *
+   * Both halves matter: a prioritization fee is price × REQUESTED limit, so an
+   * unset limit means paying for the implicit 200k-per-instruction default. The
+   * DLMM SDK already simulates and prepends its own limit — `computeUnitLimitFor`
+   * returns null there, because a second one fails the transaction.
+   */
+  private async applyComputeBudget(tx: Transaction): Promise<number> {
+    const s = priorityFeeSettings();
+    const base = await recentFeeMicroLamports(this.connection, writableAccountsOf(tx), s);
+    if (!hasComputeUnitLimit(tx)) {
+      // Simulation needs a blockhash and fee payer; sendAndConfirmTransaction
+      // would otherwise set them itself on the first attempt.
+      if (!tx.recentBlockhash) {
+        tx.recentBlockhash = (await this.connection.getLatestBlockhash("confirmed")).blockhash;
+      }
+      tx.feePayer ??= this.wallet.publicKey;
+      const units = await computeUnitLimitFor(this.connection, tx, s);
+      if (units != null) tx.instructions.unshift(computeUnitLimitIx(units));
+    }
+    setComputeUnitPrice(tx, base);
+    return base;
+  }
+
+  /** Raise the priority price in place for retry `attempt` (0-based). */
+  private reprice(tx: Transaction, base: number, attempt: number): void {
+    const price = escalate(base, attempt, priorityFeeSettings());
+    setComputeUnitPrice(tx, price);
+    console.log(`[live] retry ${attempt}: priority fee → ${price} µLamports/CU`);
   }
 
   /**
@@ -269,10 +297,13 @@ export class LiveExecutor implements Executor {
   }
 
   private async send(tx: Transaction, extraSigners: Keypair[] = []): Promise<string> {
-    tx.add(await this.priorityFeeIx());
+    const baseFee = await this.applyComputeBudget(tx);
     const retries = config().exec.tx_retries;
     let lastErr: Error | null = null;
     for (let i = 0; i <= retries; i++) {
+      // Escalate before re-sending: the retry path exists for "broadcast but
+      // never confirmed", which is precisely what an underpriced fee produces.
+      if (i > 0) this.reprice(tx, baseFee, i);
       try {
         return await sendAndConfirmTransaction(this.connection, tx, [this.wallet, ...extraSigners], {
           commitment: "confirmed",
