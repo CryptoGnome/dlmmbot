@@ -19,6 +19,7 @@ interface PoolLive {
   vol30mUsd: number;
   binStep: number;
   decimalsX: number;
+  poolAgeS: number | null;
 }
 
 // A pool is considered DEAD (rug-level) only below this TVL. Anything else —
@@ -29,7 +30,11 @@ const POOL_DEAD_TVL_USD = 250;
 async function livePool(address: string): Promise<PoolLive | null> {
   const p = await fetchPool(address); // throws on transient errors (caller skips tick)
   if (!p || p.tvlUsd < POOL_DEAD_TVL_USD) return null; // null = genuinely dead
-  return { price: p.price, tvlUsd: p.tvlUsd, feeTvl30mPct: p.feeTvl30mPct, vol30mUsd: p.vol30mUsd, binStep: p.binStep, decimalsX: p.decimalsX };
+  return {
+    price: p.price, tvlUsd: p.tvlUsd, feeTvl30mPct: p.feeTvl30mPct, vol30mUsd: p.vol30mUsd,
+    binStep: p.binStep, decimalsX: p.decimalsX,
+    poolAgeS: p.createdAt ? Math.max(0, (Date.now() - Date.parse(p.createdAt)) / 1000) : null,
+  };
 }
 
 export class PaperExecutor implements Executor {
@@ -102,6 +107,7 @@ export class PaperExecutor implements Executor {
       tvlUsd: pool.tvlUsd,
       feeTvl30mPct: pool.feeTvl30mPct,
       vol30mUsd: pool.vol30mUsd,
+      poolAgeS: pool.poolAgeS,
     };
   }
 

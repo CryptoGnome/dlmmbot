@@ -5,6 +5,15 @@
 interval_s = 60
 pages = 3                  # datapi pages per sweep (100 pools/page)
 copycat_ignore_h = 24      # losers of symbol dedupe ignored this long
+# 2026-08-15: which of a token's pools we trade. Was "highest 24h fee/TVL",
+# which — because fee/TVL is inversely proportional to TVL — structurally picks
+# the THINNEST sibling (measured: 11 of 18 multi-pool mints on the board). Thin
+# pools earn less (volume happens where depth is) and their TVL jitters 40-50%
+# on ordinary LP moves, which is exactly what P0 tvl_drain reads as a rug
+# (same token, same 4 min: $8k pool swung 51%, $67k pool 9%). Now: among the
+# token's gate-passing pools of the SAME bin step, take the deepest; fee/TVL
+# breaks ties only within this % of the deepest pool's TVL.
+sibling_tvl_tie_pct = 25
 
 [gates]                    # STRATEGY.md §2.1 — pool hard gates
 tvl_min_usd = 5000
@@ -136,6 +145,14 @@ tvl_drain_cooldown_h = 6         # token cooldown after a tvl_drain exit
 # rug. Set high on purpose — exiting early costs ~0.002 SOL, sitting in a real
 # rug does not. 0 disables the veto.
 tvl_drain_price_rise_veto_pct = 25
+# The trigger reads "40% below the 10-min median". Below either floor here that
+# median is NOISE, measured 2026-08-15 with no rug happening: a thin pool's TVL
+# is a handful of LPs, so one repositioning is a 40% event (same token, same 4
+# minutes: $8k pool swung 51%, $67k pool 9%); a pool younger than the window is
+# measuring its own birth. Skip the drain read there — pool_dead and
+# price_crash still catch a real collapse.
+tvl_drain_min_tvl_usd = 20000
+tvl_drain_min_pool_age_min = 20
 safety_wallet_dump_pct = 3       # single holder's supply-% drop between polls
 safety_new_whale_pct = 10
 holder_poll_s = 120              # GMGN holder-snapshot interval per open position

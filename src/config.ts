@@ -28,7 +28,15 @@ import { parse } from "smol-toml";
 
 // Typed mirror of config.toml. Sections/keys must match STRATEGY.md defaults.
 export interface Config {
-  scanner: { interval_s: number; pages: number; copycat_ignore_h: number };
+  scanner: {
+    interval_s: number; pages: number; copycat_ignore_h: number;
+    /**
+     * Among a token's gate-passing pools of the same bin step, the deepest wins;
+     * fee/TVL breaks ties only within this % of the deepest pool's TVL. Optional:
+     * defaults in code for installs whose config predates the key.
+     */
+    sibling_tvl_tie_pct?: number;
+  };
   gates: {
     tvl_min_usd: number; tvl_max_usd: number; mcap_min_usd: number;
     mcap_micro_max_usd: number; mcap_micro_score_min: number;
@@ -98,6 +106,14 @@ export interface Config {
      * a rug is not.
      */
     tvl_drain_price_rise_veto_pct?: number;
+    /**
+     * `tvl_drain` needs a meaningful baseline. Below this median TVL, or on a
+     * pool younger than this, the 10-min median is noise (thin pools swing
+     * 40-50% on ordinary LP moves; a newborn's baseline is its own birth) and
+     * the trigger is skipped. pool_dead / price_crash still cover a real collapse.
+     */
+    tvl_drain_min_tvl_usd?: number;
+    tvl_drain_min_pool_age_min?: number;
     safety_new_whale_pct: number; safety_price_crash_pct: number;
     stop_loss_frac: number; loss_reentry_cooldown_h: number;
     rotation_fee_daily_min_pct: number; rotation_polls: number;

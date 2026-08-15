@@ -395,7 +395,7 @@ const median = (xs: number[]): number => {
  * and exiting early costs ~0.002 SOL, so it only suppresses the exit on STRONG
  * evidence of a buy-out (a large price rise). Flat or falling price still fires.
  */
-function tvlDropTriggered(posId: number, tvlNow: number, priceNow: number): TvlDrainCheck {
+function tvlDropTriggered(posId: number, tvlNow: number, priceNow: number, poolAgeS: number | null): TvlDrainCheck {
   const m = config().manage;
   const windowS = 600; // 10 min per spec
   const hist = tvlHistory.get(posId) ?? [];
@@ -404,7 +404,19 @@ function tvlDropTriggered(posId: number, tvlNow: number, priceNow: number): TvlD
   tvlHistory.set(posId, hist);
   if (hist.length < 4) return { triggered: false, evidence: null };
 
+  // The trigger reads "40% below the 10-minute median". Two situations make
+  // that median meaningless, measured 2026-08-15 with no rug in progress:
+  //  - a pool younger than the window: the baseline is its own birth;
+  //  - a thin pool: TVL is a handful of LPs, so one repositioning is a 40%
+  //    event (same token, same 4 minutes: $8k pool swung 51%, $67k pool 9%).
+  // Below either floor the drain read is noise; pool_dead and price_crash still
+  // cover a real collapse there.
   const medTvl = median(hist.map((h) => h.tvl));
+  const minTvl = m.tvl_drain_min_tvl_usd ?? 20_000;
+  const minAgeS = (m.tvl_drain_min_pool_age_min ?? 20) * 60;
+  if (medTvl < minTvl || (poolAgeS !== null && poolAgeS < minAgeS)) {
+    return { triggered: false, evidence: null };
+  }
   const dropped = (t: number) => medTvl > 0 && ((medTvl - t) / medTvl) * 100 >= m.safety_tvl_drop_pct;
   const drained = dropped(tvlNow) && dropped(hist[hist.length - 2]!.tvl);
 
@@ -592,7 +604,7 @@ export async function managePositions(exec: Executor): Promise<void> {
       const crashed = mark.price > 0 && pos.entryPrice > 0 &&
         ((mark.price - pos.entryPrice) / pos.entryPrice) * 100 <= m.safety_price_crash_pct;
       const drain = mark.tvlUsd > 0
-        ? tvlDropTriggered(pos.id, mark.tvlUsd, mark.price)
+        ? tvlDropTriggered(pos.id, mark.tvlUsd, mark.price, mark.poolAgeS ?? null)
         : { triggered: false, evidence: null } satisfies TvlDrainCheck;
       const tvlDrained = drain.triggered;
       if (drain.evidence?.vetoedByPriceRise) {

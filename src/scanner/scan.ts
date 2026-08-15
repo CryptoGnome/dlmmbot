@@ -18,6 +18,45 @@ import { feeMomentumPart, opportunityScore, structurePart, timingPart, turnoverP
  */
 const copycatIgnoredUntil = new Map<string, number>();
 
+/**
+ * Choose which of a token's pools to trade. Pure; exported for tests.
+ *
+ * The old rule was "highest 24h fee/TVL". Fee/TVL is inversely proportional to
+ * TVL, so among sibling pools of the same token that rule *structurally* picks
+ * the thinnest one — measured 2026-08-15: in 11 of 18 multi-pool mints on the
+ * scanner's board the thinner pool ranked higher, and in 9 of those the deeper
+ * pool also had more absolute volume. Thin pools cost twice: less fee income
+ * (volume happens where depth is), and TVL that jitters 40–50% on ordinary LP
+ * repositioning, which is precisely what P0 `tvl_drain` reads as a rug. Same
+ * token, same price move, sampled 4 minutes: $8k pool swung 51%, $67k pool 9%.
+ *
+ * So: among the token's pools that pass the hard gates, take the DEEPEST.
+ * The gates already encode which pool SHAPES the strategy accepts — bin step,
+ * fee mode, quote mint — so "passes the gates" is the family boundary; a
+ * bin-20 pool is not an alternative to a bin-100 pool because bin_step_new
+ * rejects it, not because we compare bin steps by hand. (An earlier draft
+ * required identical bin steps and, on the real board, chose a $6k bin-80
+ * pool over a $60k bin-100 pool that the gates were perfectly happy with.)
+ * Fee/TVL breaks ties only when TVL is within `sibling_tvl_tie_pct` of the
+ * deepest (depth so close that the fee edge is real). A pool that fails the
+ * gates never wins on depth alone; and if nothing passes we still return the
+ * best-by-fee pool so the decisions log records the rejection instead of the
+ * token vanishing.
+ */
+export function pickBestPool<P extends { tvlUsd: number; feeTvl24hPct: number }>(
+  pools: P[],
+  passesGates: (p: P) => boolean,
+  tiePct: number,
+): P | null {
+  if (!pools.length) return null;
+  const byFee = (a: P, b: P) => b.feeTvl24hPct - a.feeTvl24hPct;
+  const eligible = pools.filter(passesGates);
+  if (!eligible.length) return [...pools].sort(byFee)[0]!;
+  const deepest = [...eligible].sort((a, b) => b.tvlUsd - a.tvlUsd)[0]!;
+  const nearDepth = eligible.filter((p) => p.tvlUsd >= deepest.tvlUsd * (1 - tiePct / 100));
+  return nearDepth.sort(byFee)[0]!;
+}
+
 /** Pure winner selection for one symbol group: mint -> 24h vol. Exported for tests. */
 export function pickCopycatWinner(
   volByMint: Map<string, number>,
@@ -88,13 +127,21 @@ export async function scan(opts: { withTiming?: boolean } = {}): Promise<ScanRes
     if (winner) canonical.add(winner);
   }
 
-  // Best pool per canonical token = highest 24h fee/TVL.
-  const bestPool = new Map<string, (typeof memePools)[number]>();
+  // Best pool per canonical token: deepest gate-passing sibling in the same
+  // bin-step family (see pickBestPool — "highest fee/TVL" picked thin pools).
+  const poolsByMint = new Map<string, typeof memePools>();
   for (const p of memePools) {
     if (!canonical.has(p.mintX)) continue;
     if (isBlacklisted(p.mintX)) continue;
-    const cur = bestPool.get(p.mintX);
-    if (!cur || p.feeTvl24hPct > cur.feeTvl24hPct) bestPool.set(p.mintX, p);
+    const list = poolsByMint.get(p.mintX) ?? [];
+    list.push(p);
+    poolsByMint.set(p.mintX, list);
+  }
+  const bestPool = new Map<string, (typeof memePools)[number]>();
+  const tiePct = config().scanner.sibling_tvl_tie_pct ?? 25;
+  for (const [mint, list] of poolsByMint) {
+    const pick = pickBestPool(list, (p) => poolGates(p).length === 0, tiePct);
+    if (pick) bestPool.set(mint, pick);
   }
 
   const candidates: Candidate[] = [];

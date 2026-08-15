@@ -199,14 +199,55 @@ describe("managePositions contracts", () => {
       getDb().prepare("SELECT reason, expires_ts FROM blacklist WHERE key = ?").get(key) as
         | { reason: string; expires_ts: number | null } | undefined;
 
-    async function driveTvlDrain(id: number, tvls: number[], prices?: number[]) {
+    async function driveTvlDrain(id: number, tvls: number[], prices?: number[], poolAgeS?: number | null) {
       for (let i = 0; i < tvls.length; i++) {
         exec.setMark(id, {
           valueSol: 0.3, price: prices?.[i] ?? 1, activeBinId: 150, tvlUsd: tvls[i]!, inRange: true,
+          ...(poolAgeS !== undefined ? { poolAgeS } : {}),
         });
         await managePositions(exec);
       }
     }
+
+    /**
+     * Below either floor the 10-min median is noise, measured with no rug in
+     * progress: a thin pool's TVL is a handful of LPs (same token, same 4 min:
+     * $8k pool swung 51%, $67k pool 9%); a newborn's baseline is its own birth.
+     */
+    it("skips tvl_drain on a thin pool where the median is noise", async () => {
+      installConfig((c) => { c.manage.tvl_drain_min_tvl_usd = 20_000; c.manage.tvl_drain_min_pool_age_min = 20; });
+      seedToken(MINT);
+      const id = insertOpenPosition({ entrySol: 0.3, minBinId: 100, maxBinId: 200 });
+      // Median $8k — the GUNICORN pool's depth. A -60% read here is not a rug read.
+      await driveTvlDrain(id, [8_000, 8_000, 8_000, 8_000, 3_000, 3_000]);
+      expect(exec.closed).toHaveLength(0);
+    });
+
+    it("skips tvl_drain on a pool younger than the measurement window", async () => {
+      installConfig((c) => { c.manage.tvl_drain_min_tvl_usd = 20_000; c.manage.tvl_drain_min_pool_age_min = 20; });
+      seedToken(MINT);
+      const id = insertOpenPosition({ entrySol: 0.3, minBinId: 100, maxBinId: 200 });
+      // Deep enough, but 9 minutes old — the pos#5 GUNICORN age at entry.
+      await driveTvlDrain(id, [50_000, 50_000, 50_000, 50_000, 20_000, 20_000], undefined, 9 * 60);
+      expect(exec.closed).toHaveLength(0);
+    });
+
+    it("fires normally on a deep, mature pool", async () => {
+      installConfig((c) => { c.manage.tvl_drain_min_tvl_usd = 20_000; c.manage.tvl_drain_min_pool_age_min = 20; });
+      seedToken(MINT);
+      const id = insertOpenPosition({ entrySol: 0.3, minBinId: 100, maxBinId: 200 });
+      await driveTvlDrain(id, [50_000, 50_000, 50_000, 50_000, 20_000, 20_000], undefined, 3 * 3600);
+      expect(exec.closed).toEqual([{ id, reason: "P0_safety" }]);
+    });
+
+    it("unknown pool age does not suppress the trigger", async () => {
+      // A missing created_at must not turn the safety off — null age = no age gate.
+      installConfig((c) => { c.manage.tvl_drain_min_tvl_usd = 20_000; c.manage.tvl_drain_min_pool_age_min = 20; });
+      seedToken(MINT);
+      const id = insertOpenPosition({ entrySol: 0.3, minBinId: 100, maxBinId: 200 });
+      await driveTvlDrain(id, [50_000, 50_000, 50_000, 50_000, 20_000, 20_000], undefined, null);
+      expect(exec.closed).toEqual([{ id, reason: "P0_safety" }]);
+    });
 
     it("tvl_drain cools the token off and spares the creator", async () => {
       installConfig((c) => { c.manage.tvl_drain_cooldown_h = 6; });

@@ -181,6 +181,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           { label: "Sweep pools", detail: "Meteora DLMM list", icon: "radar" },
           { label: "Dedupe", detail: "One mint wins per ticker", icon: "check" },
           { label: "Pool gates", detail: "TVL, fees, volume…", icon: "chart" },
+          { label: "Pick the pool", detail: "Deepest gate-passing pool per token — not the highest fee/TVL, which picks the thinnest one", icon: "chart" },
           { label: "Token vet", detail: "Authorities, holders, rugs", icon: "shield" },
           { label: "Score", detail: "0–100 opportunity", icon: "zap" },
           { label: "Queue", detail: "Best first", icon: "entry" },
