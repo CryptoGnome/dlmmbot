@@ -33,11 +33,22 @@ export async function enterMajorsPositions(exec: Executor, bankroll: Bankroll): 
   const skip = (sym: string, why: string) => outcomes.push(`${sym}:${why}`);
 
   const opened = openPositionCount();
-  if (majorsSlotBudget(opened) <= 0) { console.log(`[majors] no slot budget (${opened} open, meme reserve ${mj.meme_reserve_slots})`); return; }
-  if (majorsSleeveExposure().slots >= mj.max_slots) return; // already parked — normal, no line
+  const parked = majorsSleeveExposure();
+  // Every early exit says why, at scan cadence, so silence in the log means
+  // "not called" and nothing else. An earlier draft left the already-parked
+  // return silent and it took an hour to tell "parked" from "never ran".
+  const bail = (why: string) => {
+    if (Date.now() - lastMajorsSummaryAt > MAJORS_SUMMARY_MIN_MS || lastMajorsSummary !== why) {
+      console.log(`[majors] ${why}`);
+      lastMajorsSummary = why;
+      lastMajorsSummaryAt = Date.now();
+    }
+  };
+  if (majorsSlotBudget(opened) <= 0) { bail(`no slot budget (${opened} open, meme reserve ${mj.meme_reserve_slots})`); return; }
+  if (parked.slots >= mj.max_slots) { bail(`already parked (${parked.slots}/${mj.max_slots} slots, ${parked.deployedSol.toFixed(2)} SOL)`); return; }
 
   const capSol = bankroll.walletSol * (mj.deploy_cap_pct / 100);
-  if (majorsSleeveExposure().deployedSol >= capSol) { console.log(`[majors] deploy cap reached (${majorsSleeveExposure().deployedSol.toFixed(2)}/${capSol.toFixed(2)} SOL)`); return; }
+  if (parked.deployedSol >= capSol) { bail(`deploy cap reached (${parked.deployedSol.toFixed(2)}/${capSol.toFixed(2)} SOL)`); return; }
 
   const cands = await scanMajors();
   let entered: string | null = null;
