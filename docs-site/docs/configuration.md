@@ -315,6 +315,17 @@ GMGN calls are optional enrichment. The bot serializes `gmgn-cli` (one in flight
 | `jupiter_quote` | `https://lite-api.jup.ag/swap/v1` |
 | `jupiter_price` | `https://lite-api.jup.ag/price/v3` |
 | `jup_datapi` | `https://datapi.jup.ag` (undocumented; soft signals only) |
+| `geckoterminal` | `https://api.geckoterminal.com/api/v2` — deep candles (100 bars/call, keyless, SOL-denominated via `currency=token`) |
+
+## `[candles]`
+
+The Meteora datapi caps `/ohlcv` at **10 bars on every timeframe**, which silently starved every candle reader: majors RSI(14) was never computable, the meme timing filter's "last hour" was 50 minutes, and the planner's "24h swing" was the last 10 bars. GeckoTerminal is now the primary source with the datapi as fallback — you never get fewer bars than before.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `deep_source_enabled` | `true` | Use GeckoTerminal for candles; `false` = datapi only (10 bars) |
+| `limit` | `100` | Bars per fetch. RSI(14) needs 15+; swing/ATH checks want as many as possible |
+| `max_per_min` | `25` | Rate cap (GeckoTerminal public limit is 30/min). Results are cached 60s so one fetch serves a whole tick |
 
 ## Environment variables (`.env` / `data/.env`)
 

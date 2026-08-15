@@ -464,3 +464,16 @@ rugcheck = "https://api.rugcheck.xyz"
 jupiter_quote = "https://lite-api.jup.ag/swap/v1"
 jupiter_price = "https://lite-api.jup.ag/price/v3"
 jup_datapi = "https://datapi.jup.ag"       # undocumented (jup.ag UI backend) — soft signals only
+geckoterminal = "https://api.geckoterminal.com/api/v2"  # deep candles (100 bars/call, keyless)
+
+[candles]
+# 2026-08-15: the Meteora datapi caps /ohlcv at 10 bars on EVERY timeframe (verified
+# 5m/30m/1h/4h, no paging parameter helps). That silently starved every reader:
+# majors RSI(14) was never computable ("rsi ?" on every line — the timing gate
+# has been swing-only since it was written), the meme timing filter's "last
+# hour" got 50 minutes, and the planner's "24h swing" was the last 10 bars.
+# GeckoTerminal serves 100 bars keyless, keyed by pool address, and indexes pools
+# minutes old. Datapi remains the fallback: never fewer bars than before.
+deep_source_enabled = true
+limit = 100            # bars per fetch (RSI needs 15+; ATH/swing want as many as possible)
+max_per_min = 25       # GeckoTerminal public limit is 30/min; results are cached 60s

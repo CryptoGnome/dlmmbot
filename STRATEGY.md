@@ -80,7 +80,7 @@ Weighted blend `[weights in config]`: fee/TVL momentum (30m vs 24h) 30%, volume/
 
 Default shape — **Tux entry**: one-sided SOL, bid-ask, below current price.
 
-1. Compute swing high/low from 5m OHLCV over the pool's life (max 24h lookback).
+1. Compute swing high/low from 5m OHLCV over the pool's life (max 24h lookback). **Candle source** (2026-08-15): the Meteora datapi caps `/ohlcv` at **10 bars on every timeframe** — verified 5m/30m/1h/4h, no paging parameter helps — so this "24h lookback" was silently the last 50 minutes, the meme timing filter's "last hour" got 50 minutes, and majors RSI(14) was never computable (the majors timing gate had been swing-only since it was written; the first-ever majors entry, ANSEM pos#8, went in on a 50-minute swing reading 27% when the 8-hour reading was 67%). Candles now come from GeckoTerminal (`[100]` bars/call, keyless, `currency=token` so bars are SOL-denominated like `pool.price`), datapi as fallback — never fewer bars than before. `[candles]` in config.
 2. Range top = active bin. Range bottom = the *shallower* of: fib `[0.786]` retracement of the swing, or `[-65%]` from current price. Floor of `[-40%]` minimum depth — never a thin sliver.
 3. Translate to bin IDs. A DLMM position account spans ≤ 69 bins: if the range needs more, either widen bin-step choice (§2.1) or split into `[max 2]` position accounts.
 4. Bin rent: soft budget `[0.075 SOL]` (one bin array) — shrink range first. If still over, quote **actual** uninitialized arrays on-chain; allow when actual ≤ soft, or ≤ `[0.15 SOL]` (two arrays) when score ≥ `[80]`. Never more than two arrays. RPC quote failure falls back to worst-case estimate (fail closed).

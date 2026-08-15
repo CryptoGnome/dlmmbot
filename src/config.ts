@@ -230,7 +230,17 @@ export interface Config {
     bonus_sustained: number; bonus_emerging: number; bonus_fading: number;
   };
   watchdog: { rpc_blind_after_min: number };
-  apis: { meteora_datapi: string; rugcheck: string; jupiter_quote: string; jupiter_price: string; jup_datapi: string };
+  apis: {
+    meteora_datapi: string; rugcheck: string; jupiter_quote: string; jupiter_price: string; jup_datapi: string;
+    /** Deep candle source (100 bars/call). Optional: default in code. */
+    geckoterminal?: string;
+  };
+  /**
+   * Candle depth. The Meteora datapi caps ohlcv at 10 bars on every timeframe,
+   * which starved RSI(14), the meme "last hour" windows and the planner's
+   * "24h swing". Optional section: defaults in code for older configs.
+   */
+  candles?: { deep_source_enabled?: boolean; limit?: number; max_per_min?: number };
 }
 
 export interface Env {

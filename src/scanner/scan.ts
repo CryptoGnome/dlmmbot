@@ -4,7 +4,8 @@ import type { Candidate } from "../types.js";
 import { poolGates } from "./gates.js";
 import { priceDivergenceGate } from "./priceGate.js";
 import { trendingByMint } from "./gmgn.js";
-import { fetchCandles, sweepPools } from "./meteora.js";
+import { sweepPools } from "./meteora.js";
+import { fetchCandlesDeep } from "./candles.js";
 import { feeMomentumPart, opportunityScore, structurePart, timingPart, turnoverPart } from "./score.js";
 
 // STRATEGY.md §1 — sweep → dedupe copycats → best pool per token → gates → score.
@@ -162,7 +163,7 @@ export async function scan(opts: { withTiming?: boolean } = {}): Promise<ScanRes
     let timing = 0.5;
     if (gateFailures.length === 0 && opts.withTiming !== false) {
       try {
-        timing = timingPart(await fetchCandles(p.address, "5m"), p.price);
+        timing = timingPart(await fetchCandlesDeep(p.address, "5m"), p.price);
       } catch {
         timing = 0.5;
       }

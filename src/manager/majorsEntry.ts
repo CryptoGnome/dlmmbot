@@ -9,7 +9,7 @@ import { majorsPositionSize, majorsPoolSharePct, majorsSleeveExposure } from "..
 import { type Bankroll, minPositionSol, openPositionCount, tokenExposureSol } from "../risk/limits.js";
 import { majorsSlotBudget } from "../risk/sleeve.js";
 import { scanMajors } from "../scanner/majorsScan.js";
-import { fetchCandles } from "../scanner/meteora.js";
+import { fetchCandlesDeep } from "../scanner/candles.js";
 
 /**
  * The pass-summary line is rate-limited: the majors entry runs every scan
@@ -63,7 +63,7 @@ export async function enterMajorsPositions(exec: Executor, bankroll: Bankroll): 
       continue;
     }
 
-    const candles = await fetchCandles(cand.pool.address, "5m").catch(() => []);
+    const candles = await fetchCandlesDeep(cand.pool.address, "5m").catch(() => []);
     const timing = majorsEntryTiming(candles, cand.pool.price);
     if (!timing.ok) {
       recordDecision(cand.tokenMint, cand.pool.address, "skipped", timing.reason!, cand.score, { sleeve: "majors", timing });
