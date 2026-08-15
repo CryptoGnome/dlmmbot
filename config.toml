@@ -299,12 +299,14 @@ profit_lock_enabled = false
 max_age_h = 168
 above_range_sustain_min = 240
 above_range_missed_sustain_min = 480
-# Must sit at/below entry fee_tvl_30m_daily_min (0.05). Was 0.15 — ANSEM parked at
-# ~0.147–0.150%/d and churned every ~45s (3× poll) while still re-entering.
-rotation_fee_daily_min_pct = 0.05
-rotation_vol_30m_min_usd = 2000
-# Sustained decay before rotate (uses manage.poll_s). Meme stays at manage.rotation_polls=3.
-rotation_polls = 20
+# Entry floor is fee_tvl_30m_daily_min_pct (0.05). Rotation must sit meaningfully
+# BELOW that (hysteresis) or a pool that still qualifies for re-entry churns all day.
+# Was 0.05 — PUMP printed fee 0.02–0.05%/d with $5k–12k vol and rotated every ~15–45m.
+rotation_fee_daily_min_pct = 0.02
+rotation_vol_30m_min_usd = 1500
+# Sustained decay before rotate (uses manage.poll_s). At poll_s=15, 120 ≈ 30 min.
+# Meme stays at manage.rotation_polls=3. Majors also requires BOTH fee+vol dead (loop.ts).
+rotation_polls = 120
 
 [[majors.pools]]
 pool = "HbjYfcWZBjCBYTJpZkLGxqArVmZVu3mQcRudb6Wg1sVh"

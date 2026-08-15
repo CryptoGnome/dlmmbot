@@ -154,7 +154,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           {
             title: "Majors",
             badge: "alts",
-            text: "Allowlisted SOL-quoted alts. Spot (flat) bins + separate timing. Settings → Majors parking: search a ticker on Meteora and add to the allowlist (no mint address). Runs after memes so hot memes keep slots.",
+            text: "Allowlisted SOL-quoted alts. Spot (flat) bins + separate timing. P2 rotation needs BOTH fee and volume dead (and a lower fee floor than entry) so parks like PUMP don’t churn every few minutes. Settings → Majors parking: search a ticker on Meteora and add to the allowlist. Runs after memes so hot memes keep slots.",
             icon: "layers",
           },
         ],
