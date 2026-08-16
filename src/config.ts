@@ -42,6 +42,8 @@ export interface Config {
      */
     retain_skipped_days?: number;
     retain_snapshots_days?: number;
+    /** Hard ceiling on the SQLite file in MB. Above it, skipped decisions and snapshots are trimmed oldest-first regardless of age. */
+    db_max_mb?: number;
   };
   gates: {
     tvl_min_usd: number; tvl_max_usd: number; mcap_min_usd: number;

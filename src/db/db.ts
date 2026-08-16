@@ -440,24 +440,87 @@ export function recordCreatorRug(creator: string, reason = "rugged token (P0)"):
  *    an offline replay dataset that no one has replayed. Kept a few days.
  * Returns the row counts removed so the caller can log a non-zero sweep.
  */
-export function pruneHistory(opts: { skippedDays: number; snapshotDays: number }): { decisions: number; snapshots: number; vacuumed: boolean } {
+/** Bytes the SQLite file currently occupies on disk (pages × page size). */
+export function dbFileBytes(): number {
+  const db = getDb();
+  const pageCount = (db.pragma("page_count", { simple: true }) as number) ?? 0;
+  const pageSize = (db.pragma("page_size", { simple: true }) as number) ?? 4096;
+  return pageCount * pageSize;
+}
+
+export interface PruneResult {
+  decisions: number;
+  snapshots: number;
+  vacuumed: boolean;
+  /** Which rule fired: the age windows, or the size ceiling. */
+  mode: "age" | "size" | "none";
+  bytesBefore: number;
+  bytesAfter: number;
+}
+
+export function pruneHistory(opts: {
+  skippedDays: number;
+  snapshotDays: number;
+  /** Hard ceiling on the DB file. Above it, `skipped` rows and snapshots are trimmed oldest-first regardless of age. */
+  maxBytes?: number;
+}): PruneResult {
   const db = getDb();
   const t = now();
-  const decisions = db.prepare(
+  const bytesBefore = dbFileBytes();
+
+  // Age windows first — the normal steady state on a mature install.
+  let decisions = db.prepare(
     "DELETE FROM decisions WHERE action = 'skipped' AND ts < ?"
   ).run(t - opts.skippedDays * 86_400).changes;
-  const snapshots = db.prepare(
+  let snapshots = db.prepare(
     "DELETE FROM pool_snapshots WHERE ts < ?"
   ).run(t - opts.snapshotDays * 86_400).changes;
-  // DELETE frees pages inside the file; the file itself does not shrink until
-  // VACUUM rewrites it. Only worth the rewrite (and the disk it briefly needs)
-  // when a real amount was released — a volume already at 83% is exactly the
-  // case where the first pass has to give the space back.
-  let vacuumed = false;
-  if (decisions + snapshots >= 10_000) {
-    try { db.exec("VACUUM"); vacuumed = true; } catch { /* busy or read-only — try next pass */ }
+  let mode: PruneResult["mode"] = decisions + snapshots > 0 ? "age" : "none";
+
+  // Size ceiling second. The age windows are calibrated to what the dashboard
+  // READS (30 days of funnel), not to what the volume can HOLD — and on a
+  // one-day-old install nothing is older than 30 days, so the age rule pruned
+  // zero rows, printed nothing, and the Railway volume filled to ENOSPC
+  // overnight at ~890 rejection rows/hour. Below the ceiling this is a no-op;
+  // above it, trim the two append-only tables oldest-first in chunks until the
+  // file is under the ceiling. entered/exited rows are never touched here
+  // either — they are the audit trail and are rare.
+  //
+  // Note the file does not shrink on DELETE; VACUUM below gives the space back.
+  // We measure "used pages" rather than file size for the loop so freed pages
+  // count immediately.
+  const ceiling = opts.maxBytes ?? 0;
+  if (ceiling > 0) {
+    const usedBytes = () => {
+      const pc = db.pragma("page_count", { simple: true }) as number;
+      const fl = db.pragma("freelist_count", { simple: true }) as number;
+      const ps = db.pragma("page_size", { simple: true }) as number;
+      return (pc - fl) * ps;
+    };
+    let guard = 0;
+    while (usedBytes() > ceiling && guard++ < 200) {
+      const s = db.prepare(
+        "DELETE FROM pool_snapshots WHERE rowid IN (SELECT rowid FROM pool_snapshots ORDER BY ts ASC LIMIT 5000)"
+      ).run().changes;
+      const d = db.prepare(
+        "DELETE FROM decisions WHERE rowid IN (SELECT rowid FROM decisions WHERE action = 'skipped' ORDER BY ts ASC LIMIT 5000)"
+      ).run().changes;
+      snapshots += s;
+      decisions += d;
+      if (s + d === 0) break; // nothing prunable left — never touch entered/exited
+      mode = "size";
+    }
   }
-  return { decisions, snapshots, vacuumed };
+
+  // DELETE frees pages inside the file; the file itself does not shrink until
+  // VACUUM rewrites it. VACUUM needs scratch space roughly equal to the live
+  // data, so on a FULL disk it can fail — hence the try, and hence the size
+  // loop above deleting first so there is something to reclaim.
+  let vacuumed = false;
+  if (decisions + snapshots >= 10_000 || mode === "size") {
+    try { db.exec("VACUUM"); vacuumed = true; } catch { /* no scratch space or busy — next pass */ }
+  }
+  return { decisions, snapshots, vacuumed, mode, bytesBefore, bytesAfter: dbFileBytes() };
 }
 
 export function recordDecision(
