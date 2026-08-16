@@ -45,6 +45,7 @@ import {
 } from "./lib/profiles.mjs";
 import { requestHalt, clearHalt, readHaltState } from "./lib/halt.mjs";
 import { clearBlacklist, listBlacklist } from "./lib/blacklist.mjs";
+import { diskRescue } from "./lib/disk-rescue.mjs";
 import { requestPause, clearPause, readPauseState } from "./lib/pause.mjs";
 import { searchMajorsSymbols } from "./lib/majors-search.mjs";
 import { execFileSync } from "node:child_process";
@@ -690,6 +691,28 @@ const server = createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, ...state, ...readPauseState(root) });
     } catch (e) {
       sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
+  // Emergency disk reclaim when the farmer cannot write (ENOSPC). Same
+  // re-enter-the-token bar as HALT: it deletes rows.
+  if (url.pathname === "/api/ops/disk-rescue" && req.method === "POST") {
+    try {
+      const body = await readBody(req, res);
+      const confirm = typeof body?.confirm === "string" ? body.confirm : "";
+      if (!token || !safeEqual(confirm, token)) {
+        sendJson(res, 403, { error: "re-enter dash token to run disk rescue" });
+        return;
+      }
+      const report = diskRescue(root, {
+        keepSkippedRows: Number.isFinite(body?.keepSkippedRows) ? body.keepSkippedRows : 20_000,
+        removeLock: body?.removeLock === true,
+      });
+      watchCache = { at: 0, data: null, building: null };
+      sendJson(res, 200, { ok: true, ...report });
+    } catch (e) {
+      sendJson(res, 500, { error: e.message ?? String(e) });
     }
     return;
   }
