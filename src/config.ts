@@ -124,6 +124,8 @@ export interface Config {
     tvl_drain_min_pool_age_min?: number;
     safety_new_whale_pct: number; safety_price_crash_pct: number;
     stop_loss_frac: number; loss_reentry_cooldown_h: number;
+    /** While BELOW range, P1 must be under the stop for this many consecutive polls before firing (wick tolerance). In range it fires immediately. Optional: default in code. */
+    stop_loss_sustain_polls?: number;
     rotation_fee_daily_min_pct: number; rotation_polls: number;
     rotation_vol_30m_min_usd: number; max_age_h: number;
     above_range_pct: number; above_range_sustain_min: number;

@@ -103,6 +103,63 @@ describe("managePositions contracts", () => {
     expect(row.exit_reason).toBe("P1_stop");
   });
 
+  /**
+   * 4680 pos#11 (2026-08-16): a -54% wick lasting under two minutes. P5 armed
+   * its 15m grace to ride out exactly that; P1 read one 15s mark at -25% and
+   * cut the position 80s later. Token was +58% within the hour — the biggest
+   * loss on the book, on a 5m candle that CLOSED at -20%. Below range, the stop
+   * must sustain across polls. In range it is still immediate.
+   */
+  describe("P1 stop vs P5 wick tolerance", () => {
+    const belowRangeUnderStop = (id: number) => exec.setMark(id, {
+      valueSol: 0.28, price: 0.5, activeBinId: 50, inRange: false, belowRange: true, aboveRange: false,
+    });
+
+    it("does not fire on a single below-range mark — the wick case", async () => {
+      installConfig((c) => { c.manage.stop_loss_sustain_polls = 4; });
+      const id = insertOpenPosition({ entrySol: 0.4, minBinId: 100, maxBinId: 200 });
+      belowRangeUnderStop(id);
+      await managePositions(exec);
+      expect(exec.closed).toHaveLength(0);
+      // Two more polls, still under: streak 3 of 4 — still no cut.
+      belowRangeUnderStop(id); await managePositions(exec);
+      belowRangeUnderStop(id); await managePositions(exec);
+      expect(exec.closed).toHaveLength(0);
+    });
+
+    it("a recovery between polls resets the streak", async () => {
+      // Escape hatch off: bin 50 → bin 150 would otherwise read as deep-dip-recovered.
+      installConfig((c) => { c.manage.stop_loss_sustain_polls = 3; c.manage.escape_hatch_depth_pct = 99; c.manage.escape_hatch_recovery_pct = 0; });
+      const id = insertOpenPosition({ entrySol: 0.4, minBinId: 100, maxBinId: 200 });
+      belowRangeUnderStop(id); await managePositions(exec);
+      belowRangeUnderStop(id); await managePositions(exec); // streak 2
+      // Back in range and above the stop: streak must reset to 0.
+      exec.setMark(id, { valueSol: 0.42, price: 1.1, activeBinId: 150, inRange: true, belowRange: false, aboveRange: false });
+      await managePositions(exec);
+      expect(exec.closed).toHaveLength(0);
+      belowRangeUnderStop(id); await managePositions(exec); // streak 1, not 3
+      expect(exec.closed).toHaveLength(0);
+    });
+
+    it("fires once the stop has sustained across the configured polls", async () => {
+      installConfig((c) => { c.manage.stop_loss_sustain_polls = 3; });
+      const id = insertOpenPosition({ entrySol: 0.4, minBinId: 100, maxBinId: 200 });
+      for (let i = 0; i < 2; i++) { belowRangeUnderStop(id); await managePositions(exec); }
+      expect(exec.closed).toHaveLength(0);
+      belowRangeUnderStop(id); await managePositions(exec);
+      expect(exec.closed).toEqual([{ id, reason: "P1_stop" }]);
+    });
+
+    it("still fires immediately when the drawdown happens IN range", async () => {
+      // Value down 30% while price is still inside our bins is a real loss, not a wick.
+      installConfig((c) => { c.manage.stop_loss_sustain_polls = 4; });
+      const id = insertOpenPosition({ entrySol: 0.4, minBinId: 100, maxBinId: 200 });
+      exec.setMark(id, { valueSol: 0.28, price: 0.8, activeBinId: 150, inRange: true });
+      await managePositions(exec);
+      expect(exec.closed).toEqual([{ id, reason: "P1_stop" }]);
+    });
+  });
+
   it("escape hatch closes after deep dip recovers to top", async () => {
     const id = insertOpenPosition({ entrySol: 0.4, minBinId: 100, maxBinId: 200, fellDeep: 1 });
     exec.setMark(id, {

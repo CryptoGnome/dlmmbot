@@ -10,7 +10,8 @@ import { createRequire } from "node:module";
 import type * as DLMMTypes from "@meteora-ag/dlmm";
 import type { LbPosition } from "@meteora-ag/dlmm";
 import { config, env, isLive, SOL_MINT } from "../config.js";
-import { getDb, now, upsertTokenMeta } from "../db/db.js";
+import { getDb, logError, now, upsertTokenMeta } from "../db/db.js";
+import { alert } from "../alerts.js";
 import { fetchPool } from "../scanner/meteora.js";
 import type { ExitReason, Position } from "../types.js";
 import type { Executor, OpenParams, PositionMark } from "./executor.js";
@@ -903,6 +904,42 @@ export class LiveExecutor implements Executor {
     // Actual wallet credit for this close (exit value + rent refunds - tx fees).
     const closeReturnSol = sigs.length ? await this.walletDelta(sigs) : 0;
 
+    // A close that leaves the token side in the wallet is NOT closed — it is a
+    // position we stopped watching. 4680 pos#97 on the server bot (2026-08-16):
+    // the P1 exit removed liquidity and the swap "succeeded" but returned 0.065
+    // SOL against a 0.198 mark; ~70% of the tokens sat unsold in the wallet for
+    // ten minutes until the residual sweep found them. It happened to sell them
+    // +60% higher and turned a loss into a profit — the same shape on a token
+    // that KEPT falling would have been a -25% stop silently held to -60%. The
+    // sweep will pick it up, but the operator must know at close time, not
+    // discover it in the ledger. Best-effort read; never blocks the close.
+    let leftoverTokenSol: number | null = null;
+    if (xToSwap > 0n && position.tokenMint !== SOL_MINT) {
+      try {
+        const leftRaw = await this.tokenBalanceRaw(position.tokenMint);
+        if (leftRaw > 0n) {
+          const q = await quoteToSolLamports(position.tokenMint, leftRaw);
+          leftoverTokenSol = q === null ? null : q / 1e9;
+          const share = before.valueSol > 0 && leftoverTokenSol !== null ? leftoverTokenSol / before.valueSol : null;
+          const msg = `[live] pos#${position.id} ${position.symbol}: close left ${leftRaw} raw tokens in wallet` +
+            (leftoverTokenSol !== null ? ` (~${leftoverTokenSol.toFixed(4)} SOL, ${share !== null ? (share * 100).toFixed(0) + "% of mark" : "?"})` : "") +
+            ` — swap under-filled; residual sweep will sell it. Position is NOT fully out.`;
+          console.error(msg);
+          logError({
+            source: "live", code: "close_underfilled", message: msg,
+            detail: { positionId: position.id, leftRaw: leftRaw.toString(), leftoverTokenSol, markedExitSol: before.valueSol, closeReturnSol },
+            symbol: position.symbol, mint: position.tokenMint, pool: position.poolAddress, dedupeSec: 60,
+          });
+          if (share !== null && share >= 0.25) {
+            await alert("watchdog",
+              `⚠️ ${position.symbol} pos#${position.id}: exit swap under-filled — ~${leftoverTokenSol!.toFixed(3)} SOL of tokens ` +
+              `(${(share * 100).toFixed(0)}% of the position) still in wallet. Sweep will retry; not fully out yet.`
+            ).catch(() => {});
+          }
+        }
+      } catch { /* diagnostic only */ }
+    }
+
     const db = getDb();
     // `before.feesSol` is what shouldClaimAndClose collected on the way out.
     // It is already inside closeReturnSol; recorded separately so fee income is
@@ -926,6 +963,7 @@ export class LiveExecutor implements Executor {
       sigs[0] ?? null, before.valueSol, 0.001,
       JSON.stringify({
         sigs, closeReturnSol, markedExitSol: before.valueSol, swapped: xToSwap > 0n,
+        leftoverTokenSol,
         emptyClose: removeFailedEmpty || before.valueSol <= 1e-9,
         // Chain legs, so attribution reconciles without a wallet scan
         // (RANGE-SHAPE-DECISION.md item 3).

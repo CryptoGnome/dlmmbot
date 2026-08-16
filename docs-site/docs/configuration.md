@@ -135,6 +135,7 @@ Thresholds:
 | `holder_poll_s` | `90` | Holder-snapshot interval per open position |
 | `safety_price_crash_pct` | `-60` | P0: price vs entry, **at any age** — deliberately no time window |
 | `stop_loss_frac` | `0.75` | P1: close when SOL value < entry × this |
+| `stop_loss_sustain_polls` | `4` | While **below range**, P1 must be under the stop for this many consecutive polls (~60s) before firing — wick tolerance. In range the stop is immediate. A violent collapse is still caught instantly by P0 `price_crash` |
 | `loss_reentry_cooldown_h` | `24` | Cooldown after a loss exit |
 | `rotation_fee_daily_min_pct` | `5` | P2: fee-rate floor, %/day |
 | `rotation_polls` | `3` | P2: consecutive polls under the floor before rotating |
