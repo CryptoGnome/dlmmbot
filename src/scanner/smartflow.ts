@@ -190,13 +190,25 @@ export function buildSmartflowSnapshot(): SmartflowSnapshot {
   });
 }
 
+/**
+ * Never throws. This is a dashboard nicety, and on 2026-08-16 it threw ENOSPC
+ * from BOTH its call sites — the poll timer (unhandledRejection) and the
+ * startup call in startSmartFlow (synchronous, exit code 1) — and crash-looped
+ * the farmer on a full volume with a live position open. Wrapping one caller
+ * fixed one path; the write itself has to be safe so no caller can be
+ * surprised.
+ */
 export function writeSmartflowSnapshot(): void {
-  const snap = buildSmartflowSnapshot();
-  const path = smartflowPath();
-  mkdirSync(dirname(path), { recursive: true });
-  const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify(snap));
-  renameSync(tmp, path);
+  try {
+    const snap = buildSmartflowSnapshot();
+    const path = smartflowPath();
+    mkdirSync(dirname(path), { recursive: true });
+    const tmp = `${path}.${process.pid}.tmp`;
+    writeFileSync(tmp, JSON.stringify(snap));
+    renameSync(tmp, path);
+  } catch (e) {
+    console.error("[smartflow] snapshot write failed (non-fatal):", (e as Error).message);
+  }
 }
 
 async function pollOnce(): Promise<void> {
@@ -234,15 +246,7 @@ async function pollOnce(): Promise<void> {
   const cutoff = Math.floor(Date.now() / 1000) - config().smartflow.window_min * 60;
   trades = trades.filter((t) => t.ts >= cutoff);
   seenTx = new Set(trades.map((t) => t.hash));
-  // The snapshot is a dashboard nicety. On a full disk (ENOSPC, 2026-08-16)
-  // this write threw out of the timer as an unhandledRejection and took the
-  // whole farmer down — with a live position open. Never let a cosmetic write
-  // be fatal.
-  try {
-    writeSmartflowSnapshot();
-  } catch (e) {
-    console.error("[smartflow] snapshot write failed (non-fatal):", (e as Error).message);
-  }
+  writeSmartflowSnapshot();
 }
 
 /** Start the background collector (no-op without an API key, or if running). */
