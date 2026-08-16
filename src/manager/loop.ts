@@ -76,6 +76,28 @@ const RESIDUAL_SWEEP_MIN_SOL = 0.002; // below this, tx fees eat the proceeds
 /** DB retention runs hourly; the pruned tables only matter at day granularity. */
 const RETENTION_INTERVAL_MS = 60 * 60 * 1000;
 
+/**
+ * Prune the append-only tables and ALWAYS say what happened. The first version
+ * only logged when it removed rows; on a one-day-old install the 30-day age
+ * window removed nothing, printed nothing, and the volume filled to ENOSPC
+ * overnight while the log looked healthy. Silence must never mean "fine" here.
+ */
+function runRetention(): void {
+  const r = config().scanner;
+  const pruned = pruneHistory({
+    skippedDays: r.retain_skipped_days ?? 30,
+    snapshotDays: r.retain_snapshots_days ?? 3,
+    maxBytes: (r.db_max_mb ?? 200) * 1024 * 1024,
+  });
+  const mb = (b: number) => (b / 1048576).toFixed(1);
+  console.log(
+    `[farmer] retention: db ${mb(pruned.bytesBefore)}→${mb(pruned.bytesAfter)} MB, ` +
+    `pruned ${pruned.decisions} skipped decisions + ${pruned.snapshots} snapshots` +
+    (pruned.mode === "size" ? " (SIZE ceiling hit)" : pruned.mode === "age" ? " (age)" : " (nothing eligible)") +
+    (pruned.vacuumed ? ", vacuumed" : "")
+  );
+}
+
 // Per-position manager state (all in-memory; rebuilt after restart).
 const aboveRangeSince = new Map<number, number>();   // P3 sustain timer
 const belowRangeSince = new Map<number, number>();   // P5 grace timer
@@ -1464,6 +1486,10 @@ export async function runLoop(): Promise<void> {
   // reassurance this line exists to prevent.
   try { buildSha = resolveBuildLabel(); } catch { /* keep unknown */ }
   console.log(`[farmer] starting in ${exec.mode} mode (pid ${process.pid}, build ${buildSha})`);
+  // Retention BEFORE the first tick: a redeploy onto a full volume must be able
+  // to reclaim space before anything tries to write, or every write in the
+  // first tick fails and the process crash-loops on ENOSPC.
+  try { runRetention(); } catch (e) { console.error("[farmer] startup retention failed:", (e as Error).message); }
   startSmartFlow();
   let lastScan = 0;
   let lastSweep = 0;
@@ -1600,14 +1626,7 @@ export async function runLoop(): Promise<void> {
       }
       if (Date.now() - lastRetention > RETENTION_INTERVAL_MS) {
         lastRetention = Date.now();
-        const r = config().scanner;
-        const pruned = pruneHistory({
-          skippedDays: r.retain_skipped_days ?? 30,
-          snapshotDays: r.retain_snapshots_days ?? 3,
-        });
-        if (pruned.decisions || pruned.snapshots) {
-          console.log(`[farmer] retention: pruned ${pruned.decisions} skipped decisions, ${pruned.snapshots} pool snapshots${pruned.vacuumed ? " (vacuumed)" : ""}`);
-        }
+        runRetention();
       }
     } catch (e) {
       logError({

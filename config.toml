@@ -22,6 +22,13 @@ sibling_tvl_tie_pct = 25
 # pool_snapshots is read LIMIT 1 per pool; the rest is an offline dataset.
 retain_skipped_days = 30
 retain_snapshots_days = 3
+# 2026-08-16: the age windows above are calibrated to what the dashboard READS,
+# not what the volume can HOLD. On a one-day-old install nothing was older than
+# 30 days, so retention pruned zero rows and the 0.5 GB Railway volume filled to
+# ENOSPC overnight. This is the hard ceiling: above it, skipped decisions and
+# snapshots are trimmed oldest-first regardless of age. entered/exited rows are
+# never touched. Set well under your volume size — Railway's default is 0.5 GB.
+db_max_mb = 200
 
 [gates]                    # STRATEGY.md §2.1 — pool hard gates
 tvl_min_usd = 5000

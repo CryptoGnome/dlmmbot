@@ -234,7 +234,15 @@ async function pollOnce(): Promise<void> {
   const cutoff = Math.floor(Date.now() / 1000) - config().smartflow.window_min * 60;
   trades = trades.filter((t) => t.ts >= cutoff);
   seenTx = new Set(trades.map((t) => t.hash));
-  writeSmartflowSnapshot();
+  // The snapshot is a dashboard nicety. On a full disk (ENOSPC, 2026-08-16)
+  // this write threw out of the timer as an unhandledRejection and took the
+  // whole farmer down — with a live position open. Never let a cosmetic write
+  // be fatal.
+  try {
+    writeSmartflowSnapshot();
+  } catch (e) {
+    console.error("[smartflow] snapshot write failed (non-fatal):", (e as Error).message);
+  }
 }
 
 /** Start the background collector (no-op without an API key, or if running). */

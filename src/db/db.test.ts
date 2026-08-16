@@ -177,7 +177,7 @@ describe("pruneHistory", () => {
     snap.run("p1", t - 1 * DAY, 1, 1, 1, 1, 1, 1, 1);  // recent → keep
 
     const r = pruneHistory({ skippedDays: 30, snapshotDays: 3 });
-    expect(r).toEqual({ decisions: 1, snapshots: 1, vacuumed: false });
+    expect(r).toMatchObject({ decisions: 1, snapshots: 1, vacuumed: false, mode: "age" });
     expect(count("SELECT COUNT(*) c FROM decisions")).toBe(1);
     expect(count("SELECT COUNT(*) c FROM pool_snapshots")).toBe(1);
   });
@@ -192,6 +192,45 @@ describe("pruneHistory", () => {
     const r = pruneHistory({ skippedDays: 30, snapshotDays: 3 });
     expect(r.decisions).toBe(1);
     expect(count("SELECT COUNT(*) c FROM decisions WHERE action IN ('entered','exited')")).toBe(2);
+  });
+
+  /**
+   * The age windows are calibrated to what the dashboard reads, not what the
+   * volume can hold. On a one-day-old install nothing was older than 30 days,
+   * retention pruned zero rows, and the Railway volume filled to ENOSPC
+   * overnight. The size ceiling is what actually bounds the file.
+   */
+  it("size ceiling trims oldest skipped rows and snapshots regardless of age", () => {
+    const db = getDb();
+    const t = now();
+    const ins = db.prepare("INSERT INTO decisions (ts, mint, pool, action, failed_gate, score, features_json) VALUES (?,?,?,?,?,?,?)");
+    const fat = "x".repeat(2000);
+    // 3000 recent skipped rows ≈ 6 MB — all inside the 30-day window.
+    const many = db.transaction(() => { for (let i = 0; i < 3000; i++) ins.run(t - i, "m", "p", "skipped", "vol_30m", 50, fat); });
+    many();
+    ins.run(t - 500, "m", "p", "entered", null, 80, "{}"); // must survive
+    ins.run(t - 400, "m", "p", "exited", "P3_above_win", null, "{}"); // must survive
+    const before = pruneHistory({ skippedDays: 30, snapshotDays: 3, maxBytes: 0 }); // no ceiling → nothing
+    expect(before.mode).toBe("none");
+    expect(before.decisions).toBe(0);
+
+    const r = pruneHistory({ skippedDays: 30, snapshotDays: 3, maxBytes: 1024 * 1024 }); // 1 MB ceiling
+    expect(r.mode).toBe("size");
+    expect(r.decisions).toBeGreaterThan(0);
+    expect(count("SELECT COUNT(*) c FROM decisions WHERE action IN ('entered','exited')")).toBe(2);
+    // Oldest-first: whatever skipped rows remain are the NEWEST ones.
+    const oldest = (getDb().prepare("SELECT MIN(ts) m FROM decisions WHERE action='skipped'").get() as { m: number | null }).m;
+    if (oldest !== null) expect(t - oldest).toBeLessThan(3000);
+    // And it never loops forever when only audit rows remain.
+    const again = pruneHistory({ skippedDays: 30, snapshotDays: 3, maxBytes: 1 });
+    expect(again.mode).not.toBe(undefined);
+    expect(count("SELECT COUNT(*) c FROM decisions WHERE action IN ('entered','exited')")).toBe(2);
+  });
+
+  it("reports file size before and after so the log line can show it", () => {
+    const r = pruneHistory({ skippedDays: 30, snapshotDays: 3 });
+    expect(r.bytesBefore).toBeGreaterThan(0);
+    expect(r.bytesAfter).toBeGreaterThan(0);
   });
 
   it("gate rejections no longer carry a serialised pool object", () => {
