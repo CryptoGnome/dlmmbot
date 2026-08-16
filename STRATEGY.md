@@ -123,6 +123,10 @@ Action: `removeLiquidity(100%, shouldClaimAndClose)` immediately, market-dump to
 ### P1 — STOP LOSS
 Position mark-to-market in SOL (both sides valued at current price + unclaimed fees) < entry SOL × `[0.75]` → close, swap token side to SOL, realize loss. Token goes on `[24h]` re-entry cooldown. **No conviction override — the bot always takes Gmet's "conviction deteriorated" branch.**
 
+**Wick tolerance (2026-08-16):** while the position is **below range**, the stop must hold for `[4]` consecutive polls (~60s) before P1 fires; **in range it is immediate.** P5's grace timer exists to ride out wicks, but P1 ran ahead of it on a single 15s mark: 4680 pos#11 wicked −54% for under two minutes, P1 cut it at −25%, and the token was +58% within the hour — the biggest loss on the book, on a 5m candle that *closed* at −20%. (The larger bot hit the identical stop on the identical wick and only profited because its exit swap under-filled and the residual sweep sold the leftovers after the bounce — luck, not design.) A violent collapse is still caught immediately by P0 `price_crash`; the sustain only delays the *moderate* below-range case, which is exactly where a wick is plausible.
+
+**Under-filled close (2026-08-16):** if a close leaves the token side in the wallet, that is not a closed position — it is one we stopped watching. The executor now checks the wallet balance for the mint after every close; leftovers are logged as `close_underfilled` with their SOL value, and ≥ `[25%]` of the mark raises an alert. The residual sweep still sells them; the operator just knows at close time instead of discovering it in the ledger.
+
 ### P2 — ROTATION EXIT (opportunity died)
 - **Meme/micro:** pool `fee_tvl_ratio_30m` annualized < `[5%]`/day for `[3]` consecutive polls, **or** volume 30m < `[$5,000]` → close (fast capital).
 - **Majors (spot parking):** both fee **and** volume must be dead — fee annualized < `[0.02%]`/day **and** vol30m < `[$1,500]` for `[120]` polls (~30 min at 15s). Fee floor sits below entry (`[0.05%]`/d) on purpose (hysteresis); equal floors churned PUMP every ~15–45m while volume was still healthy.

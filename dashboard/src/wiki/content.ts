@@ -299,7 +299,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
             code: "P1",
             title: "Stop loss",
             when: "Position value in SOL fell too far vs entry",
-            then: "Close, take the loss, cool the token ~24h",
+            then: "Close, take the loss, cool the token ~24h. Below range it must hold for ~60s first so a wick doesn't cut you (a real crash is caught instantly by P0 anyway); in range it's immediate",
             tone: "danger",
           },
           {

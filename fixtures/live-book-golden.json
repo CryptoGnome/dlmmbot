@@ -5,7 +5,7 @@
       "id": "bot_p1_dump_through",
       "symbol": "BOT",
       "exit_reason": "P1_stop",
-      "notes": "Already fell_deep + below range; continued falling after stop — keep P1 tight.",
+      "notes": "Already fell_deep + below range; continued falling after stop. P1 still fires on a real dump-through — but since 2026-08-16 a stop read BELOW RANGE must sustain across stop_loss_sustain_polls (4) before firing, because 4680 pos#11 was cut on a single mark inside a 90-second wick and the token was +58% within the hour. A violent collapse is still caught immediately by P0 price_crash; P1's sustain only delays the moderate below-range case, which is exactly where a wick is plausible. This fixture holds the mark for the required polls to assert P1 still fires when the dump is real.",
       "entry": {
         "entry_sol": 0.3,
         "entry_price": 1.0,
@@ -29,7 +29,10 @@
           "vol_30m_usd": 60000
         }
       ],
-      "expect": { "exit_reason": "P1_stop" }
+      "expect": {
+        "exit_reason": "P1_stop"
+      },
+      "repeat_polls": 4
     },
     {
       "id": "escape_winner_value_frac_floor",
@@ -59,7 +62,9 @@
           "vol_30m_usd": 90000
         }
       ],
-      "expect": { "exit_reason": "escape" }
+      "expect": {
+        "exit_reason": "escape"
+      }
     },
     {
       "id": "p3_missed_10m_churn",

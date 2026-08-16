@@ -180,6 +180,13 @@ safety_price_crash_pct = -60     # from entry, AT ANY AGE — there is no time w
                                  # the behaviour that works; the old comment was the bug.
 # P1 stop loss
 stop_loss_frac = 0.75            # position SOL value vs entry
+# 2026-08-16: while the position is BELOW range, the stop must hold for this
+# many consecutive 15s polls before P1 fires. 4680 pos#11 wicked -54% for under
+# two minutes, P1 fired on one mark at -25%, and the token was +58% within the
+# hour — the biggest loss on the book, on a candle that CLOSED at -20%. P5's
+# grace timer exists precisely to ride out wicks; P1 was defeating it. In range
+# the stop is still immediate (a real drawdown, not a wick). 4 polls = 60s.
+stop_loss_sustain_polls = 4
 loss_reentry_cooldown_h = 24
 # P2 rotation
 rotation_fee_daily_min_pct = 5

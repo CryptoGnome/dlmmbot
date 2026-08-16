@@ -88,7 +88,10 @@ describe("live-book golden fixtures", () => {
         vi.setSystemTime(new Date("2026-08-13T12:50:00Z"));
         await managePositions(exec);
       } else {
-        await managePositions(exec);
+        // `repeat_polls`: hold the same mark across N ticks. Rules that must
+        // SUSTAIN before firing (P1 below range, since 2026-08-16) need it.
+        const polls = Math.max(1, (c as { repeat_polls?: number }).repeat_polls ?? 1);
+        for (let i = 0; i < polls; i++) await managePositions(exec);
       }
 
       if (c.expect.exit_reason) {

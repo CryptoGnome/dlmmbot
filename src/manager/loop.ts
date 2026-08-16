@@ -103,6 +103,7 @@ const aboveRangeSince = new Map<number, number>();   // P3 sustain timer
 const belowRangeSince = new Map<number, number>();   // P5 grace timer
 const tvlHistory = new Map<number, Array<{ ts: number; tvl: number; price: number }>>(); // P0 TVL-drop window
 const decayStreak = new Map<number, number>();        // P2 consecutive decay polls
+const stopStreak = new Map<number, number>();         // P1 consecutive under-stop polls while below range
 const rugcheckLastCheck = new Map<number, number>();  // P0 rugcheck-flip throttle
 const everInRange = new Set<number>();                // P3 win-vs-missed classification
 const fellDeep = new Set<number>();                   // escape hatch armed (also persisted)
@@ -113,6 +114,7 @@ export function resetManagerStateForTests(): void {
   belowRangeSince.clear();
   tvlHistory.clear();
   decayStreak.clear();
+  stopStreak.clear();
   rugcheckLastCheck.clear();
   everInRange.clear();
   fellDeep.clear();
@@ -166,6 +168,7 @@ function clearRangeTimers(posId: number): void {
   belowRangeSince.delete(posId);
   tvlHistory.delete(posId);
   decayStreak.delete(posId);
+  stopStreak.delete(posId);
   rugcheckLastCheck.delete(posId);
   everInRange.delete(posId);
   fellDeep.delete(posId);
@@ -692,12 +695,39 @@ export async function managePositions(exec: Executor): Promise<void> {
       }
 
       // --- P1 STOP LOSS ---
+      // P5 below-range grace exists so a WICK does not cut the position, but P1
+      // ran ahead of it and read one 15s mark: 4680 pos#11 (2026-08-16) wicked
+      // -54% for under two minutes, P5 armed its 15m grace, P1 fired 80s later
+      // at -25%, and the token was +58% within the hour — the biggest loss on
+      // the book, on a candle that CLOSED at -20%. (The bigger bot hit the same
+      // stop on the same wick and only profited because its exit swap
+      // under-filled and the residual sweep sold the leftovers after the
+      // bounce — luck, not design.)
+      //
+      // So while the position is BELOW RANGE, the stop must SUSTAIN across
+      // consecutive polls before it fires. Keyed on mark.belowRange itself, not
+      // on the P5 timer: P1 runs before P5 in the ladder, so on the first tick
+      // of a wick the timer is not armed yet — keying on it would fire the stop
+      // on tick 1 and defeat the whole point. Inside range the stop is immediate
+      // as before: value falling 25% while price is still in our bins is a real
+      // drawdown, not a wick.
       if (valueFrac < pm.stop_loss_frac) {
-        await closeAndReport(exec, pos, "P1_stop", config().exec.exit_slippage_bps, "stop_loss", `stop loss at ${(valueFrac * 100 - 100).toFixed(1)}%`);
-        clearRangeTimers(pos.id);
-        blacklist(pos.tokenMint, "token", "stop loss cooldown", m.loss_reentry_cooldown_h);
-        recordDecision(pos.tokenMint, pos.poolAddress, "exited", "P1_stop", null, { valueFrac, mark });
-        continue;
+        const inGrace = mark.belowRange;
+        const streak = (stopStreak.get(pos.id) ?? 0) + 1;
+        stopStreak.set(pos.id, streak);
+        const needed = inGrace ? (m.stop_loss_sustain_polls ?? 4) : 1;
+        if (streak < needed) {
+          if (streak === 1) console.log(`[manager] pos#${pos.id} ${pos.symbol}: under stop (${(valueFrac * 100 - 100).toFixed(1)}%) below range — sustaining ${needed} polls before P1`);
+        } else {
+          await closeAndReport(exec, pos, "P1_stop", config().exec.exit_slippage_bps, "stop_loss",
+            `stop loss at ${(valueFrac * 100 - 100).toFixed(1)}%${inGrace ? ` (sustained ${streak} polls below range)` : ""}`);
+          clearRangeTimers(pos.id);
+          blacklist(pos.tokenMint, "token", "stop loss cooldown", m.loss_reentry_cooldown_h);
+          recordDecision(pos.tokenMint, pos.poolAddress, "exited", "P1_stop", null, { valueFrac, mark, sustainedPolls: streak, inGrace });
+          continue;
+        }
+      } else {
+        stopStreak.delete(pos.id);
       }
 
       // --- P2 ROTATION: age limit + consecutive fee/volume decay ---
