@@ -494,7 +494,15 @@ function acquireInstanceLock(): void {
   const claim = () => writeFileSync(LOCK_FILE, String(process.pid), { flag: "wx" });
   try {
     claim(); // wx = atomic create-or-fail; the old exists→read→write window let two simultaneous starters both pass
-  } catch {
+  } catch (e) {
+    // Only EEXIST means "someone holds the lock". Anything else — ENOSPC on a
+    // full volume (2026-08-16), EROFS, EACCES — is the DISK refusing us, and
+    // reporting that as "another instance is running" sends the operator
+    // hunting a phantom process. Say what actually happened.
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code && code !== "EEXIST") {
+      throw new Error(`cannot write ${LOCK_FILE} (${code}) — check the data volume (full? read-only?)`);
+    }
     const oldPid = Number(readFileSync(LOCK_FILE, "utf8").trim());
     let alive = false;
     try {
