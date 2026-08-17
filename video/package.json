@@ -1,0 +1,27 @@
+{
+  "name": "dlmmbot-video",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Daily X update video for DLMM Bot — data from the live dashboard API, rendered with Remotion.",
+  "scripts": {
+    "data": "node scripts/data.mjs",
+    "capture": "node scripts/capture.mjs",
+    "daily": "npm run data && npm run capture && npm run render",
+    "studio": "remotion studio",
+    "render": "remotion render Daily out/daily.mp4",
+    "still": "remotion still Daily out/still.png"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.0",
+    "@remotion/google-fonts": "^4.0.512",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "remotion": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "playwright": "^1.49.0",
+    "typescript": "^5.7.0"
+  }
+}
