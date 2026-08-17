@@ -610,6 +610,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
         type: "ul",
         items: [
           "Per position: wallet SOL out → back + fees + profit-lock withdrawals − costs (REALIZED_PNL). Close rows show Move (deposit/IL) vs Fees separately.",
+          "Move is simply PnL minus fees — everything that isn't fee income is the deposit moving — so Fees + Move always adds up to PnL. (Before v0.8.2 it also subtracted late sweep credits, treating your own capital coming back as income: one under-filled close showed a −0.57 SOL deposit move when the deposit had actually moved −0.04.)",
           "Unknown outcomes stay unknown: force-closed or orphan-repaired rows have no exit value, so they're excluded from realized PnL (and from the breaker/Kelly) instead of counting as fake full losses.",
           "Under-filled closes aren't phantom losses: if the exit swap leaves tokens in the wallet, they're carried at their quoted value until the sweep sells them (usually minutes), so the breaker and Kelly don't react to a loss that never happened. If the sweep can't sell within 30 minutes it stops counting and the loss shows in full.",
           "Paper and live books are fully separate — each mode's positions, Activity entries/skips, sizing history, and brakes only ever see their own rows, even though they share one database.",
