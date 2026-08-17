@@ -168,7 +168,13 @@ export function ShotStage({
       >
         <Img
           src={staticFile(file)}
-          style={{ width: "100%", height: "100%", objectFit: fit, scale: String(drift) }}
+          style={{
+            width: "100%", height: "100%", objectFit: fit,
+            // Anchor to the top: a dashboard tab puts its headline stats in the
+            // first rows, and centring a `cover` crop threw exactly those away.
+            objectPosition: "top center",
+            scale: String(drift),
+          }}
         />
       </div>
       {/* paddingBottom clears the corner label so the last caption line never collides with it. */}

@@ -76,6 +76,34 @@ function round(n) {
   return Math.round((Number(n) || 0) * 1e6) / 1e6;
 }
 
+/**
+ * Realized PnL over trailing windows, from the daily equity series.
+ *
+ * `cum_sol` is cumulative, so a window is just the difference between its
+ * endpoints — no re-summing, and it agrees with the dashboard by construction.
+ * `full` says whether the bot has actually been running that long: on a 4-day-
+ * old book "90 days" is the whole history, and the video should say so rather
+ * than imply three months of track record.
+ */
+const equitySeries = (hist.equity ?? []).filter((e) => e.day <= today);
+const historyDays = equitySeries.length;
+const cumAt = (i) => Number(equitySeries[i]?.cum_sol ?? 0);
+const latestCum = historyDays ? cumAt(historyDays - 1) : 0;
+
+function window(days) {
+  if (!historyDays) return { days, pnl: 0, full: false };
+  const startIdx = historyDays - 1 - days;
+  const base = startIdx >= 0 ? cumAt(startIdx) : 0;
+  return { days, pnl: round(latestCum - base), full: startIdx >= 0 };
+}
+
+const trend = {
+  historyDays,
+  windows: [window(7), window(30), window(90)],
+  // Daily realized PnL, oldest→newest — enough to draw a sparkline natively.
+  series: equitySeries.map((e) => ({ day: e.day, pnl: round(e.sol), cum: round(e.cum_sol) })),
+};
+
 const daily = {
   generatedAt: new Date().toISOString(),
   day: today,
@@ -106,6 +134,7 @@ const daily = {
   reasons,
   releases,
   open,
+  trend,
   errors24h: watch.error_stats?.count_24h ?? 0,
 };
 

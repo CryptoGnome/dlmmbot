@@ -56,6 +56,10 @@ try {
   // Wait for real data, not just the shell: the balance tile only renders a SOL
   // figure once the first watch payload lands.
   await page.getByText(/SOL/).first().waitFor({ timeout: 30_000 });
+  // The first watch payload paints the stat tiles, but the activity feed and
+  // position tables arrive over the WebSocket a beat later — capturing too
+  // early froze "Waiting for live ops events…" into the video.
+  await page.waitForTimeout(6000);
 
   // Toasts float over the UI and would freeze into the video.
   await page.addStyleTag({ content: '[class*="fixed"][class*="z-"] { display: none !important; }' });
@@ -67,6 +71,19 @@ try {
     const file = resolve(SHOTS, `${name}.png`);
     await page.screenshot({ path: file });
     console.log(`captured ${name} -> ${file}`);
+  }
+
+  // Widen the equity chart to ALL before capturing it — the panel defaults to
+  // 30D, and the trend beat is about the whole run, not the last month.
+  await page.evaluate(() => { window.location.hash = "#/analytics"; });
+  await page.waitForTimeout(1200);
+  try {
+    // Accessible name is the DOM text "all" — the tab only *looks* uppercase
+    // (CSS text-transform), and `exact` makes the match case-sensitive.
+    await page.getByRole("button", { name: "all", exact: true }).first().click({ timeout: 5000 });
+    await page.waitForTimeout(1200);
+  } catch {
+    console.warn('range tab "ALL" not found — equity chart stays on its default range');
   }
 
   for (const [name, hash, heading] of PANELS) {

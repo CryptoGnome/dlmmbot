@@ -19,11 +19,18 @@ export interface Daily {
   reasons: Array<{ reason: string; n: number; pnl: number }>;
   releases: Array<{ tag: string; title: string }>;
   open: Array<{ symbol: string; sleeve: string; status: string; pnl: number }>;
+  trend: {
+    historyDays: number;
+    /** `full` is false when the bot hasn't been running that long yet. */
+    windows: Array<{ days: number; pnl: number; full: boolean }>;
+    series: Array<{ day: string; pnl: number; cum: number }>;
+  };
   errors24h: number;
 }
 
 export type SceneId =
-  | "title" | "headline" | "funnel" | "trade" | "positions" | "analytics" | "shipped" | "outro";
+  | "title" | "dashboard" | "headline" | "trend" | "funnel" | "trade"
+  | "positions" | "analytics" | "shipped" | "outro";
 
 export interface Beat { id: SceneId; seconds: number }
 
@@ -34,14 +41,18 @@ export const MAX_SECONDS = 30;
 export function planScenes(d: Daily): Beat[] {
   const beats: Beat[] = [
     { id: "title", seconds: 2.5 },
+    // Early on purpose: show what the thing actually looks like before quoting
+    // numbers at people who have never seen it.
+    { id: "dashboard", seconds: 3 },
     { id: "headline", seconds: 5 },
-    { id: "funnel", seconds: 4 },
+    { id: "trend", seconds: 4.5 },
+    { id: "funnel", seconds: 3.5 },
   ];
 
-  if (d.best && d.best.pnl >= NOTABLE_SOL) beats.push({ id: "trade", seconds: 4 });
-  if (d.open.length > 0) beats.push({ id: "positions", seconds: 3.5 });
-  if (d.today.closes > 0) beats.push({ id: "analytics", seconds: 4.5 });
-  if (d.releases.length > 0) beats.push({ id: "shipped", seconds: 4 });
+  if (d.best && d.best.pnl >= NOTABLE_SOL) beats.push({ id: "trade", seconds: 3.5 });
+  if (d.open.length > 0) beats.push({ id: "positions", seconds: 3 });
+  if (d.today.closes > 0) beats.push({ id: "analytics", seconds: 3.5 });
+  if (d.releases.length > 0) beats.push({ id: "shipped", seconds: 3 });
 
   beats.push({ id: "outro", seconds: 2.5 });
 

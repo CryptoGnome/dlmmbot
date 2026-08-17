@@ -39,6 +39,19 @@ export const Title: React.FC<P> = ({ d }) => {
   );
 };
 
+/** The dashboard itself, early — so the numbers that follow have a home. */
+export const Dashboard: React.FC<P> = ({ d }) => (
+  <ShotStage file="shots/overview.png" label="live dashboard" fit="cover">
+    <Kicker>The bot runs in public</Kicker>
+    <Sub delay={10} color={C.fg}>
+      Every position, every exit rule, every bug — on one open dashboard.
+    </Sub>
+    <Sub delay={18} color={C.dim}>
+      dlmmbot.com · running v{d.version ?? ""}
+    </Sub>
+  </ShotStage>
+);
+
 export const Headline: React.FC<P> = ({ d }) => {
   const v = useCountUp(d.today.pnl, 34, 8);
   const bal = useCountUp(d.balance.total, 34, 22);
@@ -51,8 +64,8 @@ export const Headline: React.FC<P> = ({ d }) => {
           delay={30}
           rows={[
             { k: "Balance", v: `${bal.toFixed(2)} SOL` },
+            { k: `All-time · ${d.allTime.closes} closes`, v: `${sol(d.allTime.pnl)} SOL`, c: tone(d.allTime.pnl) },
             { k: "In positions", v: `${d.balance.open.toFixed(2)} SOL` },
-            { k: "Trades closed", v: String(d.today.closes) },
           ]}
         />
       }
@@ -69,6 +82,51 @@ export const Headline: React.FC<P> = ({ d }) => {
         ≈ ${commas(d.balance.usd)} at ${d.balance.solUsd}/SOL
       </Sub>
     </Stage>
+  );
+};
+
+/**
+ * The run so far: real equity chart, plus realized PnL over trailing windows.
+ * A window the bot hasn't lived through yet is labelled with the history it
+ * actually has — claiming a 90-day number on a 4-day book would be a lie.
+ */
+export const Trend: React.FC<P> = ({ d }) => {
+  const frame = useCurrentFrame();
+  const { historyDays, windows } = d.trend;
+  // Only windows the bot has actually lived through. Early on, three identical
+  // numbers reads as a broken chart rather than a short track record — so a
+  // 4-day-old book shows one honest "since launch" card, and 7D/30D/90D appear
+  // on their own as the history reaches them.
+  const cards = [
+    ...windows.filter((w) => w.full).map((w) => ({ k: `${w.days}D`, v: w.pnl })),
+    { k: `Since launch · ${historyDays}d`, v: d.allTime.pnl },
+  ];
+  return (
+    <ShotStage file="shots/equity.png" label="the run so far">
+      <Kicker>Profit / loss over time</Kicker>
+      <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+        {cards.map((c, i) => {
+          const t = enter(frame, 10 + i * 7, 16);
+          return (
+            <div
+              key={c.k}
+              style={{
+                opacity: t, translate: `0px ${(1 - t) * 16}px`,
+                border: `1px solid ${C.grid}`, backgroundColor: `${C.panel}EE`,
+                padding: "18px 30px", borderRadius: 10, minWidth: 300,
+              }}
+            >
+              <div style={{ fontSize: 28, color: C.dim, letterSpacing: 3 }}>{c.k}</div>
+              <div style={{ fontSize: 52, color: tone(c.v), marginTop: 8 }}>{sol(c.v)} SOL</div>
+            </div>
+          );
+        })}
+      </div>
+      <Sub delay={34} color={C.dim}>
+        {d.allTime.closes} closes · win rate{" "}
+        {d.allTime.winRate != null ? `${Math.round(d.allTime.winRate * 100)}%` : "—"} · all of it public.
+      </Sub>
+    </ShotStage>
   );
 };
 
@@ -242,4 +300,4 @@ export const Outro: React.FC<P> = ({ d }) => {
   );
 };
 
-export const SCENES = { title: Title, headline: Headline, funnel: Funnel, trade: Trade, positions: Positions, analytics: Analytics, shipped: Shipped, outro: Outro } as const;
+export const SCENES = { title: Title, dashboard: Dashboard, headline: Headline, trend: Trend, funnel: Funnel, trade: Trade, positions: Positions, analytics: Analytics, shipped: Shipped, outro: Outro } as const;
