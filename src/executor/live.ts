@@ -17,7 +17,6 @@ import type { ExitReason, Position } from "../types.js";
 import { classifyLeftover, RESIDUAL_SWEEP_MIN_SOL } from "./executor.js";
 import type { Executor, OpenParams, PositionMark } from "./executor.js";
 import { quoteToSolLamports, swapToSolEscalating } from "./jupiter.js";
-import { zapToSolEscalating } from "./zap.js";
 import {
   computeUnitLimitFor, computeUnitLimitIx, escalate, hasComputeUnitLimit,
   priorityFeeSettings, recentFeeMicroLamports, setComputeUnitPrice, writableAccountsOf,
@@ -70,8 +69,8 @@ const StrategyType = dlmmMod.StrategyType;
 //  - Ranges wider than 69 bins split across multiple position accounts, SOL
 //    allocated per chunk by the same linear bid-ask weighting the paper
 //    executor simulates.
-//  - Exits: removeLiquidity(100%, shouldClaimAndClose) then token→SOL via Zap
-//    SDK (Jupiter V6) when use_zap=true, else manual Jupiter lite swap.
+//  - Exits: removeLiquidity(100%, shouldClaimAndClose) then token→SOL via
+//    Jupiter versioned /swap with escalating slippage (swapToSolEscalating).
 //  - exitSol / claim values are recorded from pre-close marks and quotes —
 //    good ledger accuracy; exact fill audit belongs to the tx history.
 // ============================================================================
@@ -422,38 +421,33 @@ export class LiveExecutor implements Executor {
     return last!.total;
   }
 
-  /** Token-side → SOL after remove/claim. Zap SDK first when enabled; manual Jupiter fallback. */
+  /**
+   * Token-side → SOL after remove/claim: Jupiter versioned `/swap` with
+   * escalating slippage.
+   *
+   * There used to be a second path in front of this — a legacy, direct-routes-
+   * only transaction hand-assembled from `/swap-instructions` (originally via
+   * @meteora-ag/zap-sdk, `use_zap`). It was a strict subset of what this call
+   * does: legacy tx so no lookup tables, direct routes only so it 400'd on any
+   * fresh meme, 30-account cap. Every close it could do, this one can; the
+   * reverse was never true. It cost three incidents in as many days — 6025
+   * InvalidTokenAccount from the SDK dropping setup instructions (v0.5.1), the
+   * in-place escape reshape leaving empty shells, and a 400-storm on every close
+   * that widened the stale-balance-read window (v0.10.1). Removed outright in
+   * v0.11.0 rather than left off-by-default: an off-by-default path is one that
+   * comes back on in somebody's old volume config, which is exactly what bit
+   * the live bot for two days.
+   */
   private async tokenToSol(
     mint: string, amountRaw: bigint, slippageBps: number,
   ): Promise<{ signature: string } | null> {
     if (amountRaw <= 0n || mint === SOL_MINT) return null;
-    const sendTx = (tx: Transaction) => this.send(tx);
-    if (config().exec.use_zap) {
-      try {
-        const zap = await zapToSolEscalating(this.wallet, mint, amountRaw, slippageBps, sendTx);
-        if (zap) return { signature: zap.signature };
-      } catch (e) {
-        // A fate-unknown send must NOT fall through to the manual swap: if the
-        // zap actually landed, selling amountRaw again double-sells (or, on a
-        // below-range close, records the real exit under a discarded sig).
-        if ((e as { maybeSig?: string }).maybeSig) throw e;
-        console.error("[live] zap path failed, falling back to manual jupiter:", (e as Error).message.split("\n")[0]);
-      }
-      // "Zap threw" is not "zap didn't execute" — send() may have recovered a
-      // landed attempt on a later slippage tier, or a leg landed then a
-      // follow-up errored. Re-read the wallet and only sell what is still there.
-      const bal = await this.tokenBalanceRaw(mint).catch(() => null);
-      if (bal !== null) {
-        if (bal <= 0n) return null; // zap (or someone) already sold it all
-        if (bal < amountRaw) amountRaw = bal;
-      }
-    }
-    const manual = await swapToSolEscalating(this.connection, this.wallet, mint, amountRaw, slippageBps)
+    const swap = await swapToSolEscalating(this.connection, this.wallet, mint, amountRaw, slippageBps)
       .catch((e) => {
-        console.error("[live] manual swap failed:", (e as Error).message.split("\n")[0]);
+        console.error("[live] swap failed:", (e as Error).message.split("\n")[0]);
         return null;
       });
-    return manual ? { signature: manual.signature } : null;
+    return swap ? { signature: swap.signature } : null;
   }
 
   /**

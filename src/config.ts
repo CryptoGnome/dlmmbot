@@ -213,7 +213,7 @@ export interface Config {
     displacement_max_per_6h: number;
   };
   exec: {
-    mode: "paper" | "live"; use_zap: boolean;
+    mode: "paper" | "live";
     exit_slippage_bps: number; safety_exit_slippage_bps: number;
     tx_retries: number; paper_promotion_days: number;
     /**
@@ -340,6 +340,13 @@ function load(): Config {
     if (raw[section] === undefined || typeof raw[section] !== "object") {
       throw new Error(`config.toml is missing required section [${section}] — refusing to load a gutted config`);
     }
+  }
+  // Removed keys: say so once, so a stale volume config does not leave the
+  // operator believing a knob still does something. Extra keys are otherwise
+  // ignored by the loader, so nothing here can prevent startup.
+  const exec = raw.exec as Record<string, unknown> | undefined;
+  if (exec && "use_zap" in exec) {
+    console.warn("[config] exec.use_zap is ignored — the zap swap path was removed in v0.11.0; closes use Jupiter /swap directly");
   }
   return raw as unknown as Config;
 }
