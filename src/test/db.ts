@@ -38,6 +38,9 @@ export function insertClosedPosition(opts: {
   withdrawnSol?: number;
   followChainId?: number | null;
   mode?: string;
+  strandedSol?: number;
+  /** Seconds ago the strand was recorded; drives the STRANDED_GRACE_S expiry. */
+  strandedAgeS?: number;
 }): number {
   const ts = opts.exitTs ?? now();
   const res = getDb().prepare(
@@ -45,9 +48,10 @@ export function insertClosedPosition(opts: {
        mode, pool, token_mint, symbol, entry_ts, entry_price, entry_sol,
        min_bin_id, max_bin_id, state, fees_claimed_sol, rent_paid_sol,
        exit_ts, exit_sol, exit_reason, open_cost_sol, close_return_sol,
-       fees_measured_sol, recovered_sol, withdrawn_sol, follow_chain_id
+       fees_measured_sol, recovered_sol, withdrawn_sol, follow_chain_id,
+       stranded_sol, stranded_at
      ) VALUES (?, 'pool', 'mint', 'TST', ?, 1, ?, 1, 10, 'closed_win', ?, 0,
-               ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+               ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     // Default "paper", matching the mode the test process runs in — the risk
     // queries filter on currentMode() and would silently skip "live" rows.
@@ -64,6 +68,8 @@ export function insertClosedPosition(opts: {
     opts.recoveredSol ?? 0,
     opts.withdrawnSol ?? 0,
     opts.followChainId === undefined ? null : opts.followChainId,
+    opts.strandedSol ?? 0,
+    opts.strandedSol ? now() - (opts.strandedAgeS ?? 0) : null,
   );
   return Number(res.lastInsertRowid);
 }

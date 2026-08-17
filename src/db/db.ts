@@ -237,6 +237,12 @@ function migrate(database: Database.Database): void {
   try {
     database.exec("ALTER TABLE positions ADD COLUMN withdrawn_sol REAL NOT NULL DEFAULT 0");
   } catch { /* column already exists */ }
+  try {
+    database.exec("ALTER TABLE positions ADD COLUMN stranded_sol REAL NOT NULL DEFAULT 0");
+  } catch { /* column already exists */ }
+  try {
+    database.exec("ALTER TABLE positions ADD COLUMN stranded_at INTEGER");
+  } catch { /* column already exists */ }
   // pnl_daily: day-only PK → (day, mode). A paper→live flip mid-day used to
   // overwrite the day's paper row, deleting it from the promotion scoreboard.
   {
@@ -297,7 +303,7 @@ CREATE INDEX IF NOT EXISTS idx_error_log_ts ON error_log(ts DESC);
   const required = [
     "ever_in_range", "open_cost_sol", "close_return_sol", "fell_deep",
     "fees_measured_sol", "recovered_sol", "fees_at_close_sol", "follow_chain_id",
-    "withdrawn_sol",
+    "withdrawn_sol", "stranded_sol", "stranded_at",
   ];
   const missing = required.filter((c) => !cols.has(c));
   if (missing.length)
@@ -357,8 +363,38 @@ export function now(): number {
  * by BOTH executors and never shrunk (entry_sol is, so it must not be the
  * basis for measured rows).
  *
+ * stranded_sol: an under-filled close leaves the token side in the wallet. Those
+ * tokens are an ASSET we still hold, not a loss — but close_return_sol only sees
+ * the SOL that actually landed, and recovered_sol stays 0 until the residual
+ * sweep sells them, up to ten minutes later. In that gap the row reads as a
+ * near-total loss. ANSEM pos#8 (2026-08-17) booked -0.5422 SOL at 08:09:53 on a
+ * 75%-under-filled close; the sweep sold the residue 112s later for 0.5323 and
+ * the true figure was -0.0100. The phantom loss tripped the daily circuit
+ * breaker 52 seconds after the close — a wrong number is not cosmetic, it steers
+ * the book. So the quoted value of the leftovers (a real Jupiter quote taken at
+ * close time) stands in until the sweep replaces it with a measured number.
+ *
+ * The credit EXPIRES after STRANDED_GRACE_S. That bound is the whole safety
+ * argument: if the sweep cannot sell the residue — no route, honeypot, worthless
+ * — this is no longer settlement lag but a bag we are actually holding, and the
+ * loss must show. A credit that never expired would turn this fix into a way to
+ * under-report real losses, which is strictly worse than the bug it fixes.
+ * Only the sweep and the close write these columns, and the sweep zeroes
+ * stranded_sol as it credits recovered_sol, so the two can never double-count.
+ *
  * Lives in db.ts so every consumer can import it without an import cycle.
  */
+/** How long a close-time strand estimate may stand in for a measured recovery. */
+export const STRANDED_GRACE_S = 30 * 60; // 3 sweep attempts at the 10-min interval
+
+// Unsettled, still-fresh strand value. `strftime` (not a bound parameter)
+// because REALIZED_PNL_SQL is interpolated into ~10 call sites whose parameter
+// ordering would all have to change.
+const STRANDED_CREDIT_SQL = `
+  CASE WHEN COALESCE(stranded_sol, 0) > 0
+        AND COALESCE(stranded_at, 0) > CAST(strftime('%s', 'now') AS INTEGER) - ${STRANDED_GRACE_S}
+       THEN stranded_sol ELSE 0 END`;
+
 export const REALIZED_PNL_SQL = `
   CASE WHEN close_return_sol IS NOT NULL
         AND (open_cost_sol IS NOT NULL OR entry_sol > 0)
@@ -366,6 +402,7 @@ export const REALIZED_PNL_SQL = `
             + COALESCE(fees_measured_sol, 0)
             + COALESCE(withdrawn_sol, 0)
             + COALESCE(recovered_sol, 0)
+            + ${STRANDED_CREDIT_SQL}
             - COALESCE(open_cost_sol, entry_sol + COALESCE(rent_paid_sol, 0))
        WHEN entry_sol > 0 AND exit_sol IS NOT NULL
        THEN exit_sol - entry_sol
@@ -374,6 +411,7 @@ export const REALIZED_PNL_SQL = `
                    ELSE COALESCE(fees_claimed_sol, 0) END
             + COALESCE(withdrawn_sol, 0)
             + COALESCE(recovered_sol, 0)
+            + ${STRANDED_CREDIT_SQL}
        ELSE NULL END`;
 
 // ---- blacklist helpers (STRATEGY.md §6) ----

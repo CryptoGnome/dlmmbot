@@ -5,7 +5,7 @@ import {
 } from "./limits.js";
 import { installConfig, restoreConfig } from "../test/config.js";
 import { useMemoryDb, resetTestDb, insertClosedPosition } from "../test/db.js";
-import { getDb, now } from "../db/db.js";
+import { getDb, now, STRANDED_GRACE_S } from "../db/db.js";
 import { config } from "../config.js";
 import { majorsPositionSize } from "./majors.js";
 
@@ -168,6 +168,40 @@ describe("circuitBreakerTripped", () => {
       exitTs: now() - 60,
     });
     expect(circuitBreakerTripped(10)).toBe(false);
+  });
+
+  it("does not trip on an under-filled close whose tokens are still in the wallet", () => {
+    // The 2026-08-17 incident, exactly: ANSEM pos#8 closed with 75% of the
+    // position left unsold in the wallet, booked −0.5422, and paused all new
+    // entries 52 seconds later. The sweep sold the residue for 0.5323 and the
+    // real number was −0.0100 — the breaker had steered on a loss that never
+    // happened. Sweep interval is 10 min, so the exposure window is that wide.
+    insertClosedPosition({
+      entrySol: 0.75,
+      exitSol: 0.7144,
+      openCostSol: 0.8669,
+      closeReturnSol: 0.2955,
+      feesMeasuredSol: 0.0292,
+      strandedSol: 0.5327,
+      exitTs: now() - 60,
+    });
+    expect(circuitBreakerTripped(9.9)).toBe(false); // −0.0095, not −0.5422
+  });
+
+  it("still trips once a strand outlives the grace window", () => {
+    // Residue the sweep never sold: a real bag, a real loss, and the breaker
+    // must see it. Without the expiry this fix would silently mute the breaker.
+    insertClosedPosition({
+      entrySol: 0.75,
+      exitSol: 0.7144,
+      openCostSol: 0.8669,
+      closeReturnSol: 0.2955,
+      feesMeasuredSol: 0.0292,
+      strandedSol: 0.5327,
+      strandedAgeS: STRANDED_GRACE_S + 60,
+      exitTs: now() - 60,
+    });
+    expect(circuitBreakerTripped(9.9)).toBe(true); // −0.5422 vs 5% of 9.9
   });
 });
 

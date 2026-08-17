@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { getDb, isBlacklisted, REALIZED_PNL_SQL, logError, now, pruneHistory, recordCreatorRug, recordDecision, upsertTokenMeta } from "./db.js";
+import { getDb, isBlacklisted, REALIZED_PNL_SQL, STRANDED_GRACE_S, logError, now, pruneHistory, recordCreatorRug, recordDecision, upsertTokenMeta } from "./db.js";
 import { useMemoryDb, resetTestDb, insertClosedPosition } from "../test/db.js";
 
 function pnlFor(id: number): number | null {
@@ -89,6 +89,66 @@ describe("REALIZED_PNL_SQL", () => {
       withdrawnSol: 0.4,
     });
     expect(pnlFor(id)).toBeCloseTo(0.1, 8);
+  });
+
+  // ANSEM pos#8, 2026-08-17 08:09:53 (live). The close swap under-filled and
+  // left 75% of the position sitting in the wallet as tokens. Un-credited, the
+  // row read −0.5422 SOL and tripped the daily circuit breaker 52s later; the
+  // sweep sold the residue 112s after the close and the truth was −0.0100.
+  it("credits a fresh strand so an under-filled close is not a phantom loss", () => {
+    const id = insertClosedPosition({
+      entrySol: 0.75,
+      exitSol: 0.7144,
+      openCostSol: 0.8669,
+      closeReturnSol: 0.2955,
+      feesMeasuredSol: 0.0292,
+      strandedSol: 0.5327,
+    });
+    expect(pnlFor(id)).toBeCloseTo(0.2955 + 0.0292 + 0.5327 - 0.8669, 8);
+    expect(pnlFor(id)!).toBeGreaterThan(-0.02); // not the −0.54 phantom
+  });
+
+  it("expires the strand credit once the grace window passes", () => {
+    // A residue the sweep cannot sell is a bag we are holding, not settlement
+    // lag. The credit must decay to the real loss or it hides losses forever —
+    // strictly worse than the bug it fixes.
+    const id = insertClosedPosition({
+      entrySol: 0.75,
+      exitSol: 0.7144,
+      openCostSol: 0.8669,
+      closeReturnSol: 0.2955,
+      feesMeasuredSol: 0.0292,
+      strandedSol: 0.5327,
+      strandedAgeS: STRANDED_GRACE_S + 60,
+    });
+    expect(pnlFor(id)).toBeCloseTo(0.2955 + 0.0292 - 0.8669, 8);
+  });
+
+  it("never counts the strand estimate and the swept recovery together", () => {
+    // The sweep zeroes stranded_sol as it credits recovered_sol. Belt-and-braces
+    // on the invariant: a row carrying both must not double-count.
+    const id = insertClosedPosition({
+      entrySol: 0.75,
+      exitSol: 0.7144,
+      openCostSol: 0.8669,
+      closeReturnSol: 0.2955,
+      feesMeasuredSol: 0.0292,
+      recoveredSol: 0.5323,
+      strandedSol: 0, // what the sweep leaves behind
+    });
+    expect(pnlFor(id)).toBeCloseTo(0.2955 + 0.0292 + 0.5323 - 0.8669, 8);
+  });
+
+  it("credits a strand on the legacy notional branch too", () => {
+    const id = insertClosedPosition({
+      entrySol: 0.3,
+      exitSol: 0.1,
+      feesClaimedSol: 0.01,
+      openCostSol: null,
+      closeReturnSol: null,
+      strandedSol: 0.18,
+    });
+    expect(pnlFor(id)).toBeCloseTo(0.1 - 0.3 + 0.01 + 0.18, 8);
   });
 
   it("uses close_return when open_cost is missing (partial wallet columns)", () => {

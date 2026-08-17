@@ -192,12 +192,15 @@ async function closeAndReport(
   // Re-read fees and actual wallet deltas: the close itself may claim
   // outstanding fees, and open_cost/close_return carry the real rent+tx costs.
   const row = getDb().prepare(
-    "SELECT fees_claimed_sol, fees_measured_sol, recovered_sol, open_cost_sol, close_return_sol, fees_at_close_sol, withdrawn_sol FROM positions WHERE id = ?"
+    "SELECT fees_claimed_sol, fees_measured_sol, recovered_sol, open_cost_sol, close_return_sol, fees_at_close_sol, withdrawn_sol, stranded_sol FROM positions WHERE id = ?"
   ).get(pos.id) as {
     fees_claimed_sol: number; fees_measured_sol: number; recovered_sol: number;
     open_cost_sol: number | null; close_return_sol: number | null; fees_at_close_sol: number;
-    withdrawn_sol: number;
+    withdrawn_sol: number; stranded_sol: number;
   } | undefined;
+  // Written moments ago by the close itself, so it is always inside the grace
+  // window here — no expiry check, unlike REALIZED_PNL_SQL which reads old rows.
+  const stranded = row?.stranded_sol ?? 0;
   const feesClaimed = row?.fees_claimed_sol ?? pos.feesClaimedSol;
   const feesAtClose = row?.fees_at_close_sol ?? 0;
   // Display prefers the MEASURED claim credit over the pool-mid mark. Book-wide
@@ -214,7 +217,7 @@ async function closeAndReport(
   // measured losses). Book / dash / circuit breaker already use REALIZED_PNL_SQL.
   const markPnl = res.exitSol + feesClaimed - pos.entrySol;
   const measuredPnl = row?.open_cost_sol != null && row?.close_return_sol != null
-    ? row.close_return_sol + row.fees_measured_sol + row.withdrawn_sol + row.recovered_sol - row.open_cost_sol
+    ? row.close_return_sol + row.fees_measured_sol + row.withdrawn_sol + row.recovered_sol + stranded - row.open_cost_sol
     : null;
   const pnl = measuredPnl ?? markPnl;
   const pctBase = measuredPnl != null && row?.open_cost_sol ? row.open_cost_sol : pos.entrySol;
@@ -224,7 +227,13 @@ async function closeAndReport(
   let trueLine = "";
   if (measuredPnl != null && row) {
     trueLine = `\ntrue PnL (measured): ${measuredPnl >= 0 ? "+" : ""}${measuredPnl.toFixed(4)} SOL` +
-      ` [in ${row.open_cost_sol!.toFixed(4)} → out ${(row.close_return_sol! + row.fees_measured_sol + row.withdrawn_sol + row.recovered_sol).toFixed(4)}]`;
+      ` [in ${row.open_cost_sol!.toFixed(4)} → out ${(row.close_return_sol! + row.fees_measured_sol + row.withdrawn_sol + row.recovered_sol + stranded).toFixed(4)}]`;
+    // Say so when part of "out" is still tokens. The figure is provisional until
+    // the sweep sells them, and an operator reading a number this close to flat
+    // is owed the reason it is not final.
+    if (stranded > 0) {
+      trueLine += `\nincl. ~${stranded.toFixed(4)} SOL still held as tokens (swap under-filled) — provisional until the sweep sells`;
+    }
     if (Math.abs(markPnl - measuredPnl) > 0.02) {
       trueLine += `\nmark PnL (display-only): ${markPnl >= 0 ? "+" : ""}${markPnl.toFixed(4)} SOL`;
     }
