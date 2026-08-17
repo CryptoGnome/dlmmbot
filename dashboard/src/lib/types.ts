@@ -77,6 +77,8 @@ export interface LiveWatch {
   balance?: {
     wallet_sol: number | null;
     deployed_sol: number;
+    /** Rent paid above the deposit on open positions — ~97% refundable at close. */
+    rent_in_flight_sol?: number;
     total_sol: number | null;
     sol_usd: number | null;
     total_usd: number | null;

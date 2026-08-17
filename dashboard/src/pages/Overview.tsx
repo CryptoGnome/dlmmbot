@@ -72,12 +72,11 @@ export function OverviewPage({
   let openEntry = 0;
   let openPnlKnown = 0;
   // Rent in flight: what the open positions cost to open ABOVE their deposit —
-  // bin-array + position-account rent and open gas. Open profit is marked
-  // against the deposit and does not see it, so total balance reads below
-  // start + realized + open by roughly this amount for as long as positions
-  // are open (~0.06–0.12 SOL each). Most is refundable rent that comes back
-  // through close_return; the tile says so, so the numbers reconcile on screen.
-  let rentInFlight = 0;
+  // bin-array + position-account rent and open gas. It is counted inside Total
+  // balance (it is the operator's SOL, ~97% refundable at close) but NOT inside
+  // Open profit, which marks the liquidity only. Showing it on both tiles is
+  // what makes wallet + open + rent reconcile to the balance on screen.
+  let rentComputed = 0;
   let rentKnown = 0;
   for (const p of open) {
     const n = p.mark?.total_pnl_sol ?? p.mark?.pnl_sol;
@@ -87,13 +86,16 @@ export function OverviewPage({
       openPnlKnown += 1;
     }
     if (p.open_cost_sol != null && p.entry_sol != null) {
-      rentInFlight += Math.max(0, p.open_cost_sol - p.entry_sol);
+      rentComputed += Math.max(0, p.open_cost_sol - p.entry_sol);
       rentKnown += 1;
     }
   }
+  // Prefer the server's figure — it is the one inside total_sol, so the tiles
+  // cannot disagree with the balance they are explaining.
+  const rentInFlight = watch?.balance?.rent_in_flight_sol ?? rentComputed;
   const openPct = openPnlKnown && openEntry > 0 ? openPnl / openEntry : null;
-  const openSub = rentKnown
-    ? `${slots.label} · ${rentInFlight.toFixed(3)} SOL rent in flight`
+  const openSub = rentKnown || rentInFlight > 0
+    ? `${slots.label} · ${rentInFlight.toFixed(3)} SOL rent in flight (in balance, not here)`
     : slots.label;
 
   return (
@@ -107,8 +109,10 @@ export function OverviewPage({
           sub={
             balUsd != null
               ? `≈ ${fmtUsd(balUsd)} · wallet ${(watch?.balance?.wallet_sol ?? 0).toFixed(2)} + open ${(watch?.balance?.deployed_sol ?? 0).toFixed(2)}`
+                + (rentInFlight > 0 ? ` + rent ${rentInFlight.toFixed(2)}` : "")
               : "waiting for heartbeat wallet"
           }
+          title="Everything you own: free wallet SOL, the mark value of open liquidity, and the rent those positions paid up front (bin arrays + position accounts). Rent is counted because it is your SOL — measured across clean closes it comes back at ~97%; the rest is close gas and any newly-created bin array. Without it the balance would drop when a position opens and jump when it closes, which says nothing about what you are worth."
         />
         <HeroStat
           label="Open profit"
@@ -117,7 +121,7 @@ export function OverviewPage({
           pct={openPct}
           tone={!openPnlKnown ? "fg" : openPnl >= 0 ? "ok" : "danger"}
           sub={openSub}
-          title="Mark-to-market on the liquidity only. Rent in flight is what the open positions paid above their deposit (bin-array + position rent, open gas); it is not counted here and mostly comes back at close — which is why Total balance sits below start + realized + open by about that much while positions are open."
+          title="Mark-to-market on the liquidity only — it does not include the rent those positions paid up front. That rent IS counted in Total balance (it is your SOL, ~97% refundable at close); it is shown here so the two tiles add up to the balance rather than appearing to disagree with it."
         />
         <HeroStat
           label="Last 24h profit"
