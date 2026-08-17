@@ -13,8 +13,10 @@ import { toast } from "@/lib/toast";
  * because "closed" appearing instantly when it has not happened yet is exactly
  * the kind of lie that costs money.
  *
- * The dash token has to be re-entered, matching HALT and blacklist-clear: this
- * moves real funds and cannot be undone, so an unattended tab is not enough.
+ * Authenticated by the dash token already on the request — reaching this screen
+ * at all requires it. The dialog is the misclick guard: a position card is an
+ * easy thing to fat-finger, so it names the position and shows what you are
+ * about to sell before the red button does anything.
  */
 export function ClosePositionButton({
   id, symbol, entrySol, pnlSol, rangeStatus, requestedAt,
@@ -27,20 +29,18 @@ export function ClosePositionButton({
   requestedAt?: number | null;
 }) {
   const [open, setOpen] = useState(false);
-  const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const pending = requestedAt != null;
 
   async function confirm() {
-    if (busy || !token) return;
+    if (busy) return;
     setBusy(true);
     setErr(null);
     try {
-      const res = await closePosition(id, token);
+      const res = await closePosition(id);
       setOpen(false);
-      setToken("");
       toast({
         title: res.already ? `pos#${id} ${symbol} already queued` : `pos#${id} ${symbol} queued to close`,
         detail: "The farmer closes it on the next manage tick and reports the PnL.",
@@ -121,19 +121,6 @@ export function ClosePositionButton({
               may differ from the figure above.
             </p>
 
-            <label className="mt-3 block text-[10px] tracking-wider text-muted uppercase">
-              Re-enter dash token
-              <input
-                type="password"
-                autoFocus
-                value={token}
-                disabled={busy}
-                onChange={(e) => setToken(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") void confirm(); }}
-                className="mt-1 w-full border border-grid bg-bg px-2 py-1 font-mono text-[11px] text-fg outline-none focus:border-accent"
-              />
-            </label>
-
             {err && <p className="mt-2 text-[10px] text-danger">{err}</p>}
 
             <div className="mt-4 flex justify-end gap-2">
@@ -147,7 +134,8 @@ export function ClosePositionButton({
               </button>
               <button
                 type="button"
-                disabled={busy || !token}
+                autoFocus
+                disabled={busy}
                 onClick={() => void confirm()}
                 className="border border-danger bg-danger/15 px-3 py-1 text-[10px] tracking-wider text-danger uppercase hover:bg-danger/25 disabled:opacity-40"
               >
