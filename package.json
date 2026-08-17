@@ -26,7 +26,6 @@
     "docs:build": "npm --prefix docs-site ci && npm --prefix docs-site run build",
     "railway:start": "node deploy/railway-start.mjs",
     "typecheck": "tsc --noEmit",
-    "typecheck:deploy": "tsc -p tsconfig.deploy.json",
     "build": "tsc",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
