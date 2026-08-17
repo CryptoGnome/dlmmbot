@@ -353,21 +353,73 @@ export class LiveExecutor implements Executor {
     throw lastErr ?? new Error("tx failed");
   }
 
-  /** Current wallet balance of a mint, raw units, across both token programs. */
+  /**
+   * Current wallet balance of a mint, raw units, across both token programs.
+   *
+   * `minContextSlot`: read no earlier than this slot. A "confirmed" write on one
+   * RPC replica is not guaranteed visible on the replica that answers the next
+   * "confirmed" read — Helius load-balances — so a balance read straight after
+   * removeLiquidity could return the PRE-remove amount. The close then sold
+   * that stale, smaller number: the swap "succeeded", returned MORE SOL than the
+   * mark (EYE pos#17: 1.70x, MANLET pos#14: 1.16x, BUTTHOLE pos#15: 1.26x —
+   * three "under-fills" that were nothing of the sort), and the true remainder
+   * sat in the wallet to be flagged as a strand. Pinning the read to the slot
+   * the remove confirmed in makes a lagging replica return an error (which
+   * we retry) instead of a wrong number.
+   */
   private async tokenBalanceRaw(mint: string): Promise<bigint> {
+    return (await this.tokenBalanceWithSlot(mint)).total;
+  }
+
+  /** As tokenBalanceRaw, but also returns the slot the RPC evaluated it at. */
+  private async tokenBalanceWithSlot(mint: string): Promise<{ total: bigint; slot: number }> {
     let total = 0n;
+    let slot = 0;
     const TOKEN_PROGRAMS = [
       new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
       new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"),
     ];
     for (const programId of TOKEN_PROGRAMS) {
       const accs = await this.connection.getParsedTokenAccountsByOwner(this.wallet.publicKey, { programId });
+      // Two reads may hit two replicas; the answer is only as fresh as the
+      // OLDER of them, so take the min.
+      slot = slot === 0 ? accs.context.slot : Math.min(slot, accs.context.slot);
       for (const acc of accs.value) {
         const info = acc.account.data.parsed.info as { mint: string; tokenAmount: { amount: string } };
         if (info.mint === mint) total += BigInt(info.tokenAmount.amount);
       }
     }
-    return total;
+    return { total, slot };
+  }
+
+  /**
+   * Wallet balance of a mint that is guaranteed to reflect `afterSig`.
+   *
+   * Resolves the slot that signature landed in, then re-reads until the RPC
+   * reports a context slot at or past it. The parsed token-accounts call has no
+   * minContextSlot parameter, so this is the equivalent done client-side: every
+   * response carries the slot it was evaluated at, and we simply refuse to
+   * accept one from before the write. Bounded (~6s); if a replica never catches
+   * up we take the last read rather than fail the close, and if the slot cannot
+   * be resolved at all we fall back to a plain read — a diagnostic lookup must
+   * never block an exit.
+   */
+  private async tokenBalanceAfter(mint: string, afterSig: string | null): Promise<bigint> {
+    if (!afterSig) return this.tokenBalanceRaw(mint);
+    let landedSlot: number | null = null;
+    try {
+      const st = (await this.connection.getSignatureStatuses([afterSig]))?.value?.[0];
+      landedSlot = st?.slot ?? null;
+    } catch { /* fall through to a plain read */ }
+    if (landedSlot == null) return this.tokenBalanceRaw(mint);
+    let last: { total: bigint; slot: number } | null = null;
+    for (let i = 0; i < 12; i++) {
+      last = await this.tokenBalanceWithSlot(mint);
+      if (last.slot >= landedSlot) return last.total;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    console.warn(`[live] balance read never reached slot ${landedSlot} (got ${last?.slot}) — using latest`);
+    return last!.total;
   }
 
   /** Token-side → SOL after remove/claim. Zap SDK first when enabled; manual Jupiter fallback. */
@@ -871,7 +923,9 @@ export class LiveExecutor implements Executor {
     let walletX = 0n;
     let walletXKnown = false;
     try {
-      walletX = await this.tokenBalanceRaw(position.tokenMint);
+      // Read AFTER the remove has landed on whichever replica answers — see
+      // tokenBalanceAfter. sigs so far are exactly the remove-liquidity legs.
+      walletX = await this.tokenBalanceAfter(position.tokenMint, sigs[sigs.length - 1] ?? null);
       walletXKnown = true;
     } catch (e) {
       console.error(`[live] pos#${position.id}: wallet residue check failed:`, (e as Error).message.split("\n")[0]);
@@ -918,7 +972,10 @@ export class LiveExecutor implements Executor {
     let strandedCreditSol = 0;
     if (xToSwap > 0n && position.tokenMint !== SOL_MINT) {
       try {
-        const leftRaw = await this.tokenBalanceRaw(position.tokenMint);
+        // Same replica hazard in reverse: read BEFORE the swap lands and a fully
+        // sold position reports its whole pre-swap balance as a strand. Pin the
+        // read to the swap's slot.
+        const leftRaw = await this.tokenBalanceAfter(position.tokenMint, sigs[sigs.length - 1] ?? null);
         if (leftRaw > 0n) {
           const q = await quoteToSolLamports(position.tokenMint, leftRaw);
           leftoverTokenSol = q === null ? null : q / 1e9;
