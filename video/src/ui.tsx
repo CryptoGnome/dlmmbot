@@ -1,6 +1,6 @@
 import React from "react";
 import { AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame, useVideoConfig, Easing } from "remotion";
-import { C, MONO } from "./theme";
+import { C, MONO, SANS, PANEL_RADIUS } from "./theme";
 
 /** Frames→progress with a clamped ease-out. The one curve the whole video uses for enters. */
 export function enter(frame: number, delay: number, dur: number): number {
@@ -28,7 +28,7 @@ export function Stage({
     extrapolateRight: "clamp",
   });
   return (
-    <AbsoluteFill style={{ backgroundColor: C.bg, fontFamily: MONO, opacity: out }}>
+    <AbsoluteFill style={{ backgroundColor: C.bg, color: C.fg, fontFamily: MONO, opacity: out }}>
       <AbsoluteFill
         style={{
           backgroundImage: `linear-gradient(${C.grid} 1px, transparent 1px), linear-gradient(90deg, ${C.grid} 1px, transparent 1px)`,
@@ -105,7 +105,7 @@ export function Big({
   return (
     <div
       style={{
-        fontSize: size, lineHeight: 1, fontWeight: 700, color, letterSpacing: -3,
+        fontSize: size, lineHeight: 1, fontWeight: 600, color, letterSpacing: -3, fontFamily: SANS,
         opacity: t, translate: `0px ${(1 - t) * 26}px`,
       }}
     >
@@ -125,11 +125,29 @@ export function Sub({ children, delay = 0, color = C.muted }: { children: React.
 }
 
 /**
- * A real dashboard tab, cropped to a region and slowly pushed in.
- *
- * `crop` is in source pixels of the 3840x2160 capture (viewport 1920 at dpr 2),
- * so a region measured off the screenshot maps 1:1.
+ * A stat card, styled exactly like the dashboard's `.panel`: panel fill, 1px
+ * grid border, and square corners. Rounded cards were one of the tells that
+ * the video wasn't quite the same product as the site.
  */
+export function Card({
+  k, v, c, delay = 0, minWidth = 300,
+}: { k: string; v: string; c?: string; delay?: number; minWidth?: number }) {
+  const frame = useCurrentFrame();
+  const t = enter(frame, delay, 16);
+  return (
+    <div
+      style={{
+        opacity: t, translate: `0px ${(1 - t) * 16}px`,
+        backgroundColor: C.panel, border: `1px solid ${C.grid}`, borderRadius: PANEL_RADIUS,
+        padding: "18px 30px", minWidth,
+      }}
+    >
+      <div style={{ fontSize: 26, color: C.dim, letterSpacing: 3, textTransform: "uppercase" }}>{k}</div>
+      <div style={{ fontSize: 50, color: c ?? C.fg, marginTop: 8, fontFamily: SANS, fontWeight: 600 }}>{v}</div>
+    </div>
+  );
+}
+
 /**
  * A scene built on a real dashboard capture.
  *
@@ -156,7 +174,7 @@ export function ShotStage({
     extrapolateRight: "clamp",
   });
   return (
-    <AbsoluteFill style={{ fontFamily: MONO, backgroundColor: C.bg, opacity: out }}>
+    <AbsoluteFill style={{ fontFamily: MONO, color: C.fg, backgroundColor: C.bg, opacity: out }}>
       <div
         style={{
           position: "absolute", top: 0, left: 0, right: 0, height: "58%",

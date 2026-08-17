@@ -1,7 +1,7 @@
 import React from "react";
 import { useCurrentFrame, interpolate, Easing } from "remotion";
-import { C, sol, pct, tone, commas } from "../theme";
-import { Stage, ShotStage, Kicker, Big, Sub, Rail, enter } from "../ui";
+import { C, SANS, sol, pct, tone, commas } from "../theme";
+import { Stage, ShotStage, Kicker, Big, Sub, Rail, Card, enter } from "../ui";
 import type { Daily } from "../plan";
 
 type P = { d: Daily };
@@ -28,7 +28,12 @@ export const Title: React.FC<P> = ({ d }) => {
         <div style={{ fontSize: 34, letterSpacing: 10, color: C.green, textTransform: "uppercase" }}>
           Daily update
         </div>
-        <div style={{ fontSize: 260, fontWeight: 700, lineHeight: 1, letterSpacing: -8, marginTop: 10 }}>
+        <div
+          style={{
+            fontSize: 260, fontWeight: 600, lineHeight: 1, letterSpacing: -8, marginTop: 10,
+            fontFamily: SANS, color: C.fg,
+          }}
+        >
           DAY {d.dayNumber}
         </div>
         <div style={{ fontSize: 38, color: C.dim, marginTop: 26 }}>
@@ -105,22 +110,9 @@ export const Trend: React.FC<P> = ({ d }) => {
     <ShotStage file="shots/equity.png" label="the run so far">
       <Kicker>Profit / loss over time</Kicker>
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
-        {cards.map((c, i) => {
-          const t = enter(frame, 10 + i * 7, 16);
-          return (
-            <div
-              key={c.k}
-              style={{
-                opacity: t, translate: `0px ${(1 - t) * 16}px`,
-                border: `1px solid ${C.grid}`, backgroundColor: `${C.panel}EE`,
-                padding: "18px 30px", borderRadius: 10, minWidth: 300,
-              }}
-            >
-              <div style={{ fontSize: 28, color: C.dim, letterSpacing: 3 }}>{c.k}</div>
-              <div style={{ fontSize: 52, color: tone(c.v), marginTop: 8 }}>{sol(c.v)} SOL</div>
-            </div>
-          );
-        })}
+        {cards.map((c, i) => (
+          <Card key={c.k} k={c.k} v={`${sol(c.v)} SOL`} c={tone(c.v)} delay={10 + i * 7} />
+        ))}
       </div>
       <Sub delay={34} color={C.dim}>
         {d.allTime.closes} closes · win rate{" "}
@@ -151,7 +143,7 @@ export const Funnel: React.FC<P> = ({ d }) => {
     >
       <Kicker>Pools screened today</Kicker>
       <Big size={215}>{commas(scanned)}</Big>
-      <div style={{ marginTop: 44, width: "100%", height: 14, backgroundColor: C.panel, borderRadius: 8, overflow: "hidden" }}>
+      <div style={{ marginTop: 44, width: "100%", height: 14, backgroundColor: C.panel, border: `1px solid ${C.grid}`, overflow: "hidden" }}>
         <div style={{ width: `${bar * 100}%`, height: "100%", backgroundColor: C.grid }} />
       </div>
       <Sub delay={34}>
@@ -185,7 +177,7 @@ export const Trade: React.FC<P> = ({ d }) => {
       <Big size={170}>{b.symbol}</Big>
       <Big size={190} color={tone(b.pnl)} delay={8}>{sol(v, 4)} <span style={{ fontSize: 80, color: C.dim }}>SOL</span></Big>
       <Sub delay={30}>
-        Exit rule: <span style={{ color: C.blue }}>{b.reason}</span>
+        Exit rule: <span style={{ color: C.accent }}>{b.reason}</span>
       </Sub>
     </Stage>
   );
@@ -196,26 +188,17 @@ export const Positions: React.FC<P> = ({ d }) => {
   return (
     <ShotStage file="shots/positions.png" label="positions tab" fit="cover">
       <Kicker>Open right now</Kicker>
-        <div style={{ display: "flex", gap: 22, flexWrap: "wrap" }}>
-          {d.open.slice(0, 4).map((p, i) => {
-            const t = enter(frame, 10 + i * 6, 16);
-            return (
-              <div
-                key={p.symbol}
-                style={{
-                  opacity: t, translate: `0px ${(1 - t) * 16}px`,
-                  border: `1px solid ${C.grid}`, backgroundColor: `${C.panel}EE`,
-                  padding: "20px 30px", borderRadius: 10, minWidth: 320,
-                }}
-              >
-                <div style={{ fontSize: 44, fontWeight: 700 }}>{p.symbol}</div>
-                <div style={{ fontSize: 26, color: C.dim, marginTop: 6 }}>
-                  {p.sleeve} · {p.status} range
-                </div>
-                <div style={{ fontSize: 40, color: tone(p.pnl), marginTop: 10 }}>{sol(p.pnl, 4)}</div>
-              </div>
-            );
-          })}
+        <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+          {d.open.slice(0, 4).map((p, i) => (
+            <Card
+              key={`${p.symbol}-${i}`}
+              k={`${p.symbol} · ${p.status} range`}
+              v={`${sol(p.pnl, 4)} SOL`}
+              c={tone(p.pnl)}
+              delay={10 + i * 6}
+              minWidth={340}
+            />
+          ))}
         </div>
     </ShotStage>
   );
@@ -224,26 +207,22 @@ export const Positions: React.FC<P> = ({ d }) => {
 export const Analytics: React.FC<P> = ({ d }) => {
   const frame = useCurrentFrame();
   const top = d.reasons.slice(0, 4);
+  // reasons.png, not equity.png — Trend already shows the equity chart, and two
+  // beats on the same screenshot reads as a stuck video.
   return (
-    <ShotStage file="shots/equity.png" label="analytics tab">
+    <ShotStage file="shots/reasons.png" label="analytics tab">
       <Kicker>How it exited</Kicker>
         <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
-          {top.map((r, i) => {
-            const t = enter(frame, 10 + i * 6, 16);
-            return (
-              <div
-                key={r.reason}
-                style={{
-                  opacity: t, translate: `0px ${(1 - t) * 16}px`,
-                  border: `1px solid ${C.grid}`, backgroundColor: `${C.panel}EE`,
-                  padding: "18px 26px", borderRadius: 10,
-                }}
-              >
-                <div style={{ fontSize: 30, color: C.muted }}>{r.reason} ×{r.n}</div>
-                <div style={{ fontSize: 40, color: tone(r.pnl), marginTop: 8 }}>{sol(r.pnl, 3)}</div>
-              </div>
-            );
-          })}
+          {top.map((r, i) => (
+            <Card
+              key={r.reason}
+              k={`${r.reason} ×${r.n}`}
+              v={`${sol(r.pnl)} SOL`}
+              c={tone(r.pnl)}
+              delay={10 + i * 6}
+              minWidth={280}
+            />
+          ))}
         </div>
         <Sub delay={34} color={C.dim}>
           {d.allTime.closes} closes all-time · win rate {d.allTime.winRate != null ? `${Math.round(d.allTime.winRate * 100)}%` : "—"}
@@ -258,7 +237,7 @@ export const Shipped: React.FC<P> = ({ d }) => {
   return (
     <Stage label="shipped today">
       <Kicker>Fixes shipped</Kicker>
-      <Big size={200} color={C.blue}>{d.releases.length}</Big>
+      <Big size={200} color={C.accent}>{d.releases.length}</Big>
       <div style={{ marginTop: 34, display: "flex", flexDirection: "column", gap: 16 }}>
         {top.map((r, i) => {
           const t = enter(frame, 20 + i * 8, 16);
