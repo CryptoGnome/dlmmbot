@@ -408,11 +408,20 @@ export class LiveExecutor implements Executor {
   private async tokenBalanceAfter(mint: string, afterSig: string | null): Promise<bigint> {
     if (!afterSig) return this.tokenBalanceRaw(mint);
     let landedSlot: number | null = null;
-    try {
-      const st = (await this.connection.getSignatureStatuses([afterSig]))?.value?.[0];
-      landedSlot = st?.slot ?? null;
-    } catch { /* fall through to a plain read */ }
-    if (landedSlot == null) return this.tokenBalanceRaw(mint);
+    // The status lookup can ALSO hit a replica that has not seen the tx yet and
+    // return null. Falling back to a plain read on the first miss is exactly
+    // the hole pos#102 fell through — retry briefly before giving up the pin.
+    for (let i = 0; i < 6 && landedSlot == null; i++) {
+      try {
+        const st = (await this.connection.getSignatureStatuses([afterSig]))?.value?.[0];
+        landedSlot = st?.slot ?? null;
+      } catch { /* try again */ }
+      if (landedSlot == null) await new Promise((r) => setTimeout(r, 500));
+    }
+    if (landedSlot == null) {
+      console.warn(`[live] could not resolve slot for ${afterSig.slice(0, 8)}… — unpinned balance read`);
+      return this.tokenBalanceRaw(mint);
+    }
     let last: { total: bigint; slot: number } | null = null;
     for (let i = 0; i < 12; i++) {
       last = await this.tokenBalanceWithSlot(mint);
@@ -956,6 +965,30 @@ export class LiveExecutor implements Executor {
       // tokenBalanceAfter. sigs so far are exactly the remove-liquidity legs.
       walletX = await this.tokenBalanceAfter(position.tokenMint, sigs[sigs.length - 1] ?? null);
       walletXKnown = true;
+      // Belt and braces. tokenBalanceAfter pins to the remove's slot — but only
+      // when getSignatureStatuses answers, and THAT lookup can itself hit a
+      // replica that has not seen the tx yet, in which case it silently falls
+      // back to an unpinned read. Z500 pos#102 (server, 2026-08-17): chainX
+      // 53,332,678, one remove tx sent, post-remove read 0, sold 0, and all
+      // 53M tokens sat in the wallet 60s later for the sweep. So: if we sent a
+      // remove and the wallet reads far below what the chain said that remove
+      // would deliver, the read is stale — wait for the credit rather than
+      // sell nothing. Bounded; a Token-2022 transfer-fee mint legitimately
+      // delivers a little less than chainX, so the threshold is loose (half).
+      if (sigs.length > 0 && xToSwap > 0n && walletX < xToSwap / 2n) {
+        for (let i = 0; i < 12 && walletX < xToSwap / 2n; i++) {
+          await new Promise((r) => setTimeout(r, 500));
+          walletX = await this.tokenBalanceRaw(position.tokenMint);
+        }
+        if (walletX < xToSwap / 2n) {
+          console.warn(
+            `[live] pos#${position.id}: wallet ${walletX} still < half of chain-side ${xToSwap} after remove — ` +
+            `selling what the wallet shows; residual sweep covers the rest`
+          );
+        } else {
+          console.log(`[live] pos#${position.id}: post-remove balance caught up to ${walletX} (chain said ${xToSwap})`);
+        }
+      }
     } catch (e) {
       console.error(`[live] pos#${position.id}: wallet residue check failed:`, (e as Error).message.split("\n")[0]);
     }
