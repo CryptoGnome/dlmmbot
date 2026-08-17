@@ -32,7 +32,7 @@
     "entry.bin_rent_hard_sol": 0.2,
     "vetting.age_min_enabled": true,
     "vetting.age_min_minutes": 30,
-    "vetting.age_max_enabled": true,
+    "vetting.age_max_enabled": false,
     "vetting.age_max_days": 21,
     "vetting.insider_gate_enabled": true,
     "vetting.insider_cluster_max_pct": 12,
