@@ -30,6 +30,17 @@ import { vetToken } from "../vetting/vet.js";
 /** Per-chain cooldown after a failed leg open — avoids 4 sims every 15s. */
 const openFailUntil = new Map<number, number>();
 
+/**
+ * Clear in-memory per-chain state for unit tests. Chain ids restart at 1 on
+ * every in-memory DB, so a cooldown set by one test silently blocked the next
+ * test's chain#1 from opening a leg — the identical failure shape as the
+ * manager's stopStreak leak (resetManagerStateForTests). Any new Map here
+ * must be cleared here.
+ */
+export function resetFollowStateForTests(): void {
+  openFailUntil.clear();
+}
+
 interface ChainRow {
   id: number;
   mode: string;
@@ -46,6 +57,8 @@ interface ChainRow {
   arm_peak: number | null;
   cold_streak: number;
   last_leg_position_id: number | null;
+  /** When awaiting_dip last began; null on rows that predate the column. */
+  dip_since_ts?: number | null;
 }
 
 /** True if this mint has a live follow chain (any state but done). */
@@ -72,21 +85,40 @@ function endChain(chain: ChainRow, reason: string): void {
  * Arm a chain after a P3 up-and-out close (win or missed — both mean the pool
  * out-ran us). No-op unless follow.enabled; never arms a second chain for a
  * mint that already has one, and never for a blacklisted token.
+ *
+ * `vol30mUsd` is the pool's current 30m volume from the close-time mark. The
+ * chain requires `min_vol_30m_usd` before it will FIRE a leg, but until now it
+ * did not require it to ARM — so 12 of the server bot's 15 chains armed on
+ * pools that had already gone quiet: six died `volume_died` inside 60s (three
+ * cold polls), the rest sat `awaiting_dip` for up to 4.6h on a price that
+ * never moved 15% either way. Harmless in SOL terms, but every armed chain
+ * holds the `follow_active` lock on its mint — the #1 skip reason in the
+ * decisions table — so the normal scanner passed on tokens a dead-ish chain
+ * still owned. Same bar to arm as to fire: no heat, no chain, no lock.
+ * A null/undefined volume (paper mode, or a mark without pool stats) arms
+ * as before rather than silently disabling follow.
  */
-export function armFollowChain(pos: Position, exitPrice: number): void {
+export function armFollowChain(pos: Position, exitPrice: number, vol30mUsd?: number | null): void {
   const f = config().follow;
   if (!f?.enabled) return;
   if (pos.trancheOf !== null) return;
   if (isBlacklisted(pos.tokenMint)) return;
   if (hasActiveFollowChain(pos.tokenMint, pos.mode)) return;
+  if (vol30mUsd != null && Number.isFinite(vol30mUsd) && vol30mUsd < f.min_vol_30m_usd) {
+    console.log(
+      `[follow] not arming ${pos.symbol} after pos#${pos.id}: vol30m $${vol30mUsd.toFixed(0)} < ` +
+      `$${f.min_vol_30m_usd} arm floor — pool has no heat to follow`
+    );
+    return;
+  }
   // First leg needs no new high — the price that just out-ran us IS the high;
   // it starts straight in awaiting_dip measured from here.
   getDb().prepare(
     `INSERT INTO follow_chains (mode, pool, token_mint, symbol, origin_position_id, started_ts,
-       state, chain_high, high_mark, arm_peak, updated_ts)
-     VALUES (?, ?, ?, ?, ?, ?, 'awaiting_dip', ?, ?, ?, ?)`
+       state, chain_high, high_mark, arm_peak, updated_ts, dip_since_ts)
+     VALUES (?, ?, ?, ?, ?, ?, 'awaiting_dip', ?, ?, ?, ?, ?)`
   ).run(pos.mode, pos.poolAddress, pos.tokenMint, pos.symbol, pos.id, now(),
-        exitPrice, exitPrice, exitPrice, now());
+        exitPrice, exitPrice, exitPrice, now(), now());
   console.log(`[follow] armed chain for ${pos.symbol} after pos#${pos.id} up-and-out (high ${exitPrice.toPrecision(4)})`);
 }
 
@@ -158,10 +190,21 @@ export async function tickFollowChains(exec: Executor): Promise<void> {
         if (pool.price >= chain.high_mark) {
           chain.state = "awaiting_dip";
           chain.arm_peak = pool.price;
+          chain.dip_since_ts = now();
           console.log(`[follow] chain#${chain.id} ${chain.symbol}: new chain high ${pool.price.toPrecision(4)} — awaiting ${f.retrace_arm_pct}% dip`);
         }
-        db.prepare("UPDATE follow_chains SET state = ?, chain_high = ?, arm_peak = ?, cold_streak = ?, updated_ts = ? WHERE id = ?")
-          .run(chain.state, chain.chain_high, chain.arm_peak, chain.cold_streak, now(), chain.id);
+        db.prepare("UPDATE follow_chains SET state = ?, chain_high = ?, arm_peak = ?, cold_streak = ?, dip_since_ts = ?, updated_ts = ? WHERE id = ?")
+          .run(chain.state, chain.chain_high, chain.arm_peak, chain.cold_streak, chain.dip_since_ts ?? null, now(), chain.id);
+        continue;
+      }
+
+      // awaiting_dip: a chain that never sees its dip is a token the scanner
+      // cannot trade (follow_active lock). Measured: every leg that ever fired
+      // did so within 52 min of arming; the chains that did not fire sat for
+      // up to 4.6 h with arm_peak == chain_high. Bounded wait, then release.
+      const dipMax = f.awaiting_dip_max_min ?? 0;
+      if (dipMax > 0 && chain.dip_since_ts != null && now() - chain.dip_since_ts > dipMax * 60) {
+        endChain(chain, "dip_timeout");
         continue;
       }
 

@@ -209,7 +209,7 @@ Thresholds:
 | Key | Default | Meaning |
 |---|---|---|
 | `enabled` | `true` | Follow mode on |
-| `min_vol_30m_usd` | `100000` | Arm only at 4× the normal entry volume floor |
+| `min_vol_30m_usd` | `100000` | Required to **arm** a chain (checked at close time) and to **fire** a leg — 4× the normal entry volume floor. Before v0.12.0 only firing was gated, so chains armed on quiet pools and held the token lock for hours |
 | `retrace_arm_pct` | `15` | Required dip from the post-exit / post-high peak |
 | `range_depth_pct` | `30` | Leg depth (tighter than the 40% default) |
 | `leg_size_sol` | `0.25` | Fixed leg size — the mode earns more with its own ledger |
@@ -218,6 +218,7 @@ Thresholds:
 | `chain_max_age_h` | `12` | Chain lifetime |
 | `cold_polls_end` | `3` | Consecutive polls under the normal volume floor ends the chain |
 | `open_fail_cooldown_s` | `300` | Wait after a failed leg open |
+| `awaiting_dip_max_min` | `90` | A chain waiting this long for its retrace ends and releases the token. Measured from when it last entered the dip-wait, not from chain start. Every leg that ever fired did so within 52 min. `0` = never |
 
 ## `[majors]` — spot parking for allowlisted alts
 

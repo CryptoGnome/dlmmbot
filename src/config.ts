@@ -183,6 +183,8 @@ export interface Config {
     max_legs: number; chain_loss_budget_sol: number;
     chain_max_age_h: number; cold_polls_end: number;
     open_fail_cooldown_s: number;
+    /** Minutes a chain may sit awaiting_dip before it ends and releases the mint. 0 = never. Optional: older volume configs. */
+    awaiting_dip_max_min?: number;
   };
   majors: {
     enabled: boolean;

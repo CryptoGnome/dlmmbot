@@ -805,7 +805,7 @@ export async function managePositions(exec: Executor): Promise<void> {
             getDb().prepare("UPDATE positions SET state='closed_missed' WHERE id=?").run(pos.id);
           else bankProfit(pos, exitSol, "P3 take-profit");
           recordDecision(pos.tokenMint, pos.poolAddress, "exited", `P3_above_${classification}`, null, { mark, sustainedS: now() - since, exitSol, sustainMin, sleeve });
-          if (pos.followChainId == null && sleeve !== "majors") armFollowChain(pos, mark.price);
+          if (pos.followChainId == null && sleeve !== "majors") armFollowChain(pos, mark.price, mark.vol30mUsd);
         }
         continue;
       }
