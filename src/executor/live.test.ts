@@ -7,6 +7,7 @@ import {
   wealthDeltaLamports,
   OPEN_SLIPPAGE_REBUILDS,
 } from "./live.js";
+import { classifyLeftover, RESIDUAL_SWEEP_MIN_SOL } from "./executor.js";
 import { PublicKey } from "@solana/web3.js";
 import { SOL_MINT } from "../config.js";
 
@@ -90,5 +91,48 @@ describe("wealthDeltaLamports", () => {
     };
     const d = wealthDeltaLamports(meta as never, keys, wallet);
     expect(d).toBe(0);
+  });
+});
+
+describe("classifyLeftover — what a close left in the wallet", () => {
+  const MARK = 0.22;
+
+  it("reports nothing when the close swept the token side clean", () => {
+    expect(classifyLeftover(null, MARK, false)).toEqual({ kind: "none", share: null, creditSol: 0 });
+  });
+
+  // pos#15 BUTTHOLE, 2026-08-17: a WINNING close (+0.0002 SOL) that filed an
+  // error over 0.00045 SOL of dust and claimed "residual sweep will sell it" —
+  // for an amount sweepResiduals is guaranteed to skip.
+  it("treats a leftover under the sweep floor as dust, not an incident", () => {
+    const r = classifyLeftover(0.00045059, MARK, true);
+    expect(r.kind).toBe("dust");
+    expect(r.creditSol).toBe(0); // nothing will convert it — book the loss now
+  });
+
+  it("treats a leftover at or above the sweep floor as a recoverable strand", () => {
+    const r = classifyLeftover(RESIDUAL_SWEEP_MIN_SOL, MARK, true);
+    expect(r.kind).toBe("strand");
+    expect(r.creditSol).toBe(RESIDUAL_SWEEP_MIN_SOL);
+  });
+
+  // ANSEM pos#8: 0.5327 SOL, 75% of mark — the case the detector exists for.
+  it("flags a large under-fill and carries its full value as credit", () => {
+    const r = classifyLeftover(0.532672767, 0.7144471699792198, true);
+    expect(r.kind).toBe("strand");
+    expect(r.creditSol).toBeCloseTo(0.532672767, 9);
+    expect(r.share!).toBeGreaterThan(0.25); // clears the alert bar
+  });
+
+  it("flags an unquotable leftover rather than assuming it is dust", () => {
+    // Being unable to price it is exactly when we must not write it off.
+    const r = classifyLeftover(null, MARK, true);
+    expect(r.kind).toBe("strand");
+    expect(r.share).toBeNull();
+    expect(r.creditSol).toBe(0); // but PnL may only count what we can value
+  });
+
+  it("returns no share when the mark is zero (empty close)", () => {
+    expect(classifyLeftover(0.05, 0, true).share).toBeNull();
   });
 });

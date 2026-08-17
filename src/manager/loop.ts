@@ -5,6 +5,7 @@ import { config, currentMode, isLive, syncFarmerModeFromDisk } from "../config.j
 import { reconcileLive } from "./reconcile.js";
 import { alert, type AlertKind } from "../alerts.js";
 import { blacklist, getDb, now, pruneHistory, recordCreatorRug, recordDecision, REALIZED_PNL_SQL, logError, installProcessErrorHooks } from "../db/db.js";
+import { RESIDUAL_SWEEP_MIN_SOL } from "../executor/executor.js";
 import type { Executor } from "../executor/executor.js";
 import { LiveExecutor } from "../executor/live.js";
 import { executeProfitBurn, profitBurnSpendSol, accrueProfitBurn, readProfitBurnAccrued, writeProfitBurnAccrued, PROFIT_BURN } from "../executor/profitBurn.js";
@@ -72,7 +73,8 @@ async function withBusy<T>(fn: () => Promise<T>): Promise<T> {
 
 // Residual sweep: retry-sell tokens stranded by failed zap-out swaps.
 const RESIDUAL_SWEEP_INTERVAL_MS = 10 * 60 * 1000;
-const RESIDUAL_SWEEP_MIN_SOL = 0.002; // below this, tx fees eat the proceeds
+// RESIDUAL_SWEEP_MIN_SOL is shared with the close path in executor.ts — the
+// close must know the same floor to tell dust from a recoverable strand.
 /** DB retention runs hourly; the pruned tables only matter at day granularity. */
 const RETENTION_INTERVAL_MS = 60 * 60 * 1000;
 
