@@ -504,10 +504,10 @@ export async function dismissErrors(opts: { ids?: number[]; all?: boolean }): Pr
  *
  * The dashboard cannot close it directly — only the loop holds the wallet — so
  * this records the request and the loop performs the real on-chain close.
- * `confirm` is the dash token re-entered, matching halt / blacklist-clear:
- * this moves real funds and cannot be undone.
+ * Authenticated by the dash token already on the request; the UI's confirm
+ * dialog is the misclick guard.
  */
-export async function closePosition(id: number, confirm: string): Promise<{
+export async function closePosition(id: number): Promise<{
   ok: boolean;
   id: number;
   symbol: string;
@@ -519,7 +519,7 @@ export async function closePosition(id: number, confirm: string): Promise<{
   const res = await fetch(`/api/positions/close${q}`, {
     method: "POST",
     headers: { ...authHeaders(), "Content-Type": "application/json" },
-    body: JSON.stringify({ id, confirm }),
+    body: JSON.stringify({ id }),
   });
   const data = await res.json() as {
     ok?: boolean; id?: number; symbol?: string; already?: boolean; note?: string; error?: string;

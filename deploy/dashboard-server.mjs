@@ -728,17 +728,17 @@ const server = createServer(async (req, res) => {
   }
 
   // Lifting a ban is a deliberate act — same re-enter-the-token bar as HALT.
-  // Operator close of ONE position. Same token bar as halt/blacklist-clear:
-  // it moves real funds on chain and cannot be undone, so a stolen dashboard
-  // tab is not enough — the token has to be re-entered.
+  // Operator close of ONE position. Already authenticated via the dash token on
+  // the request (same bar as /api/engine); the UI's confirm dialog is the
+  // misclick guard. No token re-entry — unlike HALT, this touches exactly the
+  // one position the operator named, and it only queues work for the loop.
   if (url.pathname === "/api/positions/close" && req.method === "POST") {
     try {
-      const body = await readBody(req, res);
-      const confirm = typeof body?.confirm === "string" ? body.confirm : "";
-      if (!token || !safeEqual(confirm, token)) {
-        sendJson(res, 403, { error: "re-enter dash token to close a position" });
+      if (!token) {
+        sendJson(res, 401, { error: "dash token required" });
         return;
       }
+      const body = await readBody(req, res);
       const result = requestPositionClose(root, body?.id);
       watchCache = { at: 0, data: null, building: null };
       sendJson(res, 200, result);
