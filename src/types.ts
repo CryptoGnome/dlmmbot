@@ -113,6 +113,8 @@ export interface Position {
   exitReason: ExitReason | null;
   /** Non-null on follow-mode legs (manager/follow.ts) — points at follow_chains.id. */
   followChainId?: number | null;
+  /** Operator asked the dashboard to close this position; unix seconds. */
+  closeRequestedAt?: number | null;
 }
 
 export type EventType =

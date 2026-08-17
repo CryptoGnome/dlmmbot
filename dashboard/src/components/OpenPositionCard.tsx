@@ -15,6 +15,7 @@ import { cn, fmtRet, fmtSol, fmtUsdCompact, shortTime } from "@/lib/utils";
 import { TokenSymbol } from "@/components/TokenSymbol";
 import { RangeBar, SleeveBadge, StatusBadge, type RangeStatus } from "@/components/RangeBar";
 import { LiveNum } from "@/components/LiveNum";
+import { ClosePositionButton } from "@/components/ClosePositionButton";
 
 type OpenPos = LiveWatch["open"][number];
 
@@ -134,6 +135,16 @@ export function OpenPositionCard({ p, live = false }: { p: OpenPos; live?: boole
           {m?.unreliable && m.pct == null && (
             <div className="text-[10px] text-warn">Waiting for update</div>
           )}
+          <div className="mt-1.5 flex justify-end">
+            <ClosePositionButton
+              id={p.id}
+              symbol={p.symbol}
+              entrySol={p.entry_sol}
+              pnlSol={pnl}
+              rangeStatus={status}
+              requestedAt={p.close_requested_at}
+            />
+          </div>
         </div>
       </div>
 

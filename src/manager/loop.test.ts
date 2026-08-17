@@ -399,3 +399,78 @@ describe("managePositions contracts", () => {
     });
   });
 });
+
+describe("operator close (dashboard button)", () => {
+  let exec: FakeExecutor;
+
+  beforeEach(() => {
+    useMemoryDb();
+    resetManagerStateForTests();
+    installConfig((c) => {
+      c.manage.stop_loss_frac = 0.75;
+      c.follow.enabled = false;
+    });
+    exec = new FakeExecutor("paper");
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({}) })));
+  });
+  afterEach(() => {
+    resetTestDb();
+    restoreConfig();
+    vi.unstubAllGlobals();
+  });
+
+  const requestClose = (id: number) =>
+    getDb().prepare("UPDATE positions SET close_requested_at = ? WHERE id = ?")
+      .run(Math.floor(Date.now() / 1000), id);
+
+  it("closes a requested position as `manual`", async () => {
+    const id = insertOpenPosition({ entrySol: 0.4 });
+    exec.setMark(id, { valueSol: 0.4, price: 1, activeBinId: 150, inRange: true });
+    requestClose(id);
+
+    await managePositions(exec);
+
+    expect(exec.closed).toEqual([{ id, reason: "manual" }]);
+    const row = getDb().prepare("SELECT exit_reason, exit_ts FROM positions WHERE id = ?")
+      .get(id) as { exit_reason: string; exit_ts: number | null };
+    expect(row.exit_reason).toBe("manual");
+    expect(row.exit_ts).not.toBeNull();
+  });
+
+  // The operator looked at the position and decided. A rule firing on the same
+  // tick must not get to relabel that exit — P1 would also blacklist the token
+  // and feed the cluster brake, on a close the operator asked for.
+  it("takes precedence over a rule that would fire on the same tick", async () => {
+    const id = insertOpenPosition({ entrySol: 0.4 });
+    exec.setMark(id, { valueSol: 0.28, price: 0.8, activeBinId: 150, inRange: true }); // would be P1_stop
+    requestClose(id);
+
+    await managePositions(exec);
+
+    expect(exec.closed).toEqual([{ id, reason: "manual" }]);
+    const row = getDb().prepare("SELECT exit_reason FROM positions WHERE id = ?")
+      .get(id) as { exit_reason: string };
+    expect(row.exit_reason).toBe("manual");
+  });
+
+  it("leaves positions without a request alone", async () => {
+    const id = insertOpenPosition({ entrySol: 0.4 });
+    exec.setMark(id, { valueSol: 0.4, price: 1, activeBinId: 150, inRange: true });
+
+    await managePositions(exec);
+
+    expect(exec.closed).toEqual([]);
+  });
+
+  it("closes only the requested position, not its siblings", async () => {
+    const a = insertOpenPosition({ entrySol: 0.4, symbol: "A" });
+    const b = insertOpenPosition({ entrySol: 0.4, symbol: "B" });
+    exec.setMark(a, { valueSol: 0.4, price: 1, activeBinId: 150, inRange: true });
+    exec.setMark(b, { valueSol: 0.4, price: 1, activeBinId: 150, inRange: true });
+    requestClose(b);
+
+    await managePositions(exec);
+
+    expect(exec.closed).toEqual([{ id: b, reason: "manual" }]);
+  });
+});

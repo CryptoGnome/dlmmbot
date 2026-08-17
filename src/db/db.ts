@@ -240,6 +240,12 @@ function migrate(database: Database.Database): void {
   try {
     database.exec("ALTER TABLE positions ADD COLUMN stranded_sol REAL NOT NULL DEFAULT 0");
   } catch { /* column already exists */ }
+  // Operator "close this one now" request from the dashboard. The dashboard
+  // cannot close a position itself — only the loop holds the executor and the
+  // wallet — so it sets this and the next manage tick performs the close.
+  try {
+    database.exec("ALTER TABLE positions ADD COLUMN close_requested_at INTEGER");
+  } catch { /* column already exists */ }
   try {
     database.exec("ALTER TABLE positions ADD COLUMN stranded_at INTEGER");
   } catch { /* column already exists */ }
@@ -303,7 +309,7 @@ CREATE INDEX IF NOT EXISTS idx_error_log_ts ON error_log(ts DESC);
   const required = [
     "ever_in_range", "open_cost_sol", "close_return_sol", "fell_deep",
     "fees_measured_sol", "recovered_sol", "fees_at_close_sol", "follow_chain_id",
-    "withdrawn_sol", "stranded_sol", "stranded_at",
+    "withdrawn_sol", "stranded_sol", "stranded_at", "close_requested_at",
   ];
   const missing = required.filter((c) => !cols.has(c));
   if (missing.length)
