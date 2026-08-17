@@ -568,7 +568,7 @@ function loadOpenPositions(): Position[] {
   const rows = getDb().prepare(
     `SELECT id, mode, pool, token_mint, symbol, tranche_of, entry_ts, entry_price, entry_sol,
             min_bin_id, max_bin_id, state, fees_claimed_sol, rent_paid_sol, profit_lock_fires,
-            exit_ts, exit_sol, exit_reason, follow_chain_id
+            exit_ts, exit_sol, exit_reason, follow_chain_id, close_requested_at
      FROM positions WHERE state IN ('open','pending') AND mode = ?`
   ).all(currentMode()) as Array<Record<string, unknown>>;
   return rows.map((r) => ({
@@ -583,6 +583,7 @@ function loadOpenPositions(): Position[] {
     exitTs: r.exit_ts as number | null, exitSol: r.exit_sol as number | null,
     exitReason: r.exit_reason as Position["exitReason"],
     followChainId: r.follow_chain_id as number | null,
+    closeRequestedAt: r.close_requested_at as number | null,
   }));
 }
 
@@ -643,6 +644,25 @@ export async function managePositions(exec: Executor): Promise<void> {
       const valueFrac = pos.entrySol > 0 ? mark.valueSol / pos.entrySol : 1;
       const sleeve = sleeveAtEntry(pos);
       const pm = manageForSleeve(sleeve);
+
+      // --- OPERATOR CLOSE: dashboard "Close now" on this position ---
+      // Ahead of the whole P0–P5 ladder on purpose. The operator looked at this
+      // position and decided; no rule should get to override that, and running
+      // it first means the close cannot be pre-empted by a P0 that would also
+      // blacklist the token. Marked `manual`, so it is excluded from the
+      // strategy's own exit statistics rather than polluting them.
+      if (pos.closeRequestedAt != null) {
+        console.log(`[manager] pos#${pos.id} ${pos.symbol}: operator close requested — closing now`);
+        await closeAndReport(
+          exec, pos, "manual", config().exec.exit_slippage_bps, "close",
+          "closed by operator from the dashboard",
+        );
+        clearRangeTimers(pos.id);
+        recordDecision(pos.tokenMint, pos.poolAddress, "exited", "manual_close", null, {
+          mark, sleeve, requestedAt: pos.closeRequestedAt, ageH,
+        });
+        continue;
+      }
 
       // --- P0 SAFETY: pool death, price crash, TVL drain, rugcheck flip, holder watch ---
       // Majors are allowlisted / discovery-gated at entry — RugCheck "Danger" is often a

@@ -445,6 +445,12 @@ export const WIKI_SECTIONS: WikiSection[] = [
             tone: "warn",
           },
           {
+            title: "Close one position",
+            text: "Red Close button on each position card, for when you want out of one trade without stopping the bot. Confirm dialog + dash token re-entry, because it sells on chain and can't be undone. The click only queues it — the farmer does the actual close on its next tick (~15s) and reports the PnL like any other exit, booked as \"manual\" so it doesn't skew the strategy's exit stats. The card shows \"Closing…\" until it lands.",
+            icon: "alert",
+            tone: "warn",
+          },
+          {
             title: "HALT",
             text: "Big red stop: close everything, idle until Resume. If a close fails (RPC trouble), the rest still close and the failed one retries every few seconds until the book is empty — you get a Telegram note while it's stuck.",
             icon: "alert",

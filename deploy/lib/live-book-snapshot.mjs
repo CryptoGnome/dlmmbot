@@ -507,6 +507,7 @@ export function buildLiveBookSnapshot(root) {
               round(p.open_cost_sol,6) open_cost_sol,
               p.min_bin_id, p.max_bin_id,
               round(p.fees_claimed_sol,6) fees_claimed_sol,
+              p.close_requested_at,
               datetime(p.entry_ts,'unixepoch') opened,
               m.value_sol, m.value_frac, m.unclaimed_fees_sol, m.in_range,
               m.active_bin_id, m.price AS mark_price, m.ts AS mark_ts,
@@ -611,6 +612,9 @@ export function buildLiveBookSnapshot(root) {
         open_cost_sol: r.open_cost_sol != null ? Number(r.open_cost_sol) : null,
         opened: r.opened,
         fees_claimed_sol: claimed,
+        // Set once an operator has asked for a close; the UI shows "closing…"
+        // and disables the button until the loop actions it.
+        close_requested_at: r.close_requested_at != null ? Number(r.close_requested_at) : null,
         min_bin_id: minBin,
         max_bin_id: maxBin,
         range_status: status,

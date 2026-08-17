@@ -499,6 +499,38 @@ export async function dismissErrors(opts: { ids?: number[]; all?: boolean }): Pr
   return { ok: !!data.ok, dismissed: Number(data.dismissed) || 0 };
 }
 
+/**
+ * Ask the farmer to close ONE open position on the next manage tick.
+ *
+ * The dashboard cannot close it directly — only the loop holds the wallet — so
+ * this records the request and the loop performs the real on-chain close.
+ * `confirm` is the dash token re-entered, matching halt / blacklist-clear:
+ * this moves real funds and cannot be undone.
+ */
+export async function closePosition(id: number, confirm: string): Promise<{
+  ok: boolean;
+  id: number;
+  symbol: string;
+  already: boolean;
+  note?: string;
+}> {
+  const t = tokenFromUrl();
+  const q = t ? `?token=${encodeURIComponent(t)}` : "";
+  const res = await fetch(`/api/positions/close${q}`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ id, confirm }),
+  });
+  const data = await res.json() as {
+    ok?: boolean; id?: number; symbol?: string; already?: boolean; note?: string; error?: string;
+  };
+  if (!res.ok) throw new Error(data.error ?? `close ${res.status}`);
+  return {
+    ok: !!data.ok, id: Number(data.id) || id, symbol: data.symbol ?? "?",
+    already: !!data.already, note: data.note,
+  };
+}
+
 /** Permanently delete error_log rows (all, or dismissed-only). */
 export async function clearErrorLog(opts: { dismissedOnly?: boolean } = {}): Promise<{
   ok: boolean;

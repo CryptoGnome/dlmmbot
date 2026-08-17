@@ -38,6 +38,7 @@ import {
   approveDeploy, readDeployPrefs, writeDeployPrefs,
 } from "./lib/deploy-prefs.mjs";
 import { insertError, dismissErrors, clearErrorLog } from "./lib/error-log.mjs";
+import { requestPositionClose } from "./lib/close-position.mjs";
 import {
   listProfiles, listCommunityProfiles, saveLocalProfile, deleteLocalProfile,
   resolveProfileUpdates, previewProfileDiff, applyProfileUpdates, githubProposeUrl, slugify,
@@ -727,6 +728,26 @@ const server = createServer(async (req, res) => {
   }
 
   // Lifting a ban is a deliberate act — same re-enter-the-token bar as HALT.
+  // Operator close of ONE position. Same token bar as halt/blacklist-clear:
+  // it moves real funds on chain and cannot be undone, so a stolen dashboard
+  // tab is not enough — the token has to be re-entered.
+  if (url.pathname === "/api/positions/close" && req.method === "POST") {
+    try {
+      const body = await readBody(req, res);
+      const confirm = typeof body?.confirm === "string" ? body.confirm : "";
+      if (!token || !safeEqual(confirm, token)) {
+        sendJson(res, 403, { error: "re-enter dash token to close a position" });
+        return;
+      }
+      const result = requestPositionClose(root, body?.id);
+      watchCache = { at: 0, data: null, building: null };
+      sendJson(res, 200, result);
+    } catch (e) {
+      sendJson(res, e?.statusCode ?? 400, { error: e.message ?? String(e) });
+    }
+    return;
+  }
+
   if (url.pathname === "/api/blacklist/clear" && req.method === "POST") {
     try {
       const body = await readBody(req, res);

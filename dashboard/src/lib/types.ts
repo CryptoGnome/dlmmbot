@@ -91,6 +91,8 @@ export interface LiveWatch {
     icon_url?: string | null;
     entry_sol: number; entry_price?: number; open_cost_sol?: number | null;
     opened: string;     fees_claimed_sol?: number;
+    /** Operator asked for a close; the farmer actions it on the next tick. */
+    close_requested_at?: number | null;
     min_bin_id?: number; max_bin_id?: number; range_status?: string;
     /** Latest Meteora datapi snapshot for this pool (from scanner). */
     pool?: {
