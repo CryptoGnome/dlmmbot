@@ -64,7 +64,10 @@ max_pool_share_pct = 20          # skip if our position would exceed this % of p
 [vetting]                  # STRATEGY.md §2.2 — token hard gates
 # Master switches (Settings UI). Off = skip that hard fail; thresholds still apply when on.
 age_min_enabled = true           # block "too young" (mint age via RugCheck, not pool age)
-age_max_enabled = true           # block "too old" (mint age via RugCheck, not pool age)
+age_max_enabled = false          # OFF: a revived old meme with live volume is a valid pool.
+                                 # The fee/volume gates already test current traction directly;
+                                 # mint age was a worse proxy for the same thing. Set true to
+                                 # restore the age_max_days ceiling. (age_min is the SAFETY gate.)
 insider_gate_enabled = true      # block high insider / funding-cluster %
 holder_gate_enabled = true       # block single-holder / top-10 concentration
 rugcheck_veto_enabled = true     # block high RugCheck score (rugged flag always on)
@@ -76,7 +79,7 @@ top10_max_pct = 40
 insider_cluster_max_pct = 10
 rugcheck_veto_normalised = 41
 age_min_minutes = 45
-age_max_days = 14
+age_max_days = 14                # only applies when age_max_enabled = true
 allow_token2022_extensions = ["metadata"]
 
 [timing]                   # STRATEGY.md §2.3 — soft, feeds score

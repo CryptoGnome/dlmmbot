@@ -58,7 +58,7 @@ Master switches (also in Settings UI) — off skips that hard fail; thresholds a
 | Key | Default | Meaning |
 |---|---|---|
 | `age_min_enabled` | `true` | Block "too young" (mint age via RugCheck, not pool age) |
-| `age_max_enabled` | `true` | Block "too old" |
+| `age_max_enabled` | `false` | Block "too old". Off by default — the fee/volume gates already test current traction, so a revived old meme with live volume is a valid pool. A *fit* gate, not a safety one. |
 | `insider_gate_enabled` | `true` | Block high insider / funding-cluster % |
 | `holder_gate_enabled` | `true` | Block single-holder / top-10 concentration |
 | `rugcheck_veto_enabled` | `true` | Block high RugCheck score (the rugged-creator flag stays on regardless) |
@@ -74,7 +74,7 @@ Thresholds:
 | `insider_cluster_max_pct` | `10` | Max % held by insider/funding clusters |
 | `rugcheck_veto_normalised` | `41` | RugCheck "Danger" veto line |
 | `age_min_minutes` | `45` | Survive the instant-rug window |
-| `age_max_days` | `14` | Meme-mode age ceiling |
+| `age_max_days` | `14` | Meme-mode age ceiling — only applies when `age_max_enabled = true` |
 | `allow_token2022_extensions` | `["metadata"]` | Token-2022 extensions tolerated (nothing else) |
 
 ## `[timing]` — soft, feeds the score
