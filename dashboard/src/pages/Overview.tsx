@@ -204,6 +204,7 @@ export function OverviewPage({
                       exitMove={r.exit_move_sol}
                       fees={r.fees_sol}
                       recovered={r.recovered_sol}
+                      stranded={r.stranded_sol}
                       openCost={r.open_cost_sol}
                       closeReturn={r.close_return_sol}
                       entrySol={r.entry_sol}

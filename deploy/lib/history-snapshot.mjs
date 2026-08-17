@@ -136,25 +136,31 @@ export function buildHistorySnapshot(root, range = "30d") {
       const feesLife = feesMeasured > 0 ? feesMeasured : feesClaimed;
       const fees = Math.round((feesLife + feesAtClose) * 1e6) / 1e6;
       const recovered = Number(r.recovered_sol) || 0;
+      // Residue an under-filled close left behind that the sweep has not sold
+      // yet. Same route as `recovered`, one step earlier — so it gets its own
+      // additive bucket rather than silently sitting inside Move.
+      const stranded = Number(r.stranded_sol) || 0;
       const entry = Number(r.entry_sol) || 0;
       const rent = Number(r.rent_paid_sol) || 0;
       const pnl = Number(r.pnl) || 0;
       const costBasis = openCost ?? (entry > 0 ? entry + rent : entry);
-      // Deposit move (IL + tx) = realized PnL minus fee income. Everything that
-      // is not fees is the deposit moving, so fees + move == pnl by construction.
+      // The card renders Move / Fees / Recovered as peer chips, so they MUST be
+      // additive: Move + Fees + Recovered + Pending == PnL. Each is a distinct
+      // route money took — the deposit through the close, fee income, and SOL
+      // the sweep fetched back afterwards.
       //
-      // This used to also subtract recovered_sol (and, briefly, stranded_sol),
-      // on the reading that a late sweep credit was income to exclude. It is
-      // not — it is the position's OWN capital coming back after an under-filled
-      // close. Subtracting it double-counted: ANSEM pos#8 showed a deposit move
-      // of -0.5722 SOL when the deposit had actually moved -0.0400, and the
-      // headline broke its own identity (fees 0.0529 + inventory -0.6960 =
-      // -0.643 against a real book of -0.1108, the 0.5323 gap being the sweep).
-      const exitMove = Math.round((pnl - fees) * 1e6) / 1e6;
+      // v0.8.2 briefly made Move = pnl - fees, folding the sweep credit INTO
+      // Move while the card still showed Recovered beside it. MANLET pos#14 then
+      // read Move -0.0033 + Fees +0.0015 + Recovered +0.0091 = +0.0072 against a
+      // reported -0.0019, because Recovered was already counted inside Move.
+      // The real v0.8.2 bug was that the ladder and the analytics used DIFFERENT
+      // formulas; both now use this one.
+      const exitMove = Math.round((pnl - fees - recovered - stranded) * 1e6) / 1e6;
       return {
         ...r,
         fees_sol: fees,
         recovered_sol: Math.round(recovered * 1e6) / 1e6,
+        stranded_sol: Math.round(stranded * 1e6) / 1e6,
         exit_move_sol: exitMove,
         pct: costBasis > 0 ? Math.round((pnl / costBasis) * 1e6) / 1e6 : null,
       };
@@ -226,6 +232,8 @@ export function buildHistorySnapshot(root, range = "30d") {
                          THEN fees_measured_sol
                          ELSE COALESCE(fees_claimed_sol, 0) END
                     + COALESCE(fees_at_close_sol, 0), 6) AS fees_sol,
+              ROUND(COALESCE(recovered_sol, 0), 6) AS recovered_sol,
+              ROUND(COALESCE(stranded_sol, 0), 6) AS stranded_sol,
               open_cost_sol, close_return_sol, exit_sol
        FROM positions
        WHERE mode = ? AND exit_ts IS NOT NULL AND exit_ts >= ?`
@@ -271,20 +279,19 @@ export function buildHistorySnapshot(root, range = "30d") {
       }
     }
 
-    // Same definition as the ladder's Move column: realized PnL minus fee
-    // income. The old form was `closeRet - openCost`, which silently dropped
-    // recovered_sol — so an under-filled close reported the capital the sweep
-    // sold back as pure inventory loss (ANSEM pos#8: -0.5714 against -0.0400).
-    // Deriving from pnl keeps the two dashboard views agreeing and keeps the
-    // headline identity fees + inventory == pnl true for every row.
-    function inventoryMove(row, pnl, fees) {
+    // Same definition as the ladder's Move column — that identity is the whole
+    // point. The pre-v0.8.2 form was `closeRet - openCost`, which silently
+    // dropped recovered_sol AND withdrawn_sol; deriving from pnl fixes that
+    // while keeping the headline split additive:
+    //   fees + inventory + recovered + stranded == pnl
+    function inventoryMove(row, pnl, fees, recovered, stranded) {
       const openCost = row.open_cost_sol != null ? Number(row.open_cost_sol) : null;
       const closeRet = row.close_return_sol != null ? Number(row.close_return_sol) : null;
       const entry = Number(row.entry_sol) || 0;
       const exitMarked = row.exit_sol != null ? Number(row.exit_sol) : null;
       // Unknown outcomes stay unknown rather than reading as a flat 0 move.
       const measurable = (openCost != null && closeRet != null) || (exitMarked != null && entry > 0);
-      return measurable ? pnl - fees : null;
+      return measurable ? pnl - fees - recovered - stranded : null;
     }
 
     const enriched = closeRows.map((r) => {
@@ -292,9 +299,13 @@ export function buildHistorySnapshot(root, range = "30d") {
       const holdH = r.exit_ts && r.entry_ts ? (Number(r.exit_ts) - Number(r.entry_ts)) / 3600 : null;
       const pnl = Number(r.pnl) || 0;
       const fees = Number(r.fees_sol) || 0;
-      const inv = inventoryMove(r, pnl, fees);
+      const recovered = Number(r.recovered_sol) || 0;
+      const stranded = Number(r.stranded_sol) || 0;
+      const inv = inventoryMove(r, pnl, fees, recovered, stranded);
       return {
         ...r,
+        recovered_sol: recovered,
+        stranded_sol: stranded,
         sleeve: meta.sleeve,
         fee_tvl_24h: meta.feeTvl != null ? Number(meta.feeTvl) : null,
         follow: meta.follow || r.follow_chain_id != null,
@@ -341,9 +352,11 @@ export function buildHistorySnapshot(root, range = "30d") {
     const expectancy = enriched.length
       ? (winRate ?? 0) * (avgWin ?? 0) + (1 - (winRate ?? 0)) * (avgLoss ?? 0)
       : null;
-    let feesTotal = 0, invTotal = 0, invKnown = 0;
+    let feesTotal = 0, invTotal = 0, invKnown = 0, recoveredTotal = 0, strandedTotal = 0;
     for (const r of enriched) {
       feesTotal += r.fees_sol;
+      recoveredTotal += Number(r.recovered_sol) || 0;
+      strandedTotal += Number(r.stranded_sol) || 0;
       if (r.inventory_sol != null) {
         invTotal += r.inventory_sol;
         invKnown += 1;
@@ -357,6 +370,10 @@ export function buildHistorySnapshot(root, range = "30d") {
       expectancy_sol: expectancy != null ? round6(expectancy) : null,
       fees_sol: round6(feesTotal),
       inventory_sol: invKnown ? round6(invTotal) : null,
+      // Broken out so the split stays additive and auditable:
+      //   fees + inventory + recovered + stranded == pnl
+      recovered_sol: round6(recoveredTotal),
+      stranded_sol: round6(strandedTotal),
       pnl_sol: round6(enriched.reduce((s, r) => s + r.pnl, 0)),
     };
 

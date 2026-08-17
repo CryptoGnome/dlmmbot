@@ -135,7 +135,7 @@ export function Kpi({
 export function Badge({
   children, tone = "fg", title,
 }: {
-  children: ReactNode; tone?: "fg" | "accent" | "warn" | "danger" | "ok"; title?: string;
+  children: ReactNode; tone?: "fg" | "accent" | "warn" | "danger" | "ok" | "muted"; title?: string;
 }) {
   const border = {
     fg: "border-fg text-fg",
@@ -143,6 +143,9 @@ export function Badge({
     warn: "border-warn text-warn",
     danger: "border-danger text-danger",
     ok: "border-ok text-ok",
+    // For state that is deliberately de-emphasised (e.g. an acknowledged error)
+    // — it must not borrow a status colour it does not mean.
+    muted: "border-grid text-muted",
   }[tone];
   return (
     <span title={title} className={cn("inline-flex items-center justify-center border px-1.5 py-0.5 text-[10px] tracking-wider uppercase", border)}>

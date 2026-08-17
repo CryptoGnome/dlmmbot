@@ -238,13 +238,14 @@ export function OpenPositionCard({ p, live = false }: { p: OpenPos; live?: boole
 
 /** Compact close-row P&L with plain labels + hover tips. */
 export function ClosePnlCell({
-  pnl, pct, exitMove, fees, recovered, openCost, closeReturn, entrySol,
+  pnl, pct, exitMove, fees, recovered, stranded, openCost, closeReturn, entrySol,
 }: {
   pnl: number;
   pct?: number | null;
   exitMove?: number | null;
   fees?: number | null;
   recovered?: number | null;
+  stranded?: number | null;
   openCost?: number | null;
   closeReturn?: number | null;
   entrySol?: number;
@@ -262,7 +263,7 @@ export function ClosePnlCell({
       </div>
       <div className="mt-0.5 space-y-0.5 text-[10px] text-muted">
         <div className="flex flex-wrap justify-end gap-x-2 gap-y-0.5">
-          <span className="inline-flex items-center gap-0.5" title="Deposit move (IL and tx costs) — profit minus fees">
+          <span className="inline-flex items-center gap-0.5" title="Deposit move (IL and tx costs) — what came back through the close itself. Move + Fees + Recovered + Pending = PnL.">
             <Layers size={10} strokeWidth={1.75} className="text-dim" aria-hidden />
             Move <span className={toneN(exitMove)}>{exitMove == null ? "—" : fmtSol(exitMove, 4)}</span>
           </span>
@@ -271,9 +272,15 @@ export function ClosePnlCell({
             Fees <span className={toneN(fees)}>{fmtSol(fees ?? 0, 4)}</span>
           </span>
           {(recovered ?? 0) !== 0 && (
-            <span className="inline-flex items-center gap-0.5" title="Extra SOL recovered later (e.g. leftover tokens sold)">
+            <span className="inline-flex items-center gap-0.5" title="SOL the residual sweep fetched back after the close (leftover tokens sold). Already counted in PnL, not in Move.">
               <ArrowLeftRight size={10} strokeWidth={1.75} className="text-dim" aria-hidden />
               Recovered <span className={toneN(recovered)}>{fmtSol(recovered ?? 0, 4)}</span>
+            </span>
+          )}
+          {(stranded ?? 0) !== 0 && (
+            <span className="inline-flex items-center gap-0.5" title="Tokens the close left in the wallet, valued at quote and not yet sold by the sweep. Provisional.">
+              <ArrowLeftRight size={10} strokeWidth={1.75} className="text-dim" aria-hidden />
+              Pending <span className={toneN(stranded)}>{fmtSol(stranded ?? 0, 4)}</span>
             </span>
           )}
         </div>

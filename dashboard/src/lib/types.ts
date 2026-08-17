@@ -250,6 +250,8 @@ export interface ErrorLogEntry {
   id: number;
   ts: number;
   at: string;
+  /** Acknowledged: out of the badge and the counts, still in the log. */
+  dismissed?: boolean;
   level: "error" | "warn" | "fatal" | string;
   source: string;
   code: string | null;
@@ -347,6 +349,8 @@ export interface HistorySnap {
     close_return_sol?: number | null;
     fees_sol?: number | null;
     recovered_sol?: number | null;
+    /** Under-filled residue not yet sold by the sweep — provisional credit. */
+    stranded_sol?: number | null;
     fees_at_close_sol?: number | null;
     exit_sol?: number | null;
     exit_move_sol?: number | null;

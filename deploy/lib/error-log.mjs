@@ -81,10 +81,15 @@ export function listRecentErrors(db, limit = 100) {
   try {
     ensureErrorLog(db);
     const rows = db.prepare(
+      // Dismissed rows are STILL RETURNED, flagged. Dismiss is an acknowledgement
+      // — it clears the badge and the counts (errorStats filters them) — not a
+      // delete. Filtering them out here made Dismiss look like it destroyed the
+      // log, leaving no way to review what had already been seen. Clear is the
+      // only action that removes history.
       `SELECT id, ts, level, source, code, message, stack, detail_json,
-              position_id, symbol, mint, pool, build, host, pid
+              position_id, symbol, mint, pool, build, host, pid,
+              COALESCE(dismissed, 0) AS dismissed
        FROM error_log
-       WHERE COALESCE(dismissed, 0) = 0
        ORDER BY id DESC LIMIT ?`,
     ).all(limit);
     return rows.map((r) => {
@@ -97,6 +102,7 @@ export function listRecentErrors(db, limit = 100) {
         id: r.id,
         ts: r.ts,
         at: new Date(r.ts * 1000).toISOString(),
+        dismissed: r.dismissed === 1,
         level: r.level,
         source: r.source,
         code: r.code,
