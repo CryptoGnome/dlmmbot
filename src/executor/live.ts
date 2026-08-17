@@ -14,6 +14,7 @@ import { getDb, logError, now, upsertTokenMeta } from "../db/db.js";
 import { alert } from "../alerts.js";
 import { fetchPool } from "../scanner/meteora.js";
 import type { ExitReason, Position } from "../types.js";
+import { classifyLeftover, RESIDUAL_SWEEP_MIN_SOL } from "./executor.js";
 import type { Executor, OpenParams, PositionMark } from "./executor.js";
 import { quoteToSolLamports, swapToSolEscalating } from "./jupiter.js";
 import { zapToSolEscalating } from "./zap.js";
@@ -914,27 +915,45 @@ export class LiveExecutor implements Executor {
     // sweep will pick it up, but the operator must know at close time, not
     // discover it in the ledger. Best-effort read; never blocks the close.
     let leftoverTokenSol: number | null = null;
+    let strandedCreditSol = 0;
     if (xToSwap > 0n && position.tokenMint !== SOL_MINT) {
       try {
         const leftRaw = await this.tokenBalanceRaw(position.tokenMint);
         if (leftRaw > 0n) {
           const q = await quoteToSolLamports(position.tokenMint, leftRaw);
           leftoverTokenSol = q === null ? null : q / 1e9;
-          const share = before.valueSol > 0 && leftoverTokenSol !== null ? leftoverTokenSol / before.valueSol : null;
-          const msg = `[live] pos#${position.id} ${position.symbol}: close left ${leftRaw} raw tokens in wallet` +
-            (leftoverTokenSol !== null ? ` (~${leftoverTokenSol.toFixed(4)} SOL, ${share !== null ? (share * 100).toFixed(0) + "% of mark" : "?"})` : "") +
-            ` — swap under-filled; residual sweep will sell it. Position is NOT fully out.`;
-          console.error(msg);
-          logError({
-            source: "live", code: "close_underfilled", message: msg,
-            detail: { positionId: position.id, leftRaw: leftRaw.toString(), leftoverTokenSol, markedExitSol: before.valueSol, closeReturnSol },
-            symbol: position.symbol, mint: position.tokenMint, pool: position.poolAddress, dedupeSec: 60,
-          });
-          if (share !== null && share >= 0.25) {
-            await alert("watchdog",
-              `⚠️ ${position.symbol} pos#${position.id}: exit swap under-filled — ~${leftoverTokenSol!.toFixed(3)} SOL of tokens ` +
-              `(${(share * 100).toFixed(0)}% of the position) still in wallet. Sweep will retry; not fully out yet.`
-            ).catch(() => {});
+          // Dust under the sweep's own floor is not an incident. sweepResiduals
+          // skips anything below RESIDUAL_SWEEP_MIN_SOL because the sell costs
+          // more than it returns — so filing an error that says "the residual
+          // sweep will sell it" is both noise AND untrue for these. pos#15
+          // BUTTHOLE (2026-08-17) closed +0.0002 SOL, a WIN, and still raised an
+          // incident over 0.00045 SOL — 0% of the mark.
+          const left = classifyLeftover(leftoverTokenSol, before.valueSol, true);
+          const share = left.share;
+          strandedCreditSol = left.creditSol;
+          if (left.kind === "dust") {
+            // Written off here and now: nothing will ever convert it, so
+            // crediting stranded_sol would only expire 30 minutes later.
+            console.log(
+              `[live] pos#${position.id} ${position.symbol}: close left ${leftRaw} raw tokens ` +
+              `(~${leftoverTokenSol!.toFixed(6)} SOL) — dust below the ${RESIDUAL_SWEEP_MIN_SOL} SOL sweep floor, written off`
+            );
+          } else {
+            const msg = `[live] pos#${position.id} ${position.symbol}: close left ${leftRaw} raw tokens in wallet` +
+              (leftoverTokenSol !== null ? ` (~${leftoverTokenSol.toFixed(4)} SOL, ${share !== null ? (share * 100).toFixed(0) + "% of mark" : "?"})` : "") +
+              ` — swap under-filled; residual sweep will sell it. Position is NOT fully out.`;
+            console.error(msg);
+            logError({
+              source: "live", code: "close_underfilled", message: msg,
+              detail: { positionId: position.id, leftRaw: leftRaw.toString(), leftoverTokenSol, markedExitSol: before.valueSol, closeReturnSol },
+              symbol: position.symbol, mint: position.tokenMint, pool: position.poolAddress, dedupeSec: 60,
+            });
+            if (share !== null && share >= 0.25) {
+              await alert("watchdog",
+                `⚠️ ${position.symbol} pos#${position.id}: exit swap under-filled — ~${leftoverTokenSol!.toFixed(3)} SOL of tokens ` +
+                `(${(share * 100).toFixed(0)}% of the position) still in wallet. Sweep will retry; not fully out yet.`
+              ).catch(() => {});
+            }
           }
         }
       } catch { /* diagnostic only */ }
@@ -958,10 +977,11 @@ export class LiveExecutor implements Executor {
     ).run(
       stateByReason[reason], now(), before.valueSol, reason, closeReturnSol,
       Number.isFinite(before.feesSol) ? before.feesSol : 0,
-      // Only a quoted leftover counts. An unquotable one (null) is exactly the
-      // case where we cannot claim it is worth anything, so it stays a loss.
-      leftoverTokenSol != null && Number.isFinite(leftoverTokenSol) && leftoverTokenSol > 0 ? leftoverTokenSol : 0,
-      leftoverTokenSol != null && Number.isFinite(leftoverTokenSol) && leftoverTokenSol > 0 ? now() : null,
+      // Only a quoted, sweepable leftover counts. An unquotable one, or dust
+      // below the sweep floor, is exactly the case where we cannot claim it is
+      // worth anything recoverable — so it stays a loss from the moment of close.
+      Number.isFinite(strandedCreditSol) && strandedCreditSol > 0 ? strandedCreditSol : 0,
+      Number.isFinite(strandedCreditSol) && strandedCreditSol > 0 ? now() : null,
       position.id
     );
     // Record the exact signatures the delta was summed from: without them a

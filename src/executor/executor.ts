@@ -55,3 +55,39 @@ export interface Executor {
   /** Live only: sell stranded token balances left by failed zap-out swaps. */
   sweepResiduals?(minSol: number): Promise<Array<{ mint: string; symbol: string; soldSol: number; positionId: number | null }>>;
 }
+
+/**
+ * Floor for the residual sweep: below this a sell costs more in tx fees than it
+ * returns, so the sweep deliberately skips it. Lives here rather than in the
+ * loop because the close path needs the same number — a leftover under this
+ * floor is dust nothing will ever recover, and must not be reported as a
+ * recoverable strand.
+ */
+export const RESIDUAL_SWEEP_MIN_SOL = 0.002;
+
+/**
+ * What a close left behind in the wallet, and what to do about it.
+ *
+ *   "none"   nothing left — a clean close.
+ *   "dust"   quoted below the sweep floor. Nothing will ever convert it, so it
+ *            is written off at close: no incident, no stranded credit.
+ *   "strand" recoverable (or unpriceable). Raises `close_underfilled`, and when
+ *            priced, carries a stranded_sol credit until the sweep settles it.
+ *
+ * An UNQUOTABLE leftover is a strand, not dust: being unable to price it is
+ * exactly when we must not assume it is worthless. It still earns no credit —
+ * `creditSol` stays 0 — because REALIZED_PNL may only count what we can value.
+ */
+export function classifyLeftover(
+  leftoverTokenSol: number | null,
+  markSol: number,
+  hasTokens: boolean,
+): { kind: "none" | "dust" | "strand"; share: number | null; creditSol: number } {
+  if (!hasTokens) return { kind: "none", share: null, creditSol: 0 };
+  if (leftoverTokenSol === null || !Number.isFinite(leftoverTokenSol)) {
+    return { kind: "strand", share: null, creditSol: 0 };
+  }
+  const share = markSol > 0 ? leftoverTokenSol / markSol : null;
+  if (leftoverTokenSol < RESIDUAL_SWEEP_MIN_SOL) return { kind: "dust", share, creditSol: 0 };
+  return { kind: "strand", share, creditSol: leftoverTokenSol };
+}
