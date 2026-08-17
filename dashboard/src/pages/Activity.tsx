@@ -7,7 +7,7 @@ import { shortTime } from "@/lib/utils";
 import { Icon, feedKindIcon } from "@/lib/icons";
 
 export function ActivityPage({ watch }: { watch: LiveWatch | null }) {
-  const items = buildActivityFeed(watch, 80);
+  const items = buildActivityFeed(watch, 200);
   const byKind = items.reduce<Record<string, number>>((a, it) => {
     a[it.kind] = (a[it.kind] ?? 0) + 1;
     return a;
@@ -18,7 +18,7 @@ export function ActivityPage({ watch }: { watch: LiveWatch | null }) {
       <div>
         <h1 className="font-display text-lg font-semibold tracking-wide">Activity</h1>
         <p className="text-[11px] text-dim">
-          Live ops feed — entries, exits, claims, skips (high-signal), and open failures.
+          Entries, exits, claims and open failures from the last 7 days; skips (high-signal, newest per token+gate) from the last 24h. The Book tab holds the full history.
         </p>
       </div>
 

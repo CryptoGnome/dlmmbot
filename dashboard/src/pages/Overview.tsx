@@ -9,7 +9,7 @@ import { ClosePnlCell, OpenPositionCard } from "@/components/OpenPositionCard";
 import { LiveNum } from "@/components/LiveNum";
 
 function HeroStat({
-  label, value, signal, pct, tone = "fg", sub,
+  label, value, signal, pct, tone = "fg", sub, title,
 }: {
   label: string;
   value: string;
@@ -18,12 +18,14 @@ function HeroStat({
   pct?: number | null;
   tone?: "fg" | "ok" | "danger" | "accent" | "warn";
   sub?: string;
+  /** Hover explanation for what the number does and does not include. */
+  title?: string;
 }) {
   const toneClass = {
     fg: "text-fg", ok: "text-ok", danger: "text-danger", accent: "text-accent", warn: "text-warn",
   }[tone];
   return (
-    <div className="min-w-0">
+    <div className="min-w-0" title={title}>
       <div className="text-[11px] tracking-[0.16em] text-dim uppercase">{label}</div>
       <div className="mt-1.5 flex flex-wrap items-baseline gap-2">
         <LiveNum
@@ -69,6 +71,14 @@ export function OverviewPage({
   let openPnl = 0;
   let openEntry = 0;
   let openPnlKnown = 0;
+  // Rent in flight: what the open positions cost to open ABOVE their deposit —
+  // bin-array + position-account rent and open gas. Open profit is marked
+  // against the deposit and does not see it, so total balance reads below
+  // start + realized + open by roughly this amount for as long as positions
+  // are open (~0.06–0.12 SOL each). Most is refundable rent that comes back
+  // through close_return; the tile says so, so the numbers reconcile on screen.
+  let rentInFlight = 0;
+  let rentKnown = 0;
   for (const p of open) {
     const n = p.mark?.total_pnl_sol ?? p.mark?.pnl_sol;
     if (n != null) {
@@ -76,8 +86,15 @@ export function OverviewPage({
       openEntry += p.entry_sol ?? 0;
       openPnlKnown += 1;
     }
+    if (p.open_cost_sol != null && p.entry_sol != null) {
+      rentInFlight += Math.max(0, p.open_cost_sol - p.entry_sol);
+      rentKnown += 1;
+    }
   }
   const openPct = openPnlKnown && openEntry > 0 ? openPnl / openEntry : null;
+  const openSub = rentKnown
+    ? `${slots.label} · ${rentInFlight.toFixed(3)} SOL rent in flight`
+    : slots.label;
 
   return (
     <div className="flex min-h-[calc(100dvh-7.5rem)] flex-col gap-4">
@@ -99,7 +116,8 @@ export function OverviewPage({
           signal={openPnlKnown ? openPnl : null}
           pct={openPct}
           tone={!openPnlKnown ? "fg" : openPnl >= 0 ? "ok" : "danger"}
-          sub={slots.label}
+          sub={openSub}
+          title="Mark-to-market on the liquidity only. Rent in flight is what the open positions paid above their deposit (bin-array + position rent, open gas); it is not counted here and mostly comes back at close — which is why Total balance sits below start + realized + open by about that much while positions are open."
         />
         <HeroStat
           label="Last 24h profit"

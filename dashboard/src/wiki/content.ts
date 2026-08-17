@@ -518,10 +518,10 @@ export const WIKI_SECTIONS: WikiSection[] = [
       {
         type: "cards",
         items: [
-          { title: "Overview", text: "Money snapshot, open profit with slot occupancy (e.g. 3 of 5 · 2 free), equity chart. Engine ON/OFF + HALT live in the header.", icon: "chart" },
+          { title: "Overview", text: "Money snapshot, open profit with slot occupancy (e.g. 3 of 5 · 2 free) and rent in flight, equity chart. Engine ON/OFF + HALT live in the header. Rent in flight = what open positions paid above their deposit (bin rent + open gas, ~0.06–0.12 SOL each); Open profit doesn't count it and most comes back at close — so Total balance sits below start + realized + open by roughly that while positions are open. It's parked, not lost.", icon: "chart" },
           { title: "Positions", text: "Open positions (slot badge) + recent closes. Range bar: purple ≈ SOL still waiting, blue ≈ already converted to token as price walks the bins.", icon: "book" },
           { title: "Analytics", text: "Why we made/lost SOL — exits, sleeves, skips.", icon: "calc" },
-          { title: "Activity", text: "Play-by-play for the current PAPER/LIVE book only (entries, exits, skips). SOL: green in / win, blue deployed (entries), red only for losses. On-chain rows link to Solscan.", icon: "zap" },
+          { title: "Activity", text: "Play-by-play for the current PAPER/LIVE book only. Entries, exits, claims and open failures from the last 7 days — they never get pushed out by skips. Skips are the last 24h, newest per token+gate, capped so they stay context rather than noise. SOL: green in / win, blue deployed (entries), red only for losses. On-chain rows link to Solscan. The Book tab is the full history.", icon: "zap" },
           { title: "Smart flow", text: "GMGN smart-money + KOL tape in the rolling window (~2 min polls). Same signal that adds score bonuses — live via the watch feed.", icon: "chart" },
           { title: "Errors", text: "Broken stuff with copy/paste for bug reports. Dismiss hides; Clear log deletes rows from the DB. Each row has a plain label (Transient / Degraded / Needs attention).", icon: "alert", tone: "danger" },
           { title: "Report", text: "Bug or enhancement — guided GitHub issue with type/area chips, optional screenshots (paste in GitHub), and auto build context.", icon: "alert" },

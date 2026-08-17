@@ -896,7 +896,16 @@ export function buildLiveBookSnapshot(root) {
       "majors_pool_share", "micro_score", "micro_tvl", "micro_slots_full",
       "age_min", "age_max", "displaced",
     ]);
+    // Two windows, on purpose. Entries, exits and wallet events are the AUDIT
+    // TRAIL — bounded by how many positions we hold, not by scan volume — so
+    // they get 7 days and never age out of view before the Book does. Skips
+    // are scan spam (~90k/day) and keep the tight 24h window plus dedupe.
+    // One 24h window for everything made a close vanish from the feed a day
+    // after it happened while it still sat in the Book, and on a busy day the
+    // 80-row cap pushed older entries/exits off the bottom even sooner. Both
+    // read to the operator as "closes aren't being logged".
     const activitySince = now - 24 * 3600;
+    const auditSince = now - 7 * 24 * 3600;
     let recentActivity = [];
     try {
     const activity = [];
@@ -938,8 +947,8 @@ export function buildLiveBookSnapshot(root) {
                AND p.entry_ts BETWEEN d.ts - 30 AND d.ts + 600
            )
          )
-       ORDER BY d.ts DESC LIMIT 40`
-    ).all(activitySince, bookMode, bookMode)) {
+       ORDER BY d.ts DESC LIMIT 200`
+    ).all(auditSince, bookMode, bookMode)) {
       const sym = r.symbol || (r.pool_name ? String(r.pool_name).split("-")[0] : null) || (r.mint ? String(r.mint).slice(0, 6) : "?");
       activity.push({
         ts: r.ts, at: r.at, kind: "entry",
@@ -966,8 +975,8 @@ export function buildLiveBookSnapshot(root) {
               ) AS tx_sig
        FROM positions
        WHERE mode = ? AND exit_ts IS NOT NULL AND exit_ts > ?
-       ORDER BY exit_ts DESC LIMIT 40`
-    ).all(bookMode, activitySince)) {
+       ORDER BY exit_ts DESC LIMIT 200`
+    ).all(bookMode, auditSince)) {
       activity.push({
         ts: r.ts, at: r.at, kind: "exit",
         symbol: r.symbol || "?", mint: r.mint || null, pool: r.pool || null,
@@ -1023,8 +1032,8 @@ export function buildLiveBookSnapshot(root) {
        WHERE e.ts > ?
          AND p.mode = ?
          AND e.type IN ('claim','profit_lock','rebalance','rebalance_partial','rent_reclaim','force_close')
-       ORDER BY e.ts DESC LIMIT 30`
-    ).all(activitySince, bookMode)) {
+       ORDER BY e.ts DESC LIMIT 200`
+    ).all(auditSince, bookMode)) {
       let symbol = r.symbol || null;
       let mint = r.mint || null;
       let detailExtra = null;
@@ -1071,18 +1080,30 @@ export function buildLiveBookSnapshot(root) {
     }
 
     activity.sort((a, b) => b.ts - a.ts);
-    // Collapse skip spam: keep newest per mint+gate (still show every entry/exit/event/fail).
+    // Collapse skip spam: keep newest per mint+gate. Then cap — but the cap
+    // must not evict the audit trail. Skips are capped separately (they are
+    // context, and there are ~90k/day of them); entries/exits/events/fails all
+    // survive to the row limit. Under one shared cap a busy scan day pushed
+    // yesterday's closes off the bottom while the Book still showed them.
+    const MAX_ROWS = 200;
+    const MAX_SKIPS = 40;
     const seenSkip = new Set();
-    const deduped = [];
+    const audit = [];
+    const skips = [];
     for (const a of activity) {
       if (a.kind === "skip") {
         const k = `${a.mint ?? a.symbol}|${a.gate}`;
-        if (seenSkip.has(k)) continue;
+        if (seenSkip.has(k) || skips.length >= MAX_SKIPS) continue;
         seenSkip.add(k);
+        skips.push(a);
+      } else {
+        // entry / exit / event / fail / cluster — never dropped by the skip cap
+        audit.push(a);
       }
-      deduped.push(a);
-      if (deduped.length >= 80) break;
     }
+    const deduped = [...audit, ...skips]
+      .sort((a, b) => b.ts - a.ts)
+      .slice(0, MAX_ROWS);
     const recentActivityBuilt = deduped.map(({ ts: _ts, ...rest }) => rest);
     recentActivity = recentActivityBuilt;
     } catch (e) {
