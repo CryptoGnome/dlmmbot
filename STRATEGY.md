@@ -165,7 +165,8 @@ only configuration at/above breakeven at the measured in-range fee rate — with
 simulated stops or below-range cuts. A P3 close leaves the position 100% SOL, so every
 follow re-entry is swapless.
 
-- Any P3 close (win or missed) on a main position **arms a chain** (`follow_chains`).
+- Any P3 close (win or missed) on a main position **arms a chain** (`follow_chains`) — **provided the pool still has `vol_30m ≥ [$100k]` at close time** (the same bar a leg needs to fire). Measured 2026-08-17 over the server bot's 15 chains: only 3 ever fired a leg (5m, 15m, 52m after arming — all winners); the other 12 armed on pools that had already gone quiet — six died `volume_died` inside 60 s, the rest sat `awaiting_dip` for up to 4.6 h on a price that never moved 15% either way. Cost-free in SOL, but every armed chain holds the `follow_active` lock on its mint, and that lock was the #1 skip reason in the decisions table: the scanner passed on tokens a dead-ish chain still owned. No heat → no chain → no lock.
+- **Dip timeout** `[90 min]`: a chain that sits `awaiting_dip` this long without its retrace ends (`dip_timeout`) and releases the mint. Measured from when the chain last entered `awaiting_dip`, not from chain start — a chain that just closed a winning leg goes `awaiting_high` first and is not charged for that wait. Every leg that ever fired did so inside 52 min. `0` disables.
 - A leg opens only when ALL hold: pool `vol_30m ≥ [$100k]` (4× the entry floor),
   current-window heat (30m AND 1h fee rates annualized ≥ the 24h gate — deliberately
   bypassing the stale 24h average, which TVL growth dilutes on exactly the best pools),
@@ -176,7 +177,7 @@ follow re-entry is swapless.
 - **Up-only**: after each leg closes up-and-out, the chain re-arms only once price makes
   a NEW chain high. This condition alone separated +EV from −EV in the sim.
 - Chain ends on: any non-P3 leg close, `[3]` legs, cumulative chain PnL ≤ −`[0.075]` SOL,
-  `[3]` consecutive polls under the normal volume floor, `[12h]` age, blacklist, or vet fail.
+  `[3]` consecutive polls under the normal volume floor, `[90 min]` awaiting a dip, `[12h]` age, blacklist, or vet fail.
 - Legs size at `[0.25]` SOL, are exempt from the §P3 re-entry ladder and `reentry_limit`
   (the volume + up-only gates replace them), and are excluded from the main Kelly ledger —
   the mode earns bigger sizing with its own closed-leg evidence, per the §10 principle.

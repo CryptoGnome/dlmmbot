@@ -246,6 +246,12 @@ function migrate(database: Database.Database): void {
   try {
     database.exec("ALTER TABLE positions ADD COLUMN close_requested_at INTEGER");
   } catch { /* column already exists */ }
+  // When the chain last entered awaiting_dip — the reference for the dip
+  // timeout. Measured from here rather than started_ts so a chain that just
+  // closed a winning leg (awaiting_high first) is not charged for that wait.
+  try {
+    database.exec("ALTER TABLE follow_chains ADD COLUMN dip_since_ts INTEGER");
+  } catch { /* column already exists */ }
   try {
     database.exec("ALTER TABLE positions ADD COLUMN stranded_at INTEGER");
   } catch { /* column already exists */ }

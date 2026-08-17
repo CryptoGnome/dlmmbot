@@ -366,17 +366,17 @@ export const WIKI_SECTIONS: WikiSection[] = [
         type: "flow",
         title: "A follow chain",
         steps: [
-          { label: "P3 close", detail: "Arms the chain", icon: "exit" },
+          { label: "P3 close", detail: "Arms the chain — only if the pool is still hot", icon: "exit" },
           { label: "Wait", detail: "Volume + retrace", icon: "pause" },
           { label: "Leg open", detail: "Tighter BidAsk", icon: "entry" },
           { label: "Up-and-out", detail: "Need a new high to re-arm", icon: "chart" },
-          { label: "End", detail: "Cold vol / loss / max legs", icon: "x", tone: "danger" },
+          { label: "End", detail: "Cold vol / no dip in 90m / loss / max legs", icon: "x", tone: "danger" },
         ],
       },
       {
         type: "ul",
         items: [
-          "While a follow chain owns a mint, the normal scanner won’t double-book it.",
+          "While a follow chain owns a mint, the normal scanner won’t double-book it — which is why chains that will never fire now end early: a chain only arms if the pool still has real volume at close, and one that waits 90 minutes without its pullback lets the token go. Every leg that ever fired did so within about 50 minutes.",
           "Don’t casually loosen volume/retrace gates — they are the edge.",
         ],
       },

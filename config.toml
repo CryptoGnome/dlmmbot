@@ -338,6 +338,14 @@ max_legs = 3               # per chain
 chain_loss_budget_sol = 0.075  # chain ends when cumulative leg PnL breaches this
 chain_max_age_h = 12
 cold_polls_end = 3         # consecutive polls under gates.vol_30m_min_usd ends the chain
+# 2026-08-17: measured over the server bot's 15 chains. The 3 that fired a leg
+# all did so within 52 min of arming (5m, 15m, 52m — all winners). The rest
+# never saw a 15% dip: price drifted sideways with arm_peak == chain_high until
+# volume died, one for 4.6 h. An armed chain holds the follow_active lock on
+# its mint, so a chain that will never fire is a token the scanner cannot
+# trade. If no dip arrives inside this window the chain ends (dip_timeout)
+# and releases the mint. 0 = never time out.
+awaiting_dip_max_min = 90
 open_fail_cooldown_s = 300 # after a failed leg open, wait before retrying (was every 15s × 4 sims)
 
 [majors]                   # STRATEGY.md §1.1 — spot parking, separate from meme BidAsk
