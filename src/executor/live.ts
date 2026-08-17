@@ -944,15 +944,25 @@ export class LiveExecutor implements Executor {
     // `before.feesSol` is what shouldClaimAndClose collected on the way out.
     // It is already inside closeReturnSol; recorded separately so fee income is
     // attributable at all (see the fees_at_close_sol migration note in db.ts).
+    // stranded_sol carries the leftovers as an asset until the sweep sells them
+    // — without it every realized-PnL consumer (circuit breaker, cluster brake,
+    // close alert, Kelly, dashboard) reads the under-fill as a total loss for up
+    // to a sweep interval. See STRANDED_GRACE_S in db.ts for why it expires.
     db.prepare(
-      "UPDATE positions SET state = ?, exit_ts = ?, exit_sol = ?, exit_reason = ?, close_return_sol = ?, fees_at_close_sol = ? WHERE id = ?"
+      "UPDATE positions SET state = ?, exit_ts = ?, exit_sol = ?, exit_reason = ?, close_return_sol = ?, fees_at_close_sol = ?," +
+      " stranded_sol = ?, stranded_at = ? WHERE id = ?"
     // NOT NULL column: better-sqlite3 binds NaN as NULL, and this UPDATE runs
     // AFTER removeLiquidity and the zap-out have irreversibly landed. A throw
     // here would leave state='open' on a position with nothing on chain, which
     // the next tick reads as valueSol 0 and writes off as a total loss.
     ).run(
       stateByReason[reason], now(), before.valueSol, reason, closeReturnSol,
-      Number.isFinite(before.feesSol) ? before.feesSol : 0, position.id
+      Number.isFinite(before.feesSol) ? before.feesSol : 0,
+      // Only a quoted leftover counts. An unquotable one (null) is exactly the
+      // case where we cannot claim it is worth anything, so it stays a loss.
+      leftoverTokenSol != null && Number.isFinite(leftoverTokenSol) && leftoverTokenSol > 0 ? leftoverTokenSol : 0,
+      leftoverTokenSol != null && Number.isFinite(leftoverTokenSol) && leftoverTokenSol > 0 ? now() : null,
+      position.id
     );
     // Record the exact signatures the delta was summed from: without them a
     // disputed close can only be reconstructed by scanning wallet history.
@@ -1056,8 +1066,11 @@ export class LiveExecutor implements Executor {
           if (!res) continue;
           const soldSol = (await this.walletDelta([res.signature])) ?? 0;
           if (owner) {
-            db.prepare("UPDATE positions SET recovered_sol = recovered_sol + ? WHERE id = ?")
-              .run(soldSol, owner.id);
+            // Clearing stranded_sol as recovered_sol is credited is what keeps
+            // the estimate and the measurement from ever being counted together.
+            db.prepare(
+              "UPDATE positions SET recovered_sol = recovered_sol + ?, stranded_sol = 0, stranded_at = NULL WHERE id = ?"
+            ).run(soldSol, owner.id);
           }
           recovered.push({ mint: info.mint, symbol, soldSol, positionId: owner?.id ?? null });
         } catch (e) {

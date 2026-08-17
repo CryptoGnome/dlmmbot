@@ -440,7 +440,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           },
           {
             title: "Circuit + cluster",
-            text: "Bad day % or a cluster of hard stops → pause new entries for a cool-down (measured from the newest hard exit). Applies to follow-mode legs too.",
+            text: "Bad day % or a cluster of hard stops → pause new entries for a cool-down (measured from the newest hard exit). Applies to follow-mode legs too. Both read settled PnL, so an exit swap that under-fills won't trip them while the sweep is still selling the leftovers.",
             icon: "pause",
             tone: "warn",
           },
@@ -611,6 +611,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
         items: [
           "Per position: wallet SOL out → back + fees + profit-lock withdrawals − costs (REALIZED_PNL). Close rows show Move (deposit/IL) vs Fees separately.",
           "Unknown outcomes stay unknown: force-closed or orphan-repaired rows have no exit value, so they're excluded from realized PnL (and from the breaker/Kelly) instead of counting as fake full losses.",
+          "Under-filled closes aren't phantom losses: if the exit swap leaves tokens in the wallet, they're carried at their quoted value until the sweep sells them (usually minutes), so the breaker and Kelly don't react to a loss that never happened. If the sweep can't sell within 30 minutes it stops counting and the loss shows in full.",
           "Paper and live books are fully separate — each mode's positions, Activity entries/skips, sizing history, and brakes only ever see their own rows, even though they share one database.",
           "Majors rotation often nets ~0 SOL — small fees offset by IL/tx on a flat exit; check the Fees line, not just headline PnL.",
           "decisions table = why we entered, skipped, or exited (your future tuning gold).",

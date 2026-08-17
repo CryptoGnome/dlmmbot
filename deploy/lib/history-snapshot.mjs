@@ -120,6 +120,7 @@ export function buildHistorySnapshot(root, range = "30d") {
               ROUND(COALESCE(fees_measured_sol, 0), 6) AS fees_measured_sol,
               ROUND(COALESCE(fees_claimed_sol, 0), 6) AS fees_claimed_sol,
               ROUND(COALESCE(recovered_sol, 0), 6) AS recovered_sol,
+              ROUND(COALESCE(stranded_sol, 0), 6) AS stranded_sol,
               ROUND(COALESCE(fees_at_close_sol, 0), 6) AS fees_at_close_sol,
               ROUND(exit_sol, 6) AS exit_sol
        FROM positions
@@ -135,12 +136,16 @@ export function buildHistorySnapshot(root, range = "30d") {
       const feesLife = feesMeasured > 0 ? feesMeasured : feesClaimed;
       const fees = Math.round((feesLife + feesAtClose) * 1e6) / 1e6;
       const recovered = Number(r.recovered_sol) || 0;
+      // Not-yet-swept residue from an under-filled close. Counts alongside
+      // recovered_sol so the deposit-move split stays honest in the window
+      // between the close and the sweep (see REALIZED_PNL's stranded credit).
+      const stranded = Number(r.stranded_sol) || 0;
       const entry = Number(r.entry_sol) || 0;
       const rent = Number(r.rent_paid_sol) || 0;
       const pnl = Number(r.pnl) || 0;
       const costBasis = openCost ?? (entry > 0 ? entry + rent : entry);
       // Deposit move (IL + tx): total PnL minus fee income and late recoveries.
-      const exitMove = Math.round((pnl - fees - recovered) * 1e6) / 1e6;
+      const exitMove = Math.round((pnl - fees - recovered - stranded) * 1e6) / 1e6;
       return {
         ...r,
         fees_sol: fees,

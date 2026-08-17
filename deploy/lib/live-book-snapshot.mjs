@@ -70,11 +70,21 @@ export function resolveWalletPubkey() {
   return null;
 }
 
+// Mirrors REALIZED_PNL_SQL in src/db/db.ts — keep the stranded-credit term in
+// sync. Tokens left in the wallet by an under-filled close are an asset until
+// the residual sweep sells them; the credit expires after 30 min so a residue
+// that can never be sold shows up as the loss it is.
+const STRANDED_CREDIT = `
+  CASE WHEN COALESCE(stranded_sol, 0) > 0
+        AND COALESCE(stranded_at, 0) > CAST(strftime('%s', 'now') AS INTEGER) - 1800
+       THEN stranded_sol ELSE 0 END`;
+
 export const REALIZED_PNL = `
   CASE WHEN close_return_sol IS NOT NULL
        THEN close_return_sol
             + COALESCE(fees_measured_sol, 0)
             + COALESCE(recovered_sol, 0)
+            + ${STRANDED_CREDIT}
             - COALESCE(open_cost_sol, entry_sol + COALESCE(rent_paid_sol, 0))
        WHEN entry_sol > 0
        THEN COALESCE(exit_sol, 0) - entry_sol
@@ -82,6 +92,7 @@ export const REALIZED_PNL = `
                    THEN fees_measured_sol
                    ELSE COALESCE(fees_claimed_sol, 0) END
             + COALESCE(recovered_sol, 0)
+            + ${STRANDED_CREDIT}
        ELSE 0 END`;
 
 /** Map closed token-account addresses → { mint, symbol } for rent_reclaim rows. */
