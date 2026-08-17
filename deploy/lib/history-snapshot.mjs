@@ -136,16 +136,21 @@ export function buildHistorySnapshot(root, range = "30d") {
       const feesLife = feesMeasured > 0 ? feesMeasured : feesClaimed;
       const fees = Math.round((feesLife + feesAtClose) * 1e6) / 1e6;
       const recovered = Number(r.recovered_sol) || 0;
-      // Not-yet-swept residue from an under-filled close. Counts alongside
-      // recovered_sol so the deposit-move split stays honest in the window
-      // between the close and the sweep (see REALIZED_PNL's stranded credit).
-      const stranded = Number(r.stranded_sol) || 0;
       const entry = Number(r.entry_sol) || 0;
       const rent = Number(r.rent_paid_sol) || 0;
       const pnl = Number(r.pnl) || 0;
       const costBasis = openCost ?? (entry > 0 ? entry + rent : entry);
-      // Deposit move (IL + tx): total PnL minus fee income and late recoveries.
-      const exitMove = Math.round((pnl - fees - recovered - stranded) * 1e6) / 1e6;
+      // Deposit move (IL + tx) = realized PnL minus fee income. Everything that
+      // is not fees is the deposit moving, so fees + move == pnl by construction.
+      //
+      // This used to also subtract recovered_sol (and, briefly, stranded_sol),
+      // on the reading that a late sweep credit was income to exclude. It is
+      // not — it is the position's OWN capital coming back after an under-filled
+      // close. Subtracting it double-counted: ANSEM pos#8 showed a deposit move
+      // of -0.5722 SOL when the deposit had actually moved -0.0400, and the
+      // headline broke its own identity (fees 0.0529 + inventory -0.6960 =
+      // -0.643 against a real book of -0.1108, the 0.5323 gap being the sweep).
+      const exitMove = Math.round((pnl - fees) * 1e6) / 1e6;
       return {
         ...r,
         fees_sol: fees,
@@ -213,7 +218,14 @@ export function buildHistorySnapshot(root, range = "30d") {
               follow_chain_id,
               ever_in_range,
               (${REALIZED_PNL}) AS pnl,
-              ROUND(COALESCE(fees_measured_sol, fees_claimed_sol, 0), 6) AS fees_sol,
+              -- Same rule as the ladder's Fees column, so the two views agree.
+              -- COALESCE alone never reached fees_claimed_sol (fees_measured_sol
+              -- is NOT NULL DEFAULT 0, so a legacy row read as zero fees), and
+              -- fees collected on the way out were omitted entirely.
+              ROUND(CASE WHEN COALESCE(fees_measured_sol, 0) > 0
+                         THEN fees_measured_sol
+                         ELSE COALESCE(fees_claimed_sol, 0) END
+                    + COALESCE(fees_at_close_sol, 0), 6) AS fees_sol,
               open_cost_sol, close_return_sol, exit_sol
        FROM positions
        WHERE mode = ? AND exit_ts IS NOT NULL AND exit_ts >= ?`
@@ -259,14 +271,20 @@ export function buildHistorySnapshot(root, range = "30d") {
       }
     }
 
-    function inventoryMove(row) {
+    // Same definition as the ladder's Move column: realized PnL minus fee
+    // income. The old form was `closeRet - openCost`, which silently dropped
+    // recovered_sol — so an under-filled close reported the capital the sweep
+    // sold back as pure inventory loss (ANSEM pos#8: -0.5714 against -0.0400).
+    // Deriving from pnl keeps the two dashboard views agreeing and keeps the
+    // headline identity fees + inventory == pnl true for every row.
+    function inventoryMove(row, pnl, fees) {
       const openCost = row.open_cost_sol != null ? Number(row.open_cost_sol) : null;
       const closeRet = row.close_return_sol != null ? Number(row.close_return_sol) : null;
       const entry = Number(row.entry_sol) || 0;
       const exitMarked = row.exit_sol != null ? Number(row.exit_sol) : null;
-      if (openCost != null && closeRet != null) return closeRet - openCost;
-      if (exitMarked != null && entry > 0) return exitMarked - entry;
-      return null;
+      // Unknown outcomes stay unknown rather than reading as a flat 0 move.
+      const measurable = (openCost != null && closeRet != null) || (exitMarked != null && entry > 0);
+      return measurable ? pnl - fees : null;
     }
 
     const enriched = closeRows.map((r) => {
@@ -274,7 +292,7 @@ export function buildHistorySnapshot(root, range = "30d") {
       const holdH = r.exit_ts && r.entry_ts ? (Number(r.exit_ts) - Number(r.entry_ts)) / 3600 : null;
       const pnl = Number(r.pnl) || 0;
       const fees = Number(r.fees_sol) || 0;
-      const inv = inventoryMove(r);
+      const inv = inventoryMove(r, pnl, fees);
       return {
         ...r,
         sleeve: meta.sleeve,

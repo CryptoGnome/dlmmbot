@@ -151,6 +151,30 @@ describe("REALIZED_PNL_SQL", () => {
     expect(pnlFor(id)).toBeCloseTo(0.1 - 0.3 + 0.01 + 0.18, 8);
   });
 
+  // The dashboard keeps its own copy of this expression (it runs standalone
+  // against farmer.db and cannot import TS). Two copies drift; this pins the
+  // strand behaviour in both so a future edit to one is caught here.
+  it("the dashboard's copy of the formula credits and expires strands identically", async () => {
+    // @ts-expect-error — plain .mjs, no type declarations
+    const { REALIZED_PNL } = await import("../../deploy/lib/live-book-snapshot.mjs");
+    const dash = (id: number): number => (getDb().prepare(
+      `SELECT (${REALIZED_PNL}) AS pnl FROM positions WHERE id = ?`
+    ).get(id) as { pnl: number }).pnl;
+
+    const base = {
+      entrySol: 0.75, exitSol: 0.7144, openCostSol: 0.8669,
+      closeReturnSol: 0.2955, feesMeasuredSol: 0.0292, strandedSol: 0.5327,
+    };
+    const fresh = insertClosedPosition(base);
+    const stale = insertClosedPosition({ ...base, strandedAgeS: STRANDED_GRACE_S + 60 });
+
+    expect(dash(fresh)).toBeCloseTo(pnlFor(fresh)!, 8);
+    expect(dash(stale)).toBeCloseTo(pnlFor(stale)!, 8);
+    // And the credit is what separates them, in both formulas.
+    expect(dash(fresh) - dash(stale)).toBeCloseTo(0.5327, 8);
+    expect(pnlFor(fresh)! - pnlFor(stale)!).toBeCloseTo(0.5327, 8);
+  });
+
   it("uses close_return when open_cost is missing (partial wallet columns)", () => {
     const id = insertClosedPosition({
       entrySol: 0.75,
