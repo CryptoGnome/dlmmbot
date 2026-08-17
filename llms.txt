@@ -34,7 +34,7 @@ GMGN API key: https://gmgn.ai/ai (optional — see docs/setup/api-keys)
 - [Risk & sizing](https://dlmmbot.com/setup/risk): Kelly, circuit/cluster brakes, HALT vs PAUSE, promotion gate
 - [Configuration](https://dlmmbot.com/setup/configuration): every config.toml key with shipped defaults
 - [Dashboard guide](https://dlmmbot.com/setup/dashboard): tabs, setup wizard, encrypted wallet, HALT
-- [CLI reference](https://dlmmbot.com/setup/cli): scan, vet, run, status, halt/pause, force-close, simulate-zap
+- [CLI reference](https://dlmmbot.com/setup/cli): scan, vet, run, status, halt/pause, force-close
 - [FAQ](https://dlmmbot.com/setup/faq): honest answers — losses, paper-first, restarts, RPC
 - [Fees](https://dlmmbot.com/setup/fees): 1% GNME burn on live wins (supports CryptoGnome’s GNME mining token)
 - [Terms & waiver](https://dlmmbot.com/setup/terms): operator risk waiver

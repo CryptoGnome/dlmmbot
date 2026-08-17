@@ -1,6 +1,6 @@
 ---
 title: CLI reference
-description: Every npm script that matters — scan, vet, run, status, halt, pause, release, force-close, dash, simulate-zap — what each prints and when to use it.
+description: Every npm script that matters — scan, vet, run, status, halt, pause, release, force-close, dash — what each prints and when to use it.
 ---
 
 # CLI reference
@@ -56,10 +56,6 @@ One scanner sweep, printed: how many pools were swept, the top candidates with s
 ### `npm run vet -- <mint>`
 
 Runs the full vetting engine on a single token and prints the verdict, soft score /100, each hard failure with its value vs limit, and the raw facts JSON (authorities, holders, clusters, RugCheck, age). Use it to answer "why won't the bot touch this token?"
-
-### `npm run simulate-zap`
-
-Dry-runs the live exit-swap path — Jupiter V6 quote → build transaction → RPC **simulate** — without moving funds. Requires `JUPITER_API_KEY` and `RPC_URL` in `.env`. Optional `--mint <token_mint> --amount-raw <n>` targets a specific token. Run this before trusting live mode with the zap path.
 
 ### `npm run heartbeat-check`
 

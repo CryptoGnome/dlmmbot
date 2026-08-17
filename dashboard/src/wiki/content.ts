@@ -256,7 +256,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           },
           {
             title: "Exit path ready",
-            text: "When we leave, Zap (or Jupiter fallback) turns leftover tokens back into SOL.",
+            text: "When we leave, Jupiter turns the token side back into SOL.",
             icon: "bank",
           },
         ],
@@ -313,7 +313,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
             code: "P3",
             title: "Price above our range",
             when: "Price stayed above the top (win if it visited us; missed if it never did)",
-            then: "Close via zap; wins exit faster than misses (misses wait longer so we don’t churn rent)",
+            then: "Close and swap to SOL; wins exit faster than misses (misses wait longer so we don’t churn rent)",
             tone: "fg",
           },
           {
@@ -757,7 +757,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           ["Kelly", "Adaptive size from your closed-trade ledger (default sizing mode)."],
           ["Fixed sizing", "Exact SOL or % of deployable per sleeve — Settings → Book & size."],
           ["Active bin", "Where the pool’s price is right now."],
-          ["Zap", "Helper that turns leftover tokens into SOL when we exit."],
+          ["Swap", "Jupiter converts the token side back into SOL when we exit."],
           ["Escape hatch", "Deep dip, then recovery → close and free the slot (reset), not a slow bleed."],
           ["Profit lock", "Bank a slice of a big winner while the rest keeps earning."],
           ["Usage fee", "1% on live wins → GNME buy+burn. See dlmmbot.com/setup/fees."],

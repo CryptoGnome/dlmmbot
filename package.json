@@ -20,7 +20,6 @@
     "release": "tsx src/cli.ts release",
     "force-close": "tsx src/cli.ts force-close",
     "heartbeat-check": "node deploy/heartbeat-check.cjs",
-    "simulate-zap": "tsx deploy/simulate-zap.ts",
     "dash": "node deploy/dashboard-server.mjs",
     "dash:build": "npm --prefix dashboard ci && npm --prefix dashboard run build",
     "docs:dev": "npm --prefix docs-site run dev",
@@ -38,7 +37,6 @@
   },
   "dependencies": {
     "@meteora-ag/dlmm": "^1.5.0",
-    "@meteora-ag/zap-sdk": "^1.3.2",
     "@solana/spl-token": "^0.4.15",
     "@solana/web3.js": "^1.95.0",
     "better-sqlite3": "^11.8.0",

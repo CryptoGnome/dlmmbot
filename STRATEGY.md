@@ -88,13 +88,11 @@ Default shape — **Tux entry**: one-sided SOL, bid-ask, below current price.
 5. `initializePositionAndAddLiquidityByStrategy` with `StrategyType.BidAsk`, `totalXAmount = 0` (SOL side only).
 6. Tx policy: active-bin slippage `[5%]` — maps to `ceil(pct / (binStep/100))` bins (5 bins at step 100). Was `[1%]` (=1 bin at step 100), which produced 100% of live `ExceededBinSlippageTolerance` open failures. Prefer a failed tx over a bad fill still holds for *swap* exits; for LP open, rebuild-on-slippage + a few bins of tolerance is correct. Program sim failures do not resend the same tx; `[3]` network retries, then abandon and re-quote.
 6a. **Priority fee & compute budget.** A prioritization fee is `price × REQUESTED compute-unit limit`, charged on what the tx asks for rather than what it burns, so both halves are set deliberately. Price = the `[75th]` percentile of *nonzero* recent fees **for the accounts the tx writes** (`lockedWritableAccounts`) — a network-wide median under-prices a contended pool, and a contended pool is the only kind we transact on — clamped to `[10k]`–`[1M]` µlamports/CU and multiplied by `[1.5]` per retry attempt, since re-sending an identical fee is the one thing that cannot fix a fee-caused non-landing. Limit = simulated consumption + `[20%]`, probed against the 1.4M ceiling so a route that would blow the implicit 200k-per-instruction default still reports a usable number. The DLMM SDK sets its own simulated limit and Jupiter's `/swap` sets both halves; we add ours only to what we build (zap swap, wSOL unwrap, close-account batches), and never a second instruction of a kind already present.
-6b. **Exit/rebalance execution — Zap SDK vs manual path**
-   - **Default is now `use_zap = false`** (2026-08-15) — the versioned `/swap` path handles multi-hop and oversized routes and is what has actually closed live positions.
-   - **Zap path (`use_zap = true`):** after `removeLiquidity`, token-side → SOL from Jupiter `/swap-instructions`, assembled by us as compute-budget + **setup** + swap + **cleanup** into a legacy tx, then sent through the shared retry/fate path. It no longer uses `@meteora-ag/zap-sdk` `buildJupiterSwapTransaction`: that helper keeps ONLY the swap instruction and discards setup, cleanup, compute budget and lookup tables, so the swap program was handed an uninitialised wSOL account and rejected every close with **6025 `InvalidTokenAccount`** (reproduced by simulation: swap-only errors 6025, setup+swap succeeds). Because `unwrapWsol()` closes that account after each exit, it was absent by construction on the next one — and the same dropped-cleanup bug is what used to strand proceeds as wSOL. Legacy tx ⇒ direct routes only, no lookup tables; oversized routes fall back.
-   - **Manual path (`use_zap = false`, default):** `removeLiquidity(shouldClaimAndClose)` + Jupiter `/swap` (versioned tx, ALTs, `dynamicComputeUnitLimit`, auto priority fee).
+6b. **Exit execution — one path.** After `removeLiquidity(shouldClaimAndClose)`, the token side goes to SOL through Jupiter's versioned `/swap` (multi-hop routes, address lookup tables, `dynamicComputeUnitLimit`, auto priority fee) with escalating slippage — the path that has closed every live position.
    - Normal exits `[50 bps]` swap slippage; P0 safety exits `[1000 bps]` (speed over price).
-   - Partial profit locks: `removeLiquidity(bps)` then zap withdrawn token side → SOL via Zap SDK (same swap path as exits).
-   - **Escape hatch:** deep dip then recovery → **close** (realize fees / reset). In-place Zap reshape is disabled after live no-op zap-in failures left empty shells.
+   - Partial profit locks: `removeLiquidity(bps)` then the withdrawn token side → SOL through the same swap.
+   - **Escape hatch:** deep dip then recovery → **close** (realize fees / reset).
+   - **The zap path was removed in v0.11.0** (`use_zap`, `@meteora-ag/zap-sdk`, the in-place escape reshape). It built a legacy, direct-routes-only, 30-account transaction — a strict subset of the versioned path — and produced three incidents in three days: 6025 `InvalidTokenAccount` from the SDK dropping setup instructions (v0.5.1), the reshape leaving empty position shells, and a 400-storm on every close that widened the stale-balance-read window (v0.10.1). Removed outright rather than left off-by-default: an off-by-default path is one that comes back on in somebody's old volume config, which is exactly what bit the live bot for two days. A stale `use_zap` key is ignored with a one-line warning.
 7. **Second tranche** `[on]`: for score ≥ `[85]`, an additional BidAsk pocket *below* the primary (Gmet dual-range), sized at `[50%]` of the primary, down toward `tranche_max_down_pct` (clamped by the P0 safety floor). Skipped when the primary already fills that floor, on micro sleeve, or when slots/size floor block it.
 
 ## 4. Position management — the state machine
@@ -185,7 +183,7 @@ follow re-entry is swapless.
 - Claim when unclaimed fees ≥ max(`[0.05 SOL]`, `[20×]` estimated tx cost) or every `[4h]`, whichever first.
 - Fee destination `[bank]`: token-side fees swapped to SOL via Jupiter at claim time; SOL banked to the wallet. Alternative `compound`: fees re-added to the position (only when pool score ≥ `[70]`).
 - **Escape hatch** (Gmet's reshape, simplified): if price has fallen through > `[60%]` of our range depth and then recovers to the upper `[25%]` of the range, close and re-enter — this realizes fees and resets the token side near our average acquisition price rather than round-tripping.
-- **Profit lock** `[on]`: if position mark-to-market (SOL) ≥ entry × `[1.30]` while still in range, withdraw `[30%]` of liquidity via partial `removeLiquidity` (position stays open and earning) and zap the withdrawn portion to SOL. Fires at most `[once]` per position. Locks in a floor on strong runners without giving up the fee stream.
+- **Profit lock** `[on]`: if position mark-to-market (SOL) ≥ entry × `[1.30]` while still in range, withdraw `[30%]` of liquidity via partial `removeLiquidity` (position stays open and earning) and swap the withdrawn portion to SOL. Fires at most `[once]` per position. Locks in a floor on strong runners without giving up the fee stream.
 
 ### P5 — BELOW RANGE (100% token, the red-alert case)
 Mechanical, no discussion: hold for `[15 min]` grace (wick tolerance). If price hasn't re-entered the range: close, swap all token to SOL, realize the loss, cooldown the token `[24h]`. If a safety signal coincides → escalate to P0 handling.
@@ -262,8 +260,8 @@ Tables:
 - Range-shape instrumentation (`position_marks`, per-bin open/claim/close snapshots)
 - Three-tier sleeves: micro loss-budget caps, meme (main), majors discovery + spot + TA entry + separate manage
 - Residual token sweep, Telegram alerts, out-of-process heartbeat, config hot-reload, auto-deploy watcher
-- Zap SDK token→SOL on close/claim/sweep/profit-lock (`use_zap`, manual lite-Jupiter fallback)
-- Escape hatch (deep dip → recovery → close); in-place Zap reshape disabled after live no-op losses
+- Jupiter versioned /swap token→SOL on close/claim/sweep/profit-lock (the zap path was removed in v0.11.0)
+- Escape hatch (deep dip → recovery → close)
 - LAN ops dashboard (`meteora-dash` :8787) — phosphor terminal UI + equity/exit/skip charts
 - Kelly on measured wallet PnL (n≥50 on live book); fee banking only (`fee_destination = bank`, `majors.fee_compound = false`)
 
@@ -320,4 +318,4 @@ Tables:
 | `min_position_sol` | 0.5 | **0.3 ceiling on a bankroll-scaled floor** (`min_position_pct = 1%`, hard floor `0.05`; + `min_reentry_sol = 0.2`) |
 | `max_down_pct` | 65 | **50** |
 
-**Do not:** meme BidAsk→Spot/Curve, SOL-USDC, more slots, house-money, weaken P1, Zap SDK flip without review. Range-shape stopping sample is met; integrity (a) still fails on 3 historical poll gaps; the P&L split above is the decision.
+**Do not:** meme BidAsk→Spot/Curve, SOL-USDC, more slots, house-money, weaken P1, reintroduce a second swap path. Range-shape stopping sample is met; integrity (a) still fails on 3 historical poll gaps; the P&L split above is the decision.
