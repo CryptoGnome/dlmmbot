@@ -39,7 +39,8 @@ function ErrorRow({
 
   return (
     <li className="border-t border-grid first:border-0">
-      <div className="flex items-start gap-2 py-2.5">
+      {/* Dismissed rows stay in the log, dimmed — acknowledged, not deleted. */}
+      <div className={`flex items-start gap-2 py-2.5${e.dismissed ? " opacity-45" : ""}`}>
         <button
           type="button"
           className="mt-0.5 shrink-0 text-dim hover:text-fg"
@@ -53,6 +54,7 @@ function ErrorRow({
           <div className="flex flex-wrap items-center gap-1.5">
             <Badge tone={levelTone(e.level)}>{e.level}</Badge>
             <Badge tone={kindTone(pres.kind)}>{kindLabel(pres.kind)}</Badge>
+            {e.dismissed && <Badge tone="muted">dismissed</Badge>}
             <span className="font-mono text-[10px] text-dim">#{e.id}</span>
             <span className="text-[10px] tracking-wider text-muted uppercase">
               {e.source}{e.code ? `/${e.code}` : ""}
@@ -107,16 +109,18 @@ function ErrorRow({
               GitHub issue
               <Icon icon={ExternalLink} size={9} className="opacity-60" />
             </a>
-            <button
-              type="button"
-              disabled={busy}
-              className="inline-flex items-center gap-1 border border-grid px-2 py-1 text-[10px] tracking-wider text-muted uppercase hover:border-ok/60 hover:text-ok disabled:opacity-40"
-              onClick={onDismiss}
-              title="Hide this error from the live log"
-            >
-              <Icon icon={X} size={10} />
-              Dismiss
-            </button>
+            {!e.dismissed && (
+              <button
+                type="button"
+                disabled={busy}
+                className="inline-flex items-center gap-1 border border-grid px-2 py-1 text-[10px] tracking-wider text-muted uppercase hover:border-ok/60 hover:text-ok disabled:opacity-40"
+                onClick={onDismiss}
+                title="Acknowledge: clears the badge and the error count. The entry stays in the log — only Clear removes history."
+              >
+                <Icon icon={X} size={10} />
+                Dismiss
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -240,7 +244,7 @@ export function ErrorsPage({ watch }: { watch: LiveWatch | null }) {
   async function runClear() {
     if (busy) return;
     const ok = window.confirm(
-      "Permanently delete ALL rows in the error log?\n\nDismiss only hides them; Clear removes them from the DB so it doesn’t keep growing.",
+      "Permanently delete ALL rows in the error log?\n\nDismiss only acknowledges — the entry stays in the log, greyed out. Clear is the only action that removes history from the DB.",
     );
     if (!ok) return;
     setBusy(true);
