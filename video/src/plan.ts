@@ -36,25 +36,32 @@ export interface Beat { id: SceneId; seconds: number }
 
 /** A standout trade is worth a beat; noise is not. */
 const NOTABLE_SOL = 0.01;
-export const MAX_SECONDS = 30;
+
+/**
+ * X's ceiling for this format. Not a target — a typical day lands near 45s and
+ * should stay there. The 30s cap this started with forced the shave to squeeze
+ * every beat to ~2.6s, which read as rushed; the room is for letting beats
+ * breathe, not for padding the run time.
+ */
+export const MAX_SECONDS = 120;
 
 export function planScenes(d: Daily): Beat[] {
   const beats: Beat[] = [
-    { id: "title", seconds: 2.5 },
+    { id: "title", seconds: 3 },
     // Early on purpose: show what the thing actually looks like before quoting
     // numbers at people who have never seen it.
-    { id: "dashboard", seconds: 3 },
-    { id: "headline", seconds: 5 },
-    { id: "trend", seconds: 4.5 },
-    { id: "funnel", seconds: 3.5 },
+    { id: "dashboard", seconds: 4.5 },
+    { id: "headline", seconds: 6 },
+    { id: "trend", seconds: 5.5 },
+    { id: "funnel", seconds: 5 },
   ];
 
-  if (d.best && d.best.pnl >= NOTABLE_SOL) beats.push({ id: "trade", seconds: 3.5 });
-  if (d.open.length > 0) beats.push({ id: "positions", seconds: 3 });
-  if (d.today.closes > 0) beats.push({ id: "analytics", seconds: 3.5 });
-  if (d.releases.length > 0) beats.push({ id: "shipped", seconds: 3 });
+  if (d.best && d.best.pnl >= NOTABLE_SOL) beats.push({ id: "trade", seconds: 5 });
+  if (d.open.length > 0) beats.push({ id: "positions", seconds: 4.5 });
+  if (d.today.closes > 0) beats.push({ id: "analytics", seconds: 5 });
+  if (d.releases.length > 0) beats.push({ id: "shipped", seconds: 4.5 });
 
-  beats.push({ id: "outro", seconds: 2.5 });
+  beats.push({ id: "outro", seconds: 3 });
 
   // Never exceed 30s: shave the flexible middle beats proportionally rather
   // than dropping one, so a busy day still shows everything it earned.
