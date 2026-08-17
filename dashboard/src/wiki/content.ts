@@ -208,7 +208,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           "Mint/freeze still on, nasty Token-2022 hooks, whale-concentrated supply.",
           "Creator already rugged once → permanent ban.",
           "RugCheck “Danger” is a veto only — never a green light by itself.",
-          "Brand-new tokens wait out the instant-rug window; old memes can age out of meme mode.",
+          "Brand-new tokens wait out the instant-rug window (45 min) — that one is a safety gate. There is no upper age limit by default: a revived old meme with real volume is a valid pool, and the fee/volume gates already prove it's alive. Flip on \"Too old\" in Settings to cap mint age again.",
         ],
       },
       {

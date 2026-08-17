@@ -106,9 +106,43 @@ describe("vetToken fail-closed gates", () => {
     expect(gatesOf(r)).toContain("age_unknown");
   });
 
+  // A revived old meme is a valid pool: the pool gates already proved it has
+  // live fee flow and volume, and mint age carries no score/sizing weight.
+  it("admits a mature mint by default — no upper age ceiling", async () => {
+    const NINETY_DAYS_AGO = Date.now() - 90 * 24 * 3600 * 1000;
+    reportMock.mockResolvedValue(rugReport({ detectedAt: new Date(NINETY_DAYS_AGO).toISOString() }));
+    const r = await vetToken(MINT, null);
+    expect(gatesOf(r)).not.toContain("age_max");
+    expect(r.verdict).toBe("pass");
+    // The age is still measured and recorded — we dropped the gate, not the fact.
+    expect(r.facts.tokenAgeMinutes).toBeGreaterThan(89 * 1440);
+  });
+
+  it("still caps mint age when the operator re-enables age_max", async () => {
+    const NINETY_DAYS_AGO = Date.now() - 90 * 24 * 3600 * 1000;
+    reportMock.mockResolvedValue(rugReport({ detectedAt: new Date(NINETY_DAYS_AGO).toISOString() }));
+    installConfig((c) => { c.vetting.age_max_enabled = true; c.vetting.age_max_days = 14; });
+    const r = await vetToken(MINT, null);
+    expect(gatesOf(r)).toContain("age_max");
+    expect(r.verdict).toBe("fail");
+  });
+
+  // age_min is the SAFETY gate — dropping the ceiling must not touch the floor.
+  it("still rejects a mint inside the instant-rug window", async () => {
+    reportMock.mockResolvedValue(rugReport({ detectedAt: new Date(Date.now() - 5 * 60_000).toISOString() }));
+    const r = await vetToken(MINT, null);
+    expect(gatesOf(r)).toContain("age_min");
+    expect(r.verdict).toBe("fail");
+  });
+
   it("skips age_unknown only when BOTH age gates are disabled", async () => {
     reportMock.mockResolvedValue(rugReport({ detectedAt: null }));
-    installConfig((c) => { c.vetting.age_min_enabled = false; });
+    // Sets BOTH preconditions explicitly: age_max ships disabled, so relying on
+    // the default here would assert nothing once age_min is switched off.
+    installConfig((c) => {
+      c.vetting.age_min_enabled = false;
+      c.vetting.age_max_enabled = true;
+    });
     expect(gatesOf(await vetToken(MINT, null))).toContain("age_unknown");
     installConfig((c) => {
       c.vetting.age_min_enabled = false;

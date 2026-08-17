@@ -49,7 +49,8 @@ Computed **fresh at entry time** from RPC + the RugCheck free API:
 - Insider/funding clusters ≤ **10%** of supply (same-funder wallet clustering + launch-slot snipers).
 - Creator has **zero** rugged tokens in our DB or RugCheck's `creatorTokens`. One strike = permanent creator blacklist.
 - RugCheck `score_normalised` < **41** (their "Danger" line) — used as a **veto only**, never as approval.
-- Token age ≥ **45 min** (survive the instant-rug window) and ≤ **14 days** in meme mode. Age is the mint's age via RugCheck, not the pool's.
+- Token age ≥ **45 min** — survive the instant-rug window. A **safety** gate; leave it on. Age is the mint's age via RugCheck, not the pool's.
+- The **≤ 14 day ceiling is off by default.** It was a *fit* gate, not a safety one, and a weaker proxy than what we already measure: the pool gates require current fee flow and volume, so anything reaching vetting is active *now*. An old meme catching a fresh bid is a legitimate pool. Enable `age_max_enabled` to restore it.
 - Not on our blacklist (§8 below).
 
 Each vetting check has a master on/off switch in Settings (age min/max, insider gate, holder gate, RugCheck veto, creator-rug gate, GMGN honeypot/sell-tax gate). Off = skip that hard fail; thresholds still apply when on.
