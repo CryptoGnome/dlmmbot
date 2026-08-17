@@ -306,15 +306,64 @@ export async function swapToSolEscalating(
   wallet: Keypair,
   inputMint: string,
   amountRaw: bigint,
-  baseSlippageBps: number
+  baseSlippageBps: number,
+  /**
+   * Re-read the wallet's balance of `inputMint` between tiers. swapToSol has
+   * its own send+confirm, and a confirm that throws is not proof the tx did
+   * not land — a later tier that re-quotes the ORIGINAL amount would then be
+   * selling tokens we no longer hold (fails), or, worse, tokens that were
+   * credited to the wallet in the meantime (double-counts a claim as the
+   * position's exit). Passing this lets the ladder sell only what is there.
+   */
+  rereadBalance?: () => Promise<bigint | null>,
+): Promise<{ outLamports: number; signature: string } | null> {
+  return runSlippageLadder(
+    inputMint, amountRaw, baseSlippageBps,
+    (amount, bps) => swapToSol(connection, wallet, inputMint, amount, bps),
+    rereadBalance,
+  );
+}
+
+/** Slippage tiers for an exit swap: base, ~3x (clamped 300–1500), 1500. */
+export function slippageTiers(baseSlippageBps: number): number[] {
+  return [...new Set([baseSlippageBps, Math.min(Math.max(baseSlippageBps * 3, 300), 1500), 1500])]
+    .sort((a, b) => a - b);
+}
+
+/**
+ * The escalation ladder itself, with the swap injected so it can be tested
+ * without a connection. See swapToSolEscalating for the balance-reread rule.
+ */
+export async function runSlippageLadder(
+  inputMint: string,
+  amountRaw: bigint,
+  baseSlippageBps: number,
+  swap: (amountRaw: bigint, bps: number) => Promise<{ outLamports: number; signature: string } | null>,
+  rereadBalance?: () => Promise<bigint | null>,
 ): Promise<{ outLamports: number; signature: string } | null> {
   if (amountRaw <= 0n || inputMint === SOL_MINT) return null;
-  const tiers = [...new Set([baseSlippageBps, Math.min(Math.max(baseSlippageBps * 3, 300), 1500), 1500])]
-    .sort((a, b) => a - b);
+  const tiers = slippageTiers(baseSlippageBps);
   let lastErr: unknown;
-  for (const bps of tiers) {
+  let amount = amountRaw;
+  for (let i = 0; i < tiers.length; i++) {
+    const bps = tiers[i]!;
+    if (i > 0 && rereadBalance) {
+      const bal = await rereadBalance().catch(() => null);
+      if (bal !== null) {
+        if (bal <= 0n) {
+          // The previous tier sold everything even though it threw. Do not
+          // treat this as a failure — and do not send another swap.
+          console.log(`[live] swap @${tiers[i - 1]}bps landed after all (wallet now 0) — not escalating`);
+          return null;
+        }
+        if (bal < amount) {
+          console.log(`[live] swap tier ${bps}bps: wallet holds ${bal} < requested ${amount} — selling what is there`);
+          amount = bal;
+        }
+      }
+    }
     try {
-      return await swapToSol(connection, wallet, inputMint, amountRaw, bps);
+      return await swap(amount, bps);
     } catch (e) {
       lastErr = e;
       console.error(`[live] swap @${bps}bps failed: ${(e as Error).message.split("\n")[0]}`);

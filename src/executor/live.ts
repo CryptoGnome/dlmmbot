@@ -29,6 +29,8 @@ import { loadKeypair } from "./wallet.js";
 // so we type the surface we use structurally (verified against the .d.ts).
 interface DlmmPool {
   tokenX: { mint: { decimals: number } };
+  /** Pool state; rewardInfos[i].mint is the LM reward mint (default pubkey = unset). */
+  lbPair: { rewardInfos?: Array<{ mint: PublicKey }> };
   getActiveBin(): Promise<{ binId: number; price: string }>;
   getPositionsByUserAndLbPair(user: PublicKey): Promise<{
     activeBin: { binId: number; price: string };
@@ -442,7 +444,10 @@ export class LiveExecutor implements Executor {
     mint: string, amountRaw: bigint, slippageBps: number,
   ): Promise<{ signature: string } | null> {
     if (amountRaw <= 0n || mint === SOL_MINT) return null;
-    const swap = await swapToSolEscalating(this.connection, this.wallet, mint, amountRaw, slippageBps)
+    const swap = await swapToSolEscalating(
+      this.connection, this.wallet, mint, amountRaw, slippageBps,
+      () => this.tokenBalanceRaw(mint),
+    )
       .catch((e) => {
         console.error("[live] swap failed:", (e as Error).message.split("\n")[0]);
         return null;
@@ -860,6 +865,36 @@ export class LiveExecutor implements Executor {
     // and the composition is gone for good.
     const closeBins = this.binSnapshot(positions);
 
+    // Close-time token audit. Four "under-fills" today RETURNED MORE SOL THAN
+    // THE MARK (Z500 1.16x, EYE 1.70x, MANLET 1.16x, BUTTHOLE 1.26x) and still
+    // left tokens — so the swap sold everything it was told to and something
+    // else put tokens (and SOL) in the wallet the mark never counted. Two
+    // hypotheses stand after the stale-replica-read fix (v0.10.1) did NOT
+    // stop it: (a) claimReward2 inside shouldClaimAndClose pays LM rewards in
+    // the pool's reward mint, which for some pools is the base token; (b) the
+    // escalating swap's own send lands, its confirm throws, and a second tier
+    // re-quotes against a wallet that has since been credited. Reading the
+    // balance at three points settles it on the next close instead of a fifth
+    // guess. Best-effort; never blocks the close.
+    const balAt = async (label: string, afterSig: string | null): Promise<bigint | null> => {
+      try {
+        const b = afterSig ? await this.tokenBalanceAfter(position.tokenMint, afterSig)
+                           : await this.tokenBalanceRaw(position.tokenMint);
+        return b;
+      } catch (e) {
+        console.warn(`[live] pos#${position.id}: token audit read (${label}) failed:`, (e as Error).message.split("\n")[0]);
+        return null;
+      }
+    };
+    const rewardMints = (() => {
+      try {
+        return (pool.lbPair.rewardInfos ?? [])
+          .map((r: { mint: PublicKey }) => r.mint?.toBase58?.() ?? String(r.mint))
+          .filter((m: string) => m && m !== PublicKey.default.toBase58());
+      } catch { return [] as string[]; }
+    })();
+    const balPreRemove = await balAt("pre-remove", null);
+
     // Every tx this close sends, so the wallet delta below covers all of them.
     const sigs: string[] = [];
     let xToSwap = 0n;
@@ -931,10 +966,25 @@ export class LiveExecutor implements Executor {
     // every slippage tier on exactly the below-range closes where the swap IS
     // the exit value. xToSwap remains the fallback for a blind RPC read.
     const toSell = walletXKnown ? walletX : xToSwap;
+    const balPostRemove = walletXKnown ? walletX : null;
+    const removeSigCount = sigs.length;
+    let swapSig: string | null = null;
     if (toSell > 0n) {
       const swap = await this.tokenToSol(position.tokenMint, toSell, slippageBps);
-      if (swap) sigs.push(swap.signature);
+      if (swap) { sigs.push(swap.signature); swapSig = swap.signature; }
     }
+    const balPostSwap = await balAt("post-swap", swapSig ?? sigs[sigs.length - 1] ?? null);
+    // Audit line on EVERY close, not just strands: the clean ones are the
+    // control group. If post-swap > 0 while post-remove == toSell, the swap
+    // under-sold. If post-swap > post-remove - toSell, something CREDITED
+    // tokens after the remove (rewards, or a landed-but-thrown swap tier).
+    console.log(
+      `[live] pos#${position.id} ${position.symbol} close audit: ` +
+      `pre-remove=${balPreRemove ?? "?"} post-remove=${balPostRemove ?? "?"} sold=${toSell} post-swap=${balPostSwap ?? "?"} ` +
+      `chainX=${xToSwap} removeTxs=${removeSigCount} swapTx=${swapSig ? 1 : 0} ` +
+      `rewardMints=${rewardMints.length ? rewardMints.map((m: string) => m.slice(0, 6)).join(",") : "none"}` +
+      (rewardMints.includes(position.tokenMint) ? " (REWARD MINT == BASE TOKEN)" : "")
+    );
 
     // Never write terminal state for a close that sent nothing — unless the
     // position is already empty on-chain (failed rebalance) and removeLiquidity
