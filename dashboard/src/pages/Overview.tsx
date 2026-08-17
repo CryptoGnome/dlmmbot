@@ -71,13 +71,11 @@ export function OverviewPage({
   let openPnl = 0;
   let openEntry = 0;
   let openPnlKnown = 0;
-  // Rent in flight: what the open positions cost to open ABOVE their deposit —
-  // bin-array + position-account rent and open gas. It is counted inside Total
-  // balance (it is the operator's SOL, ~97% refundable at close) but NOT inside
-  // Open profit, which marks the liquidity only. Showing it on both tiles is
-  // what makes wallet + open + rent reconcile to the balance on screen.
+  // Rent in flight: what the open positions paid ABOVE their deposit (bin-array
+  // + position-account rent, open gas). Counted inside Total balance — it is
+  // the operator's SOL, ~97% refundable at close — and reported only there.
+  // Fallback sum for a server that predates the field.
   let rentComputed = 0;
-  let rentKnown = 0;
   for (const p of open) {
     const n = p.mark?.total_pnl_sol ?? p.mark?.pnl_sol;
     if (n != null) {
@@ -87,16 +85,16 @@ export function OverviewPage({
     }
     if (p.open_cost_sol != null && p.entry_sol != null) {
       rentComputed += Math.max(0, p.open_cost_sol - p.entry_sol);
-      rentKnown += 1;
     }
   }
-  // Prefer the server's figure — it is the one inside total_sol, so the tiles
-  // cannot disagree with the balance they are explaining.
+  // Prefer the server's figure — it is the one inside total_sol, so the tile
+  // cannot disagree with the balance it is explaining.
   const rentInFlight = watch?.balance?.rent_in_flight_sol ?? rentComputed;
   const openPct = openPnlKnown && openEntry > 0 ? openPnl / openEntry : null;
-  const openSub = rentKnown || rentInFlight > 0
-    ? `${slots.label} · ${rentInFlight.toFixed(3)} SOL rent in flight (in balance, not here)`
-    : slots.label;
+  // Rent is reported once, on Total balance, where it is actually counted.
+  // Repeating it here read as a second, competing number on a tile that does
+  // not include it.
+  const openSub = slots.label;
 
   return (
     <div className="flex min-h-[calc(100dvh-7.5rem)] flex-col gap-4">
@@ -121,7 +119,7 @@ export function OverviewPage({
           pct={openPct}
           tone={!openPnlKnown ? "fg" : openPnl >= 0 ? "ok" : "danger"}
           sub={openSub}
-          title="Mark-to-market on the liquidity only — it does not include the rent those positions paid up front. That rent IS counted in Total balance (it is your SOL, ~97% refundable at close); it is shown here so the two tiles add up to the balance rather than appearing to disagree with it."
+          title="Mark-to-market on the open liquidity — deposit change plus fees, claimed and unclaimed. It does not include the rent those positions paid up front; that is counted in Total balance."
         />
         <HeroStat
           label="Last 24h profit"
