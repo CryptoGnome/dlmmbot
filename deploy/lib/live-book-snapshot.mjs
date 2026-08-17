@@ -1200,6 +1200,18 @@ export function buildLiveBookSnapshot(root) {
       const mark = p.mark?.value_sol;
       return s + (typeof mark === "number" && Number.isFinite(mark) ? mark : (p.entry_sol ?? 0));
     }, 0);
+    // Rent in flight: paid out of the wallet at open, sitting in bin arrays and
+    // position accounts, and NOT in the liquidity mark. Measured over 14 clean
+    // closes it comes back at 97% (the ~0.002/close shortfall is close gas plus
+    // any newly-created bin array, which is non-refundable). It is the
+    // operator's SOL, so total balance counts it — otherwise the balance drops
+    // when a position opens and jumps when it closes, which is an artefact of
+    // where the SOL is sitting rather than a change in what it is worth.
+    const rentInFlightSol = open.reduce((s, p) => {
+      const cost = p.open_cost_sol, entry = p.entry_sol;
+      if (typeof cost !== "number" || typeof entry !== "number") return s;
+      return s + Math.max(0, cost - entry);
+    }, 0);
     // Ignore stale heartbeat wallet from the other mode during paper↔live flip.
     const walletSol = (typeof hb?.walletSol === "number" && hbMatchesBook)
       ? hb.walletSol
@@ -1210,10 +1222,11 @@ export function buildLiveBookSnapshot(root) {
        ORDER BY (mode = ?) DESC, day DESC LIMIT 1`
     ).get(bookMode);
     const solUsd = solUsdRow?.sol_usd ?? null;
-    const totalSol = walletSol != null ? walletSol + deployedSol : null;
+    const totalSol = walletSol != null ? walletSol + deployedSol + rentInFlightSol : null;
     const balance = {
       wallet_sol: walletSol != null ? Math.round(walletSol * 1e6) / 1e6 : null,
       deployed_sol: Math.round(deployedSol * 1e6) / 1e6,
+      rent_in_flight_sol: Math.round(rentInFlightSol * 1e6) / 1e6,
       total_sol: totalSol != null ? Math.round(totalSol * 1e6) / 1e6 : null,
       sol_usd: solUsd,
       total_usd: totalSol != null && solUsd
