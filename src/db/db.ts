@@ -428,6 +428,23 @@ export const REALIZED_PNL_SQL = `
 
 // ---- blacklist helpers (STRATEGY.md §6) ----
 
+/**
+ * Reason prefixes written by the bot's OWN exit on a token (P0 safety, P1
+ * stop, P5 below-range), as opposed to the meme-vetting gates in vet.ts
+ * (holder concentration, insider clusters, rugcheck).
+ *
+ * The distinction exists for the majors sleeve. Majors is an allowlist of
+ * established tokens, so importing meme heuristics there would park the sleeve
+ * indefinitely on a false positive — but "we just cut this position for a
+ * loss" is sleeve-independent and must block re-entry everywhere.
+ */
+const EXIT_COOLDOWN_PREFIXES = ["P0 safety exit", "stop loss cooldown", "below range cut"];
+
+/** True when a blacklist reason came from an exit rather than from vetting. */
+export function isExitCooldown(reason: string): boolean {
+  return EXIT_COOLDOWN_PREFIXES.some((p) => reason.startsWith(p));
+}
+
 export function isBlacklisted(key: string): string | null {
   const row = getDb()
     .prepare("SELECT reason, expires_ts FROM blacklist WHERE key = ?")
