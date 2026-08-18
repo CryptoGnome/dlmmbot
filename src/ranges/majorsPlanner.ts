@@ -6,34 +6,46 @@ import { binArraysSpanned, binIdToPrice, priceToBinId, swing } from "./planner.j
 const BINS_PER_POSITION = 69;
 const BIN_ARRAY_RENT_SOL = 0.075;
 
-function buildSpotPlan(
+function buildMajorsPlan(
   minBinId: number, maxBinId: number, centerPrice: number, binStep: number, decimalsX: number,
+  shape: RangePlan["shape"],
 ): RangePlan {
   const binCount = maxBinId - minBinId + 1;
   return {
     minBinId, maxBinId, binCount,
     positionAccounts: Math.ceil(binCount / BINS_PER_POSITION),
     bottomPricePct: (binIdToPrice(minBinId, binStep, decimalsX) / centerPrice - 1) * 100,
-    topPricePct: (binIdToPrice(maxBinId, binStep, decimalsX) / centerPrice - 1) * 100,
-    shape: "spot",
+    topPricePct: 0,
+    shape,
     fibAnchor: null,
     estBinRentSol: binArraysSpanned(minBinId, maxBinId) * BIN_ARRAY_RENT_SOL,
   };
 }
 
-/** Spot range centered on price — uniform liquidity (STRATEGY §10). */
-export function planMajorsSpotRange(
+/**
+ * Majors range: one-sided below price, top at the active bin (STRATEGY §10).
+ *
+ * Until 2026-08-18 this planned `range_above_pct` of bins ABOVE the active
+ * bin. A SOL-only deposit cannot fund those — DLMM puts the quote token only
+ * in bins at or below active — and on-chain inspection of all 21 live majors
+ * positions found every above-active bin empty. They cost a second position
+ * account on 13 of 21 opens (rent tied up) and an extra bin-array on 6
+ * (rent gone), for zero liquidity. `range_above_pct` is now ignored.
+ *
+ * Shape comes from `majors.strategy_shape` — the executor honours whatever
+ * the plan says, so this is the one place a majors position's shape is chosen.
+ */
+export function planMajorsRange(
   currentPrice: number, binStep: number, decimalsX: number,
 ): RangePlan {
   const mj = config().majors;
-  const centerBin = priceToBinId(currentPrice, binStep, decimalsX);
+  const activeBin = priceToBinId(currentPrice, binStep, decimalsX);
   const belowBin = Math.max(1, Math.round(mj.range_below_pct / (binStep / 100)));
-  const aboveBin = Math.max(0, Math.round(mj.range_above_pct / (binStep / 100)));
-  let minBinId = centerBin - belowBin;
-  let maxBinId = centerBin + aboveBin;
+  const maxBinId = activeBin;
+  let minBinId = activeBin - belowBin;
   const maxBins = BINS_PER_POSITION * config().entry.max_position_accounts;
   if (maxBinId - minBinId + 1 > maxBins) minBinId = maxBinId - maxBins + 1;
-  return buildSpotPlan(minBinId, maxBinId, currentPrice, binStep, decimalsX);
+  return buildMajorsPlan(minBinId, maxBinId, currentPrice, binStep, decimalsX, mj.strategy_shape ?? "spot");
 }
 
 export function rsi(candles: Candle[], period = 14): number | null {
@@ -82,5 +94,5 @@ export function majorsEntryTiming(candles: Candle[], price: number): MajorsEntry
 export function majorsRangeForPool(
   price: number, binStep: number, decimalsX: number,
 ): RangePlan {
-  return planMajorsSpotRange(price, binStep, decimalsX);
+  return planMajorsRange(price, binStep, decimalsX);
 }

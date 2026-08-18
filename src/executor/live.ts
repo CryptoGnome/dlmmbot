@@ -574,42 +574,38 @@ export class LiveExecutor implements Executor {
     const meta = await fetchPool(params.poolAddress);
     const binStep = meta?.binStep ?? 100;
 
-    let maxBin: number, minBin: number;
-    if (shape === "spot") {
-      const mj = config().majors;
-      const below = Math.max(1, Math.round(mj.range_below_pct / (binStep / 100)));
-      const above = Math.max(0, Math.round(mj.range_above_pct / (binStep / 100)));
-      maxBin = activeBin.binId + above;
-      minBin = activeBin.binId - below;
-      const maxBins = BINS_PER_ACCOUNT * config().entry.max_position_accounts;
-      if (maxBin - minBin + 1 > maxBins) minBin = maxBin - maxBins + 1;
-    } else {
-      if (rangeGapTooLarge(params.range.maxBinId, activeBin.binId)) {
-        const gap = Math.abs(activeBin.binId - params.range.maxBinId);
-        throw new Error(
-          `range sanity: planned top bin ${params.range.maxBinId} is ${gap} bins from on-chain active ${activeBin.binId} — refusing to open`
-        );
-      }
-      const width = params.range.maxBinId - params.range.minBinId;
-      maxBin = activeBin.binId;
-      minBin = activeBin.binId > params.range.maxBinId
-        ? maxBin - width
-        : Math.min(params.range.minBinId, maxBin - 1);
+    // Shape is a property of the PLAN, not of the sleeve. Until 2026-08-18 the
+    // spot branch ignored params.range and rebuilt a majors-config band around
+    // the active bin, extending range_above_pct ABOVE price. A SOL-only deposit
+    // cannot fund a bin above the active one, so every majors position carried
+    // 30–60 structurally empty bins (measured: 21/21 positions, 0 funded above
+    // active) — paying position-account and bin-array rent for nothing and
+    // coupling "spot" to "majors" so no other sleeve could use the shape.
+    // Both shapes now take the planner's bins and re-anchor the top to the
+    // live active bin the same way; only the SDK strategyType differs.
+    if (rangeGapTooLarge(params.range.maxBinId, activeBin.binId)) {
+      const gap = Math.abs(activeBin.binId - params.range.maxBinId);
+      throw new Error(
+        `range sanity: planned top bin ${params.range.maxBinId} is ${gap} bins from on-chain active ${activeBin.binId} — refusing to open`
+      );
     }
+    const width = params.range.maxBinId - params.range.minBinId;
+    let maxBin = activeBin.binId;
+    let minBin = activeBin.binId > params.range.maxBinId
+      ? maxBin - width
+      : Math.min(params.range.minBinId, maxBin - 1);
     const totalBins = maxBin - minBin + 1;
-    if (shape !== "spot") {
-      // Re-anchor sanity: when the on-chain price has dumped THROUGH the
-      // planned depth between planning and open, the min(plannedMin, maxBin-1)
-      // clamp above collapses a ~50-bin ladder into 2 bins holding full size —
-      // a max-size buy wall directly under a crashing (plausibly rugging)
-      // price. The 150-bin gap check only guards the other direction.
-      const plannedBins = params.range.maxBinId - params.range.minBinId + 1;
-      if (totalBins < Math.max(10, Math.ceil(plannedBins * 0.5))) {
-        throw new Error(
-          `range sanity: re-anchored range is ${totalBins} bins vs ${plannedBins} planned — ` +
-          `price fell through the planned depth between planning and open; refusing to open`
-        );
-      }
+    // Re-anchor sanity: when the on-chain price has dumped THROUGH the
+    // planned depth between planning and open, the min(plannedMin, maxBin-1)
+    // clamp above collapses a ~50-bin ladder into 2 bins holding full size —
+    // a max-size buy wall directly under a crashing (plausibly rugging)
+    // price. The 150-bin gap check only guards the other direction.
+    const plannedBins = params.range.maxBinId - params.range.minBinId + 1;
+    if (totalBins < Math.max(10, Math.ceil(plannedBins * 0.5))) {
+      throw new Error(
+        `range sanity: re-anchored range is ${totalBins} bins vs ${plannedBins} planned — ` +
+        `price fell through the planned depth between planning and open; refusing to open`
+      );
     }
     let liveEntryPrice = Number(pool.fromPricePerLamport(Number(activeBin.price)));
     const lamports = Math.floor(params.sizeSol * 1e9);

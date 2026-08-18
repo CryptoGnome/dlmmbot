@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { majorsEntryTiming, planMajorsSpotRange, rsi, swingPosition } from "./majorsPlanner.js";
+import { majorsEntryTiming, planMajorsRange, rsi, swingPosition } from "./majorsPlanner.js";
+import { priceToBinId } from "./planner.js";
 import { installConfig, restoreConfig } from "../test/config.js";
 import type { Candle } from "../scanner/meteora.js";
 
@@ -7,19 +8,37 @@ function candles(closes: number[]): Candle[] {
   return closes.map((close, i) => ({ timestamp: i, open: close, high: close * 1.01, low: close * 0.99, close, volume: 1 }));
 }
 
-describe("planMajorsSpotRange", () => {
+describe("planMajorsRange", () => {
   beforeEach(() => installConfig((c) => {
     c.majors.range_below_pct = 12;
     c.majors.range_above_pct = 6;
+    c.majors.strategy_shape = "spot";
   }));
   afterEach(() => restoreConfig());
 
-  it("builds spot plan centered on price", () => {
-    const plan = planMajorsSpotRange(1, 100, 6);
-    expect(plan.shape).toBe("spot");
-    expect(plan.binCount).toBeGreaterThan(5);
-    expect(plan.topPricePct).toBeGreaterThan(0);
+  it("tops out at the active bin — never plans bins above price", () => {
+    // A SOL-only deposit cannot fund a bin above the active one. Every live
+    // majors position inspected on 2026-08-18 had all its above-price bins
+    // empty; the range must not include them.
+    const plan = planMajorsRange(1, 100, 6);
+    expect(plan.maxBinId).toBe(priceToBinId(1, 100, 6));
+    expect(plan.topPricePct).toBe(0);
     expect(plan.bottomPricePct).toBeLessThan(0);
+    expect(plan.binCount).toBeGreaterThan(5);
+  });
+
+  it("ignores range_above_pct entirely", () => {
+    const a = planMajorsRange(1, 100, 6);
+    installConfig((c) => { c.majors.range_below_pct = 12; c.majors.range_above_pct = 30; c.majors.strategy_shape = "spot"; });
+    const b = planMajorsRange(1, 100, 6);
+    expect(b.minBinId).toBe(a.minBinId);
+    expect(b.maxBinId).toBe(a.maxBinId);
+  });
+
+  it("takes its shape from majors.strategy_shape", () => {
+    expect(planMajorsRange(1, 100, 6).shape).toBe("spot");
+    installConfig((c) => { c.majors.range_below_pct = 12; c.majors.strategy_shape = "bidask"; });
+    expect(planMajorsRange(1, 100, 6).shape).toBe("bidask");
   });
 });
 
