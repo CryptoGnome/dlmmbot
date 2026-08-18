@@ -48,6 +48,27 @@ function withPct(value: string, pct: number | null | undefined): string {
 }
 
 /** Cumulative SOL equity with daily close P&L bars overlaid. */
+/**
+ * A bar rounded on the end AWAY from zero. Recharts' `radius` is one value
+ * per bar, so a top-only radius put the curve on the wrong end of every
+ * negative bar — losses looked hung from the axis instead of grown down.
+ * Recharts hands negative bars a negative `height` with `y` at the zero
+ * line; normalise to a top-left box, then round the far edge.
+ */
+function SignedBar(props: { x?: number; y?: number; width?: number; height?: number; fill?: string; fillOpacity?: number }) {
+  const { x = 0, y = 0, width = 0, height = 0, fill = "transparent", fillOpacity } = props;
+  if (!width || !height || fill === "transparent") return null;
+  const up = height >= 0;
+  const h = Math.abs(height);
+  const top = up ? y : y + height; // for a negative height, y is the zero line
+  const r = Math.min(3, width / 2, h);
+  // Round top corners for gains, bottom corners for losses.
+  const d = up
+    ? `M${x},${top + h} V${top + r} Q${x},${top} ${x + r},${top} H${x + width - r} Q${x + width},${top} ${x + width},${top + r} V${top + h} Z`
+    : `M${x},${top} V${top + h - r} Q${x},${top + h} ${x + r},${top + h} H${x + width - r} Q${x + width},${top + h} ${x + width},${top + h - r} V${top} Z`;
+  return <path d={d} fill={fill} fillOpacity={fillOpacity} />;
+}
+
 export function EquityChart({
   data,
   exits,
@@ -67,6 +88,29 @@ export function EquityChart({
       };
     });
   }, [data, exits]);
+
+  // The bars live in a strip along the FLOOR of the panel — the same
+  // convention as a volume histogram under a price chart — so equity's own
+  // zero can sit anywhere without the bars floating. Baseline about 22% up:
+  // gains grow up from it into the lower third, losses dip below it into a
+  // reserved band. Peak-scaled so the biggest day of the visible range uses
+  // the strip and everything else is proportional to it. Symmetric peak so a
+  // red and green day of equal size are equal height.
+  const barDomain = useMemo<[number, number]>(() => {
+    const peak = Math.max(0.0001, ...chartData.map((r) => Math.abs(r.close_pnl ?? 0)));
+    // top = peak * 3.5 puts the tallest gain at ~28% of panel height above the
+    // baseline; bottom = -peak * 1.0 reserves just enough for the worst loss.
+    return [-peak * 1.0, peak * 3.5];
+  }, [chartData]);
+
+  // Extend equity's floor by ~45% of its span so the line's lowest point stays
+  // above the bar strip. Nice-rounded so the axis ticks stay clean.
+  const equityDomain = useMemo<[number | string, number | string]>(() => {
+    const vals = data.map((r) => r.cum_sol);
+    const lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
+    const span = Math.max(hi - lo, 0.01);
+    return [lo - span * 0.45, "auto"];
+  }, [data]);
 
   if (!data.length) return <Empty msg="No profit history yet" />;
   const last = data[data.length - 1]!;
@@ -104,11 +148,25 @@ export function EquityChart({
               <CartesianGrid {...grid} />
               <XAxis dataKey="day" {...axis} tickFormatter={(d: string) => d.slice(5)} />
               <YAxis
+                yAxisId="equity"
                 {...axis}
                 width={56}
                 tickFormatter={(v: number) => `${v.toFixed(2)}`}
                 label={{ value: "SOL", angle: -90, position: "insideLeft", fill: "#6B6B6B", fontSize: 10 }}
+                // Keep the equity line in the upper ~70% so it never sits on
+                // top of the bar strip along the floor.
+                domain={equityDomain}
               />
+              {/*
+                Daily close P&L is a FLOW; cumulative equity is a LEVEL. On a
+                shared axis a +0.50 day drew a bar the full height of the
+                equity line while a +0.06 day was a nub, and a bar that
+                happened to equal equity read as if it WAS equity. The bars
+                get their own hidden axis, symmetric about zero and padded so
+                the tallest bar sits well under the line's headroom — the
+                line stays the subject, the bars stay context.
+              */}
+              <YAxis yAxisId="daily" orientation="right" hide domain={barDomain} />
               <Tooltip
                 cursor={{ stroke: "#6B6B6B", strokeDasharray: "3 3" }}
                 content={({ active, label, payload }) => {
@@ -142,7 +200,7 @@ export function EquityChart({
                   return <ChartTip title={String(label)} rows={rows} />;
                 }}
               />
-              <Bar dataKey="close_pnl" name="Close P&L" barSize={10} radius={[2, 2, 0, 0]} fillOpacity={0.45}>
+              <Bar yAxisId="daily" dataKey="close_pnl" name="Close P&L" barSize={22} fillOpacity={0.4} shape={<SignedBar />}>
                 {chartData.map((row, i) => (
                   <Cell
                     key={i}
@@ -151,6 +209,7 @@ export function EquityChart({
                 ))}
               </Bar>
               <Area
+                yAxisId="equity"
                 type="monotone"
                 dataKey="cum_sol"
                 name="Equity"
