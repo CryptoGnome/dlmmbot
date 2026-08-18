@@ -8,6 +8,7 @@ import {
   OPEN_SLIPPAGE_REBUILDS,
 } from "./live.js";
 import { classifyLeftover, RESIDUAL_SWEEP_MIN_SOL } from "./executor.js";
+import { UNDERFILL_INCIDENT_SHARE } from "./live.js";
 import { PublicKey } from "@solana/web3.js";
 import { SOL_MINT } from "../config.js";
 
@@ -122,6 +123,25 @@ describe("classifyLeftover — what a close left in the wallet", () => {
     expect(r.kind).toBe("strand");
     expect(r.creditSol).toBeCloseTo(0.532672767, 9);
     expect(r.share!).toBeGreaterThan(0.25); // clears the alert bar
+  });
+
+  // The three reports that motivated the split (2026-08-17/18), all "strand"
+  // by the sweep floor, all winners, all sold by the sweep within minutes:
+  //   BUTTHOLE pos#15  0.00045 / 0.22   (dust, handled above)
+  //   Z500     pos#102 0.0022  / 0.254  = 0.9%
+  //   67coin   pos#112 0.0098  / 0.633  = 1.5%
+  // A strand is real (the sweep must sell it) but it is only an INCIDENT — a
+  // paged report — when it is a material share of the mark. The alert has
+  // drawn that line at 25% since v0.8.0; the log level now follows it.
+  it("a sliver strand is under the incident line; ANSEM's 75% is over it", () => {
+    const z500 = classifyLeftover(0.002220877, 0.25391442071265596, true);
+    const coin = classifyLeftover(0.009793362, 0.6332123136224322, true);
+    const ansem = classifyLeftover(0.532672767, 0.7144471699792198, true);
+    expect(z500.kind).toBe("strand");
+    expect(coin.kind).toBe("strand");
+    expect(z500.share!).toBeLessThan(UNDERFILL_INCIDENT_SHARE);
+    expect(coin.share!).toBeLessThan(UNDERFILL_INCIDENT_SHARE);
+    expect(ansem.share!).toBeGreaterThanOrEqual(UNDERFILL_INCIDENT_SHARE);
   });
 
   it("flags an unquotable leftover rather than assuming it is dust", () => {
