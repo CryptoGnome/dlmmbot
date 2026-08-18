@@ -48,27 +48,6 @@ function withPct(value: string, pct: number | null | undefined): string {
 }
 
 /** Cumulative SOL equity with daily close P&L bars overlaid. */
-/**
- * A bar rounded on the end AWAY from zero. Recharts' `radius` is one value
- * per bar, so a top-only radius put the curve on the wrong end of every
- * negative bar — losses looked hung from the axis instead of grown down.
- * Recharts hands negative bars a negative `height` with `y` at the zero
- * line; normalise to a top-left box, then round the far edge.
- */
-function SignedBar(props: { x?: number; y?: number; width?: number; height?: number; fill?: string; fillOpacity?: number }) {
-  const { x = 0, y = 0, width = 0, height = 0, fill = "transparent", fillOpacity } = props;
-  if (!width || !height || fill === "transparent") return null;
-  const up = height >= 0;
-  const h = Math.abs(height);
-  const top = up ? y : y + height; // for a negative height, y is the zero line
-  const r = Math.min(3, width / 2, h);
-  // Round top corners for gains, bottom corners for losses.
-  const d = up
-    ? `M${x},${top + h} V${top + r} Q${x},${top} ${x + r},${top} H${x + width - r} Q${x + width},${top} ${x + width},${top + r} V${top + h} Z`
-    : `M${x},${top} V${top + h - r} Q${x},${top + h} ${x + r},${top + h} H${x + width - r} Q${x + width},${top + h} ${x + width},${top + h - r} V${top} Z`;
-  return <path d={d} fill={fill} fillOpacity={fillOpacity} />;
-}
-
 export function EquityChart({
   data,
   exits,
@@ -89,27 +68,17 @@ export function EquityChart({
     });
   }, [data, exits]);
 
-  // The bars live in a strip along the FLOOR of the panel — the same
-  // convention as a volume histogram under a price chart — so equity's own
-  // zero can sit anywhere without the bars floating. Baseline about 22% up:
-  // gains grow up from it into the lower third, losses dip below it into a
-  // reserved band. Peak-scaled so the biggest day of the visible range uses
-  // the strip and everything else is proportional to it. Symmetric peak so a
-  // red and green day of equal size are equal height.
-  const barDomain = useMemo<[number, number]>(() => {
-    const peak = Math.max(0.0001, ...chartData.map((r) => Math.abs(r.close_pnl ?? 0)));
-    // top = peak * 3.5 puts the tallest gain at ~28% of panel height above the
-    // baseline; bottom = -peak * 1.0 reserves just enough for the worst loss.
-    return [-peak * 1.0, peak * 3.5];
-  }, [chartData]);
-
-  // Extend equity's floor by ~45% of its span so the line's lowest point stays
-  // above the bar strip. Nice-rounded so the axis ticks stay clean.
-  const equityDomain = useMemo<[number | string, number | string]>(() => {
+  // The area fill is green above zero and red below — the equity chart
+  // convention (TradesViz "Aggregate PnL", TradingView strategy tester): one
+  // hero series, one zero line, sign carried by colour. The gradient split
+  // must land at zero's pixel row, so compute where zero sits inside the
+  // Y range as a 0..1 offset from the top. Recharts pads the auto domain
+  // with "nice" ticks, so this is approximate by design; the split is soft.
+  const zeroOffset = useMemo(() => {
     const vals = data.map((r) => r.cum_sol);
     const lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
-    const span = Math.max(hi - lo, 0.01);
-    return [lo - span * 0.45, "auto"];
+    if (hi === lo) return 1;
+    return hi / (hi - lo);
   }, [data]);
 
   if (!data.length) return <Empty msg="No profit history yet" />;
@@ -141,32 +110,20 @@ export function EquityChart({
             <ComposedChart data={chartData} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
               <defs>
                 <linearGradient id="solFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#00FF85" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="#00FF85" stopOpacity={0} />
+                  <stop offset="0%" stopColor="#00FF85" stopOpacity={0.32} />
+                  <stop offset={zeroOffset} stopColor="#00FF85" stopOpacity={0.03} />
+                  <stop offset={zeroOffset} stopColor="#FF4D6A" stopOpacity={0.03} />
+                  <stop offset="100%" stopColor="#FF4D6A" stopOpacity={0.30} />
                 </linearGradient>
               </defs>
               <CartesianGrid {...grid} />
               <XAxis dataKey="day" {...axis} tickFormatter={(d: string) => d.slice(5)} />
               <YAxis
-                yAxisId="equity"
                 {...axis}
                 width={56}
                 tickFormatter={(v: number) => `${v.toFixed(2)}`}
                 label={{ value: "SOL", angle: -90, position: "insideLeft", fill: "#6B6B6B", fontSize: 10 }}
-                // Keep the equity line in the upper ~70% so it never sits on
-                // top of the bar strip along the floor.
-                domain={equityDomain}
               />
-              {/*
-                Daily close P&L is a FLOW; cumulative equity is a LEVEL. On a
-                shared axis a +0.50 day drew a bar the full height of the
-                equity line while a +0.06 day was a nub, and a bar that
-                happened to equal equity read as if it WAS equity. The bars
-                get their own hidden axis, symmetric about zero and padded so
-                the tallest bar sits well under the line's headroom — the
-                line stays the subject, the bars stay context.
-              */}
-              <YAxis yAxisId="daily" orientation="right" hide domain={barDomain} />
               <Tooltip
                 cursor={{ stroke: "#6B6B6B", strokeDasharray: "3 3" }}
                 content={({ active, label, payload }) => {
@@ -200,7 +157,16 @@ export function EquityChart({
                   return <ChartTip title={String(label)} rows={rows} />;
                 }}
               />
-              <Bar yAxisId="daily" dataKey="close_pnl" name="Close P&L" barSize={22} fillOpacity={0.4} shape={<SignedBar />}>
+              {/*
+                Daily close P&L as texture UNDER the line: same axis, same zero
+                (TradingView draws its per-trade histogram exactly this way).
+                Thin and faint on purpose — the bars are the grain of the day,
+                the line is the story. Square-ended: a rounded top on a bar
+                that grows DOWN reads as hung from the axis. A big day is
+                still a tall bar, but at this weight it reads as the day's
+                shadow behind the line rather than a second equity value.
+              */}
+              <Bar dataKey="close_pnl" name="Close P&L" barSize={6} fillOpacity={0.5} isAnimationActive={false}>
                 {chartData.map((row, i) => (
                   <Cell
                     key={i}
@@ -209,7 +175,6 @@ export function EquityChart({
                 ))}
               </Bar>
               <Area
-                yAxisId="equity"
                 type="monotone"
                 dataKey="cum_sol"
                 name="Equity"
