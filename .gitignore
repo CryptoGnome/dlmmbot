@@ -19,3 +19,6 @@ tmp-*
 video/out/
 video/public/shots/
 video/public/daily.json
+video/public/mascot-*.png
+# X Article review artifact (676 KB, image embedded as base64) — regenerable from the .md + png; the sources are tracked
+docs/article/article-review.html

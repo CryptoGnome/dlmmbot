@@ -4,7 +4,7 @@ import { SCENES } from "./scenes/Scenes";
 import { planScenes, type Daily as D } from "./plan";
 
 /** Composes today's beats back-to-back. Scene frames are relative to each Series.Sequence. */
-export const Daily: React.FC<{ daily: D }> = ({ daily }) => {
+export const Daily: React.FC<{ daily: D; mascot: { open: boolean; close: boolean } }> = ({ daily, mascot }) => {
   const { fps } = useVideoConfig();
   const beats = planScenes(daily);
   return (
@@ -13,7 +13,7 @@ export const Daily: React.FC<{ daily: D }> = ({ daily }) => {
         const Scene = SCENES[b.id];
         return (
           <Series.Sequence key={`${b.id}-${i}`} durationInFrames={Math.round(b.seconds * fps)}>
-            <Scene d={daily} />
+            <Scene d={daily} mascot={mascot} />
           </Series.Sequence>
         );
       })}
