@@ -314,7 +314,7 @@ Tables:
 - **P3 missed sustain** — `above_range_missed_sustain_min = 45`. Wins stay at 10m so follow can arm.
 - **Cluster brake** — 2× P0/P1 in 6h pauses entries 6h.
 - **Open failures were `ExceededBinSlippageTolerance` (6004), not mystery sims.** `liquidity_slippage_pct` 1% → 1 bin at step 100; every meme tick failed (3255/3255 coded sim errors). Raised to 5% (5 bins; SDK default was already 3). `open_failed` decisions now store Anchor code + logs. Live open rebuilds on bin-slippage instead of resending the same tx. Follow cools 300s after a failed leg open.
-- **Three-tier sleeves** — micro (100–200k loss-budget), meme (main BidAsk), majors (SOL-quoted alts, spot shape, TA entry, separate manage).
+- **Three-tier sleeves** — micro (100–200k loss-budget), meme (main BidAsk), majors (SOL-quoted alts, spot shape, TA entry, separate manage). **2026-08-18:** majors range now tops at the active bin. The old planner added `range_above_pct` of bins *above* price; on-chain inspection of all 21 live majors positions found every above-active bin empty (a SOL-only deposit cannot fund them) — 13 of 21 opens paid for a second position account and 6 for an extra bin-array to hold nothing. Shape is now a property of the **plan** (`majors.strategy_shape`), and the executor honours it for any sleeve; before, `spot` in the executor was hardwired to majors config.
 - **Majors fee banking** — `fee_compound = false`; all claimed fees to wallet.
 - Kelly watched for a week on measured PnL (n≥50). Don't raise size or slots yet. Profit-lock never fired (0/57) — leave it.
 

@@ -230,7 +230,7 @@ Thresholds:
 | `mcap_min_usd` | `0` | No mcap floor (allowlist is the gate) |
 | `age_min_days` | `7` | Token must be ≥ 7 days old |
 | `strategy_shape` | `"spot"` | Uniform bins — not the meme BidAsk ramp |
-| `range_below_pct` / `range_above_pct` | `12` / `6` | Band below/above price — SOL biased to the downside |
+| `range_below_pct` | `12` | Range depth below the active bin. The top is always the active bin — a SOL-only deposit cannot fund bins above price, so `range_above_pct` is ignored since v0.15.0 (kept so old configs still parse) |
 | `entry_rsi_period` / `entry_rsi_max` | `14` / `45` | Enter when RSI ≤ 45 (oversold)… |
 | `entry_swing_position_max` | `0.40` | …or price in the bottom 40% of the 24h swing |
 | `entry_swing_avoid_top` | `0.75` | Never enter above 75% of the swing range |
