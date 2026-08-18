@@ -47,7 +47,7 @@ function withPct(value: string, pct: number | null | undefined): string {
   return `${value} (${fmtRet(pct)})`;
 }
 
-/** Cumulative SOL equity with daily close P&L bars overlaid. */
+/** Cumulative SOL equity — one line, green above water, red below. Per-day P&L stays in the tooltip. */
 export function EquityChart({
   data,
   exits,
@@ -115,6 +115,19 @@ export function EquityChart({
                   <stop offset={zeroOffset} stopColor="#FF4D6A" stopOpacity={0.03} />
                   <stop offset="100%" stopColor="#FF4D6A" stopOpacity={0.30} />
                 </linearGradient>
+                {/*
+                  The LINE changes colour as it crosses zero — green while the
+                  book is above water, red while under (the Robinhood idiom,
+                  applied per-crossing rather than to the whole period). Same
+                  zero split as the fill, but a hard edge: a stroke that fades
+                  through grey at zero reads as a gap.
+                */}
+                <linearGradient id="solStroke" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#00FF85" />
+                  <stop offset={zeroOffset} stopColor="#00FF85" />
+                  <stop offset={zeroOffset} stopColor="#FF4D6A" />
+                  <stop offset="100%" stopColor="#FF4D6A" />
+                </linearGradient>
               </defs>
               <CartesianGrid {...grid} />
               <XAxis dataKey="day" {...axis} tickFormatter={(d: string) => d.slice(5)} />
@@ -157,30 +170,13 @@ export function EquityChart({
                   return <ChartTip title={String(label)} rows={rows} />;
                 }}
               />
-              {/*
-                Daily close P&L as texture UNDER the line: same axis, same zero
-                (TradingView draws its per-trade histogram exactly this way).
-                Thin and faint on purpose — the bars are the grain of the day,
-                the line is the story. Square-ended: a rounded top on a bar
-                that grows DOWN reads as hung from the axis. A big day is
-                still a tall bar, but at this weight it reads as the day's
-                shadow behind the line rather than a second equity value.
-              */}
-              <Bar dataKey="close_pnl" name="Close P&L" barSize={6} fillOpacity={0.5} isAnimationActive={false}>
-                {chartData.map((row, i) => (
-                  <Cell
-                    key={i}
-                    fill={row.close_pnl == null ? "transparent" : row.close_pnl >= 0 ? "#00FF85" : "#FF4D6A"}
-                  />
-                ))}
-              </Bar>
               <Area
                 type="monotone"
                 dataKey="cum_sol"
                 name="Equity"
-                stroke="#00FF85"
+                stroke="url(#solStroke)"
                 fill="url(#solFill)"
-                strokeWidth={2}
+                strokeWidth={2.5}
               />
             </ComposedChart>
           </ResponsiveContainer>
