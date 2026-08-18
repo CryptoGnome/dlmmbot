@@ -159,7 +159,7 @@ export function AnalyticsPage({
       {/* Top charts */}
       <div className="grid items-stretch gap-3 xl:grid-cols-2">
         <Panel
-          title="Equity & daily closes"
+          title="Equity"
           right={<RangeTabs value={range} onChange={onRange} />}
           className="h-full"
         >
