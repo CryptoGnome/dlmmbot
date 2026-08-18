@@ -171,6 +171,27 @@ export function presentError(input: {
     };
   }
 
+  // An exit swap left tokens in the wallet. The executor sets the level from
+  // the leftover's share of the mark (see UNDERFILL_INCIDENT_SHARE in live.ts):
+  // a large share is an incident — we are materially still in the position;
+  // a small one is a sliver the residual sweep is guaranteed to sell within
+  // minutes, logged so it is auditable but never paged.
+  if (code === "close_underfilled") {
+    return input.level === "warn"
+      ? {
+          label: "Exit swap left a sliver",
+          kind: "transient",
+          level: "warn",
+          hint: "Small token residue after close — the residual sweep sells it on its next pass. No action needed.",
+        }
+      : {
+          label: "Exit swap under-filled",
+          kind: "incident",
+          level: "error",
+          hint: "A meaningful share of the position is still in the wallet as tokens. The sweep will retry; check it clears.",
+        };
+  }
+
   if (source === "farmer" && code === "tick") {
     return {
       label: "Main loop interrupted",

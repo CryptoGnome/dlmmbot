@@ -592,7 +592,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           },
           {
             title: "Errors",
-            text: "Structured log in farmer.db (error_log) — not every PM2 line. Shows logError paths: open failures, tick crashes, RPC offline, GMGN rate limits, etc. Filter Degraded for API cooldowns. Copy, GitHub issue, or dismiss (hide). **Clear log** permanently deletes rows so the table doesn’t keep growing.",
+            text: "Structured log in farmer.db (error_log) — not every PM2 line. Shows logError paths: open failures, tick crashes, RPC offline, GMGN rate limits, etc. Filter Degraded for API cooldowns. An exit that leaves a small token sliver (under 25% of the position) logs as a warning the sweep will clear — only a large leftover is an incident. Copy, GitHub issue, or dismiss (hide). **Clear log** permanently deletes rows so the table doesn’t keep growing.",
             icon: "alert",
           },
         ],
