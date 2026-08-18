@@ -19,7 +19,7 @@ export function enter(frame: number, delay: number, dur: number): number {
  */
 export function Stage({
   label, children, rail,
-}: { label: string; children: React.ReactNode; rail?: React.ReactNode }) {
+}: { label: string; children: React.ReactNode; rail?: React.ReactNode; file?: string }) {
   const frame = useCurrentFrame();
   const { durationInFrames } = useVideoConfig();
   // Every scene fades its last 8 frames so cuts never hard-flash.
@@ -197,6 +197,60 @@ export function ShotStage({
       </div>
       {/* paddingBottom clears the corner label so the last caption line never collides with it. */}
       <AbsoluteFill style={{ padding: 96, paddingTop: 0, paddingBottom: 130, justifyContent: "flex-end" }}>
+        {children}
+      </AbsoluteFill>
+      <div
+        style={{
+          position: "absolute", left: 96, bottom: 52, display: "flex", gap: 14, alignItems: "center",
+          fontSize: 24, letterSpacing: 5, color: C.dim, textTransform: "uppercase",
+        }}
+      >
+        <span style={{ width: 11, height: 11, backgroundColor: C.green, borderRadius: 2 }} />
+        {label}
+      </div>
+    </AbsoluteFill>
+  );
+}
+
+/**
+ * A scene built on a generated mascot card (scripts/mascot.mjs). The card is
+ * composed with its subject right-of-centre and the left third empty, so the
+ * copy sits in that gutter over a soft dark scrim — no letterbox, the
+ * character fills the frame. Same font and outro fade as `Stage`; the last
+ * time a scene skipped those the overlay rendered in a serif fallback.
+ */
+export function MascotStage({
+  file, label, children,
+}: { file: string; label: string; children: React.ReactNode }) {
+  const frame = useCurrentFrame();
+  const { durationInFrames } = useVideoConfig();
+  const t = enter(frame, 0, 18);
+  // A slow push-in keeps a still image from reading as a freeze-frame.
+  const drift = interpolate(frame, [0, durationInFrames], [1.0, 1.04], { extrapolateRight: "clamp" });
+  const out = interpolate(frame, [durationInFrames - 8, durationInFrames], [1, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  return (
+    <AbsoluteFill style={{ fontFamily: MONO, color: C.fg, backgroundColor: C.bg, opacity: out }}>
+      <AbsoluteFill style={{ opacity: t, overflow: "hidden" }}>
+        <Img
+          src={staticFile(file)}
+          style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center", scale: String(drift) }}
+        />
+      </AbsoluteFill>
+      {/* Scrim under the copy so white type holds on any card, without dimming the character. */}
+      <AbsoluteFill
+        style={{
+          background: `linear-gradient(90deg, ${C.bg} 0%, ${C.bg}F0 30%, ${C.bg}99 44%, transparent 60%)`,
+        }}
+      />
+      {/*
+        The cards put their subject from ~40% of the width rightward, so the
+        copy column stops at 40% and the scrim carries it. Anything wider ran
+        the subtitle under the desk and the domain into the monitor.
+      */}
+      <AbsoluteFill style={{ padding: 96, paddingRight: 0, display: "flex", flexDirection: "column", justifyContent: "center", width: "40%" }}>
         {children}
       </AbsoluteFill>
       <div
