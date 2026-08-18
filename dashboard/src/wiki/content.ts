@@ -154,10 +154,16 @@ export const WIKI_SECTIONS: WikiSection[] = [
           {
             title: "Majors",
             badge: "alts",
-            text: "Allowlisted SOL-quoted alts. Spot (flat) bins + separate timing. P2 rotation needs BOTH fee and volume dead (and a lower fee floor than entry) so parks like PUMP don’t churn every few minutes. Settings → Majors parking: search a ticker on Meteora and add to the allowlist. Runs after memes so hot memes keep slots.",
+            text: "Allowlisted SOL-quoted alts. Spot (flat) bins + separate timing. P2 rotation needs BOTH fee and volume dead (and a lower fee floor than entry) so parks like PUMP don’t churn every few minutes. Settings → Majors parking: search a ticker on Meteora and add to the allowlist. Runs after memes so hot memes keep slots. Since v0.14.0 majors also respect the 24h re-entry cooldown after our own stop / below-range / safety exit — but not meme vetting bans.",
             icon: "layers",
           },
         ],
+      },
+      {
+        type: "callout",
+        tone: "warn",
+        title: "After a loss, we sit out 24h — in every sleeve",
+        text: "When we cut a token on a stop, a below-range exit or a safety exit, that token is benched for 24h so the bot can’t immediately buy back the thing it just decided was broken. Until v0.14.0 the majors sleeve never checked — on 18 Aug it cut ANSEM for −0.079 SOL and re-entered the same token five seconds later, on both live bots. Vetting bans (holder concentration, insider clusters, RugCheck) are meme rules and still don’t apply to allowlisted majors.",
       },
       {
         type: "callout",

@@ -226,6 +226,13 @@ Maintained in the `blacklist` table with reason + expiry:
 - **24h**: copycat losers of the symbol-dedupe (§1.2); tokens that hard-failed vetting; tokens exited at a loss (re-entry cooldown).
 - **Structural skips** (not blacklisted, just never candidates): base fee > 5% pools (arb-only), quote-only fee pools, non-SOL quote (incl. SOL-USDC / stable pairs — out of scope), pools where our position would exceed `[20%]` of pool TVL (we'd *be* the exit liquidity).
 
+**Who enforces which ban (2026-08-18).** The blacklist carries two different kinds of entry, and the majors sleeve honours only one of them:
+
+- **Exit cooldowns** — written by our own P0 / P1 / P5 exit on that token (`P0 safety exit (…)`, `stop loss cooldown`, `below range cut`). Sleeve-independent: **every** entry path must respect these, majors included.
+- **Vetting bans** — written by §2 hard gates (holder concentration, insider clusters, RugCheck veto, age). Meme heuristics. Majors is an allowlist of established tokens, so applying these there would park the sleeve indefinitely on a false positive; majors ignores them by design.
+
+This was a live bug, not a design note: until v0.14.0 `majorsEntry` read the blacklist **not at all**, while P5 wrote the cooldown unconditionally. On 2026-08-18 00:32:14 the bot cut ANSEM below range for −0.0786 SOL, wrote the 24h cooldown one second later, and re-entered the same mint **five seconds after that** — on both live instances. A cooldown nothing reads is not a cooldown.
+
 ## 7. Persistence & profit tracking (SQLite, `data/farmer.db`)
 
 Tables:

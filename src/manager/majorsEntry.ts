@@ -1,5 +1,5 @@
 import { config } from "../config.js";
-import { recordDecision, logError } from "../db/db.js";
+import { isBlacklisted, isExitCooldown, recordDecision, logError } from "../db/db.js";
 import type { Executor } from "../executor/executor.js";
 import { alert } from "../alerts.js";
 import { solUsdPrice } from "../market.js";
@@ -60,6 +60,18 @@ export async function enterMajorsPositions(exec: Executor, bankroll: Bankroll): 
     if (tokenExposureSol(cand.tokenMint) > 0) {
       recordDecision(cand.tokenMint, cand.pool.address, "skipped", "majors_token_open", cand.score, { sleeve: "majors", symbol: cand.symbol });
       skip(cand.symbol, "token_open");
+      continue;
+    }
+
+    // Re-entry cooldown (STRATEGY.md §4 P5, `loss_reentry_cooldown_h`). Every
+    // other entry route reads the blacklist; this one did not, so a P5 cut
+    // wrote a 24h cooldown and the next scan tick walked straight back in —
+    // live on 2026-08-18, ANSEM re-entered 6s after being cut for -0.0786.
+    // Vetting bans are deliberately NOT enforced here: see isExitCooldown.
+    const bl = isBlacklisted(cand.tokenMint);
+    if (bl !== null && isExitCooldown(bl)) {
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "majors_exit_cooldown", cand.score, { sleeve: "majors", symbol: cand.symbol, reason: bl });
+      skip(cand.symbol, `cooldown(${bl})`);
       continue;
     }
 
