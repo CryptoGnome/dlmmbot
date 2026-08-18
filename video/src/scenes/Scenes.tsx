@@ -1,7 +1,7 @@
 import React from "react";
 import { useCurrentFrame, interpolate, Easing } from "remotion";
 import { C, SANS, sol, pct, tone, commas } from "../theme";
-import { Stage, ShotStage, MascotStage, Kicker, Big, Sub, Rail, Card, enter } from "../ui";
+import { Stage, ShotStage, MascotStage, Kicker, Big, Sub, Rail, Card, TokenBadge, enter } from "../ui";
 import type { Daily } from "../plan";
 
 type P = { d: Daily; mascot?: { open: boolean; close: boolean } };
@@ -177,7 +177,7 @@ export const Trade: React.FC<P> = ({ d }) => {
       }
     >
       <Kicker>Standout close</Kicker>
-      <Big size={170}>{b.symbol}</Big>
+      <TokenBadge symbol={b.symbol} icon={b.icon} size={150} />
       <Big size={190} color={tone(b.pnl)} delay={8}>{sol(v, 4)} <span style={{ fontSize: 80, color: C.dim }}>SOL</span></Big>
       <Sub delay={30}>
         Exit rule: <span style={{ color: C.accent }}>{b.reason}</span>
@@ -196,6 +196,7 @@ export const Positions: React.FC<P> = ({ d }) => {
             <Card
               key={`${p.symbol}-${i}`}
               k={`${p.symbol} · ${p.status} range`}
+              icon={p.icon}
               v={`${sol(p.pnl, 4)} SOL`}
               c={tone(p.pnl)}
               delay={10 + i * 6}

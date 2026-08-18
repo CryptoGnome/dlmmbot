@@ -14,11 +14,12 @@ export interface Daily {
   balance: { total: number; wallet: number; open: number; rent: number; usd: number; solUsd: number };
   today: { pnl: number; pct: number | null; closes: number; entries: number; scanned: number };
   allTime: { pnl: number; closes: number; winRate: number | null };
-  best: { symbol: string; pnl: number; reason: string } | null;
-  worst: { symbol: string; pnl: number; reason: string } | null;
+  /** `icon` is a public/ path (icons/<mint>.png) or null when the fetch failed — render the ticker alone. */
+  best: { symbol: string; icon?: string | null; pnl: number; reason: string } | null;
+  worst: { symbol: string; icon?: string | null; pnl: number; reason: string } | null;
   reasons: Array<{ reason: string; n: number; pnl: number }>;
   releases: Array<{ tag: string; title: string }>;
-  open: Array<{ symbol: string; sleeve: string; status: string; pnl: number }>;
+  open: Array<{ symbol: string; mint?: string | null; icon?: string | null; sleeve: string; status: string; pnl: number }>;
   trend: {
     historyDays: number;
     /** `full` is false when the bot hasn't been running that long yet. */
