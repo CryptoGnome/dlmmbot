@@ -190,6 +190,14 @@ stop_loss_frac = 0.75            # position SOL value vs entry
 # grace timer exists precisely to ride out wicks; P1 was defeating it. In range
 # the stop is still immediate (a real drawdown, not a wick). 4 polls = 60s.
 stop_loss_sustain_polls = 4
+# 2026-08-18: whether P1 counts fees already CLAIMED (realized SOL sitting in
+# the wallet) in the value it compares to entry. Off (default) = P1 measures
+# unrealized mark-to-market only. Audit of the 7 P1 stops with marks: 6 fired
+# with fee-inclusive value at 0.84–0.97 (position had already paid us), one
+# (4680) at 0.25 — a real crash. The bot LOGS what this knob would have done
+# on every P1 tick either way (decision `P1_fee_offset_deferred`), so leave it
+# off for a week and read the log before turning it on.
+stop_loss_count_claimed_fees = false
 loss_reentry_cooldown_h = 24
 # P2 rotation
 rotation_fee_daily_min_pct = 5

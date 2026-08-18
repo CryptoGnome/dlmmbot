@@ -72,6 +72,8 @@ export function gateLabel(gate: string): string {
     already_positioned: "Already in token",
     size_zero: "Size below floor",
     reentry_limit: "Re-entry cooldown",
+    majors_exit_cooldown: "Majors on exit cooldown",
+    P1_fee_offset_deferred: "P1 would defer (fees)",
     insider_clusters: "Insider clusters",
     age_min: "Too young",
     age_max: "Too old",
