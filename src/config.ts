@@ -126,6 +126,12 @@ export interface Config {
     stop_loss_frac: number; loss_reentry_cooldown_h: number;
     /** While BELOW range, P1 must be under the stop for this many consecutive polls before firing (wick tolerance). In range it fires immediately. Optional: default in code. */
     stop_loss_sustain_polls?: number;
+    /**
+     * Count fees ALREADY CLAIMED (realized SOL, in the wallet) in the value P1
+     * measures. Off = P1 measures unrealized MTM only, as before. Optional:
+     * default false in code. See STRATEGY.md §4 P1 (2026-08-18).
+     */
+    stop_loss_count_claimed_fees?: boolean;
     rotation_fee_daily_min_pct: number; rotation_polls: number;
     rotation_vol_30m_min_usd: number; max_age_h: number;
     above_range_pct: number; above_range_sustain_min: number;

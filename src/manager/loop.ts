@@ -106,6 +106,7 @@ const belowRangeSince = new Map<number, number>();   // P5 grace timer
 const tvlHistory = new Map<number, Array<{ ts: number; tvl: number; price: number }>>(); // P0 TVL-drop window
 const decayStreak = new Map<number, number>();        // P2 consecutive decay polls
 const stopStreak = new Map<number, number>();         // P1 consecutive under-stop polls while below range
+const feeOffsetLogged = new Set<number>();            // P1 fee-offset counterfactual logged once per position
 const rugcheckLastCheck = new Map<number, number>();  // P0 rugcheck-flip throttle
 const everInRange = new Set<number>();                // P3 win-vs-missed classification
 const fellDeep = new Set<number>();                   // escape hatch armed (also persisted)
@@ -117,6 +118,7 @@ export function resetManagerStateForTests(): void {
   tvlHistory.clear();
   decayStreak.clear();
   stopStreak.clear();
+  feeOffsetLogged.clear();
   rugcheckLastCheck.clear();
   everInRange.clear();
   fellDeep.clear();
@@ -171,6 +173,7 @@ function clearRangeTimers(posId: number): void {
   tvlHistory.delete(posId);
   decayStreak.delete(posId);
   stopStreak.delete(posId);
+  feeOffsetLogged.delete(posId);
   rugcheckLastCheck.delete(posId);
   everInRange.delete(posId);
   fellDeep.delete(posId);
@@ -742,19 +745,41 @@ export async function managePositions(exec: Executor): Promise<void> {
       // on tick 1 and defeat the whole point. Inside range the stop is immediate
       // as before: value falling 25% while price is still in our bins is a real
       // drawdown, not a wick.
-      if (valueFrac < pm.stop_loss_frac) {
+      //
+      // 2026-08-18: `valueFrac` is mark-to-market only — the SOL side plus the
+      // token side at spot plus UNCLAIMED fees. Fees already CLAIMED are real
+      // SOL in the wallet and were invisible to it. Audit of the 7 P1 stops
+      // with marks: six fired with fee-inclusive value at 0.84–0.97 (the
+      // position had already paid us; DCN closed +0.0001, Z500 was +76% within
+      // 4h) and one — 4680 — at 0.25, a real crash. `stop_loss_count_claimed_fees`
+      // switches the value P1 measures; either way the OTHER answer is logged
+      // as a decision on every P1 tick, so the knob can be judged from the
+      // ledger before it is flipped. Same threshold, same sustain rule.
+      const feeInclFrac = pos.entrySol > 0 ? valueFrac + pos.feesClaimedSol / pos.entrySol : valueFrac;
+      const countClaimed = m.stop_loss_count_claimed_fees === true;
+      const stopFrac = countClaimed ? feeInclFrac : valueFrac;
+      // Counterfactual for the OFF case: MTM is under the stop but claimed fees
+      // would have held it. One row per position, on the first tick it is true,
+      // so a week of these answers "how often, and what happened next".
+      if (!countClaimed && valueFrac < pm.stop_loss_frac && feeInclFrac >= pm.stop_loss_frac && !feeOffsetLogged.has(pos.id)) {
+        feeOffsetLogged.add(pos.id);
+        recordDecision(pos.tokenMint, pos.poolAddress, "skipped", "P1_fee_offset_deferred", null,
+          { valueFrac, feeInclFrac, feesClaimedSol: pos.feesClaimedSol, mark, inGrace: mark.belowRange });
+        console.log(`[manager] pos#${pos.id} ${pos.symbol}: MTM ${(valueFrac * 100 - 100).toFixed(1)}% under stop, fee-inclusive ${(feeInclFrac * 100 - 100).toFixed(1)}% — stop_loss_count_claimed_fees would defer (logged)`);
+      }
+      if (stopFrac < pm.stop_loss_frac) {
         const inGrace = mark.belowRange;
         const streak = (stopStreak.get(pos.id) ?? 0) + 1;
         stopStreak.set(pos.id, streak);
         const needed = inGrace ? (m.stop_loss_sustain_polls ?? 4) : 1;
         if (streak < needed) {
-          if (streak === 1) console.log(`[manager] pos#${pos.id} ${pos.symbol}: under stop (${(valueFrac * 100 - 100).toFixed(1)}%) below range — sustaining ${needed} polls before P1`);
+          if (streak === 1) console.log(`[manager] pos#${pos.id} ${pos.symbol}: under stop (${(stopFrac * 100 - 100).toFixed(1)}%) below range — sustaining ${needed} polls before P1`);
         } else {
           await closeAndReport(exec, pos, "P1_stop", config().exec.exit_slippage_bps, "stop_loss",
-            `stop loss at ${(valueFrac * 100 - 100).toFixed(1)}%${inGrace ? ` (sustained ${streak} polls below range)` : ""}`);
+            `stop loss at ${(stopFrac * 100 - 100).toFixed(1)}%${inGrace ? ` (sustained ${streak} polls below range)` : ""}`);
           clearRangeTimers(pos.id);
           blacklist(pos.tokenMint, "token", "stop loss cooldown", m.loss_reentry_cooldown_h);
-          recordDecision(pos.tokenMint, pos.poolAddress, "exited", "P1_stop", null, { valueFrac, mark, sustainedPolls: streak, inGrace });
+          recordDecision(pos.tokenMint, pos.poolAddress, "exited", "P1_stop", null, { valueFrac, feeInclFrac, countClaimed, mark, sustainedPolls: streak, inGrace });
           continue;
         }
       } else {

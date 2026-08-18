@@ -305,7 +305,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
             code: "P1",
             title: "Stop loss",
             when: "Position value in SOL fell too far vs entry",
-            then: "Close, take the loss, cool the token ~24h. Below range it must hold for ~60s first so a wick doesn't cut you (a real crash is caught instantly by P0 anyway); in range it's immediate",
+            then: "Close, take the loss, cool the token ~24h. Below range it must hold for ~60s first so a wick doesn't cut you (a real crash is caught instantly by P0 anyway); in range it's immediate. Optional (off by default): count fees you've already claimed toward the position's value — an audit found 6 of 7 stops fired on positions that had already paid us more in fees than the paper loss. Either way the log shows what the other setting would have done, so you can decide from data.",
             tone: "danger",
           },
           {
