@@ -136,6 +136,7 @@ Thresholds:
 | `safety_price_crash_pct` | `-60` | P0: price vs entry, **at any age** — deliberately no time window |
 | `stop_loss_frac` | `0.75` | P1: close when SOL value < entry × this |
 | `stop_loss_sustain_polls` | `4` | While **below range**, P1 must be under the stop for this many consecutive polls (~60s) before firing — wick tolerance. In range the stop is immediate. A violent collapse is still caught instantly by P0 `price_crash` |
+| `stop_loss_count_claimed_fees` | `false` | Count fees **already claimed** (realized SOL in the wallet) in the value P1 compares to entry. Off = MTM only. Either way the bot logs a `P1_fee_offset_deferred` decision whenever the two settings would disagree, so leave it off for a week and read the Funnel before turning it on. A real crash fires identically under both |
 | `loss_reentry_cooldown_h` | `24` | Cooldown after a loss exit |
 | `rotation_fee_daily_min_pct` | `5` | P2: fee-rate floor, %/day |
 | `rotation_polls` | `3` | P2: consecutive polls under the floor before rotating |

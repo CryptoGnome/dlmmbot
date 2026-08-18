@@ -110,6 +110,74 @@ describe("managePositions contracts", () => {
    * loss on the book, on a 5m candle that CLOSED at -20%. Below range, the stop
    * must sustain across polls. In range it is still immediate.
    */
+  /**
+   * 2026-08-18: `valueFrac` is MTM only and never saw fees already CLAIMED
+   * (realized SOL in the wallet). Six of seven audited P1 stops fired with
+   * fee-inclusive value 0.84–0.97; the seventh (4680) at 0.25 was a real
+   * crash. `stop_loss_count_claimed_fees` switches what P1 measures; the
+   * other answer is logged as `P1_fee_offset_deferred` so the knob can be
+   * judged from the ledger before it is turned on.
+   */
+  describe("P1 fee offset (stop_loss_count_claimed_fees)", () => {
+    // entry 0.4, MTM 0.28 -> valueFrac 0.70 (under 0.75). Claimed 0.06 -> fee-inclusive 0.85.
+    const feeRich = () => {
+      const id = insertOpenPosition({ entrySol: 0.4 });
+      getDb().prepare("UPDATE positions SET fees_claimed_sol = 0.06 WHERE id = ?").run(id);
+      exec.setMark(id, { valueSol: 0.28, price: 0.8, activeBinId: 150, inRange: true });
+      return id;
+    };
+    const deferredRows = () =>
+      (getDb().prepare("SELECT features_json FROM decisions WHERE failed_gate = 'P1_fee_offset_deferred'").all() as Array<{ features_json: string }>);
+
+    it("OFF (default): fires on MTM exactly as before, and logs that fees would have held it", async () => {
+      const id = feeRich();
+      await managePositions(exec);
+      expect(exec.closed).toEqual([{ id, reason: "P1_stop" }]);
+      const rows = deferredRows();
+      expect(rows).toHaveLength(1);
+      const f = JSON.parse(rows[0]!.features_json);
+      expect(f.valueFrac).toBeCloseTo(0.70, 2);
+      expect(f.feeInclFrac).toBeCloseTo(0.85, 2);
+    });
+
+    it("OFF: does not log when fees would NOT have held it (a real crash)", async () => {
+      // entry 0.4, MTM 0.088 -> 0.22; claimed 0.012 -> 0.25. The 4680 shape.
+      const id = insertOpenPosition({ entrySol: 0.4 });
+      getDb().prepare("UPDATE positions SET fees_claimed_sol = 0.012 WHERE id = ?").run(id);
+      exec.setMark(id, { valueSol: 0.088, price: 0.8, activeBinId: 150, inRange: true });
+      await managePositions(exec);
+      expect(exec.closed).toEqual([{ id, reason: "P1_stop" }]);
+      expect(deferredRows()).toHaveLength(0);
+    });
+
+    it("ON: a fee-rich position under MTM stop is held", async () => {
+      installConfig((c) => { c.manage.stop_loss_frac = 0.75; c.manage.stop_loss_count_claimed_fees = true; c.manage.escape_hatch_depth_pct = 99; });
+      feeRich();
+      await managePositions(exec);
+      expect(exec.closed).toHaveLength(0);
+      expect(deferredRows()).toHaveLength(0); // no counterfactual when the knob is live
+    });
+
+    it("ON: a real crash still fires — fees cannot rescue 4680", async () => {
+      installConfig((c) => { c.manage.stop_loss_frac = 0.75; c.manage.stop_loss_count_claimed_fees = true; });
+      const id = insertOpenPosition({ entrySol: 0.4 });
+      getDb().prepare("UPDATE positions SET fees_claimed_sol = 0.012 WHERE id = ?").run(id);
+      exec.setMark(id, { valueSol: 0.088, price: 0.8, activeBinId: 150, inRange: true });
+      await managePositions(exec);
+      expect(exec.closed).toEqual([{ id, reason: "P1_stop" }]);
+    });
+
+    it("ON: fires once fees are exhausted by further drawdown", async () => {
+      installConfig((c) => { c.manage.stop_loss_frac = 0.75; c.manage.stop_loss_count_claimed_fees = true; c.manage.escape_hatch_depth_pct = 99; });
+      const id = feeRich();                     // 0.70 + 0.15 = 0.85, held
+      await managePositions(exec);
+      expect(exec.closed).toHaveLength(0);
+      exec.setMark(id, { valueSol: 0.20, price: 0.8, activeBinId: 150, inRange: true }); // 0.50 + 0.15 = 0.65
+      await managePositions(exec);
+      expect(exec.closed).toEqual([{ id, reason: "P1_stop" }]);
+    });
+  });
+
   describe("P1 stop vs P5 wick tolerance", () => {
     const belowRangeUnderStop = (id: number) => exec.setMark(id, {
       valueSol: 0.28, price: 0.5, activeBinId: 50, inRange: false, belowRange: true, aboveRange: false,
