@@ -38,7 +38,7 @@ const TABS = [
  * [output name, tab hash, heading text]
  */
 const PANELS = [
-  ["equity", "#/analytics", "EQUITY & DAILY CLOSES"],
+  ["equity", "#/analytics", "EQUITY"],
   ["reasons", "#/analytics", "P&L BY EXIT REASON"],
 ];
 
