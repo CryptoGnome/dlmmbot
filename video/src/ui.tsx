@@ -130,8 +130,8 @@ export function Sub({ children, delay = 0, color = C.muted }: { children: React.
  * the video wasn't quite the same product as the site.
  */
 export function Card({
-  k, v, c, delay = 0, minWidth = 300,
-}: { k: string; v: string; c?: string; delay?: number; minWidth?: number }) {
+  k, v, c, delay = 0, minWidth = 300, icon,
+}: { k: string; v: string; c?: string; delay?: number; minWidth?: number; icon?: string | null }) {
   const frame = useCurrentFrame();
   const t = enter(frame, delay, 16);
   return (
@@ -142,7 +142,12 @@ export function Card({
         padding: "18px 30px", minWidth,
       }}
     >
-      <div style={{ fontSize: 26, color: C.dim, letterSpacing: 3, textTransform: "uppercase" }}>{k}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 26, color: C.dim, letterSpacing: 3, textTransform: "uppercase" }}>
+        {icon ? (
+          <Img src={staticFile(icon)} style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover", border: `1px solid ${C.grid}`, flex: "0 0 auto" }} />
+        ) : null}
+        <span>{k}</span>
+      </div>
       <div style={{ fontSize: 50, color: c ?? C.fg, marginTop: 8, fontFamily: SANS, fontWeight: 600 }}>{v}</div>
     </div>
   );
@@ -263,5 +268,36 @@ export function MascotStage({
         {label}
       </div>
     </AbsoluteFill>
+  );
+}
+
+/**
+ * A token's icon beside its ticker. The icon is a local file fetched by
+ * data.mjs (public/icons/<mint>.*) so the render is deterministic; when the
+ * fetch failed `icon` is null and only the ticker renders — a bare ticker is
+ * fine, a broken image is not. Icon is round with a hairline ring, matching
+ * how the dashboard's position cards draw it.
+ */
+export function TokenBadge({
+  symbol, icon, size = 120, color = C.fg, delay = 0,
+}: { symbol: string; icon?: string | null; size?: number; color?: string; delay?: number }) {
+  const frame = useCurrentFrame();
+  const t = enter(frame, delay, 18);
+  const iconPx = Math.round(size * 0.92);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: Math.round(size * 0.22), opacity: t, translate: `0px ${(1 - t) * 20}px` }}>
+      {icon ? (
+        <Img
+          src={staticFile(icon)}
+          style={{
+            width: iconPx, height: iconPx, borderRadius: "50%", objectFit: "cover",
+            border: `2px solid ${C.grid}`, backgroundColor: C.panel, flex: "0 0 auto",
+          }}
+        />
+      ) : null}
+      <div style={{ fontSize: size, lineHeight: 1, fontWeight: 600, letterSpacing: -3, fontFamily: SANS, color }}>
+        {symbol}
+      </div>
+    </div>
   );
 }

@@ -9,7 +9,7 @@
  *   DASH_TOKEN  required
  *   DAY_ONE     first day of the challenge, YYYY-MM-DD (default 2026-08-14)
  */
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -32,6 +32,44 @@ const get = async (path) => {
 };
 
 const [watch, hist] = await Promise.all([get("/api/watch"), get("/api/history")]);
+
+/**
+ * Token icons for the beats that feature a token (best trade, open positions).
+ *
+ * The dashboard already resolves and caches an icon URL per mint (token_meta
+ * on /api/watch), so this costs no new API calls. But those URLs are IPFS
+ * gateways and random CDNs — slow, flaky, one of them literally starts with
+ * "Https://" — and a Remotion render must be deterministic, so each icon is
+ * fetched ONCE here into public/icons/<mint>.<ext> and the video references
+ * the local file. A fetch that fails just means no icon: the beat falls back
+ * to the ticker alone, same best-effort rule as the mascot cards.
+ */
+const ICONS = resolve(HERE, "..", "public", "icons");
+async function localIcon(mint) {
+  const meta = watch.token_meta?.[mint];
+  const url = (meta?.icon_url ?? "").trim();
+  if (!url) return null;
+  mkdirSync(ICONS, { recursive: true });
+  // Reuse a previous day's fetch — icons don't change and IPFS is slow.
+  for (const ext of ["png", "jpg", "webp", "gif"]) {
+    if (existsSync(resolve(ICONS, `${mint}.${ext}`))) return `icons/${mint}.${ext}`;
+  }
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 12_000);
+    const res = await fetch(url.replace(/^Https:/, "https:"), { signal: ctrl.signal, redirect: "follow" });
+    clearTimeout(t);
+    if (!res.ok) return null;
+    const type = (res.headers.get("content-type") ?? "").toLowerCase();
+    const ext = type.includes("png") ? "png" : type.includes("webp") ? "webp" : type.includes("gif") ? "gif" : "jpg";
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length < 200) return null; // an error page, not an image
+    writeFileSync(resolve(ICONS, `${mint}.${ext}`), buf);
+    return `icons/${mint}.${ext}`;
+  } catch {
+    return null;
+  }
+}
 
 // "Today" is the bot's own day boundary (UTC), matching how it buckets the ledger.
 const today = new Date(watch.at).toISOString().slice(0, 10);
@@ -65,12 +103,19 @@ const releases = (watch.build?.releases ?? [])
   .filter((r) => (r.at ?? "").slice(0, 10) === today)
   .map((r) => ({ tag: r.tag, title: (r.name ?? "").replace(/^v[\d.]+\s*—\s*/, "") }));
 
-const open = (watch.open ?? []).map((p) => ({
-  symbol: p.symbol,
-  sleeve: p.sleeve ?? "meme",
-  status: p.range_status ?? p.mark?.status ?? "unknown",
-  pnl: round(p.mark?.total_pnl_sol ?? 0),
-}));
+const open = [];
+for (const p of watch.open ?? []) {
+  open.push({
+    symbol: p.symbol,
+    mint: p.mint ?? p.token_mint ?? null,
+    icon: await localIcon(p.mint ?? p.token_mint),
+    sleeve: p.sleeve ?? "meme",
+    status: p.range_status ?? p.mark?.status ?? "unknown",
+    pnl: round(p.mark?.total_pnl_sol ?? 0),
+  });
+}
+const bestIcon = best ? await localIcon(best.mint) : null;
+const worstIcon = worst ? await localIcon(worst.mint) : null;
 
 function round(n) {
   return Math.round((Number(n) || 0) * 1e6) / 1e6;
@@ -129,8 +174,8 @@ const daily = {
     closes: head.closes ?? 0,
     winRate: head.win_rate ?? null,
   },
-  best: best && { symbol: best.symbol, pnl: round(best.pnl), reason: reasonLabel[best.exit_reason] ?? best.exit_reason },
-  worst: worst && { symbol: worst.symbol, pnl: round(worst.pnl), reason: reasonLabel[worst.exit_reason] ?? worst.exit_reason },
+  best: best && { symbol: best.symbol, icon: bestIcon, pnl: round(best.pnl), reason: reasonLabel[best.exit_reason] ?? best.exit_reason },
+  worst: worst && { symbol: worst.symbol, icon: worstIcon, pnl: round(worst.pnl), reason: reasonLabel[worst.exit_reason] ?? worst.exit_reason },
   reasons,
   releases,
   open,
