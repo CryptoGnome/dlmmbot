@@ -17,6 +17,14 @@ import type { ExitReason, Position } from "../types.js";
 import { classifyLeftover, RESIDUAL_SWEEP_MIN_SOL } from "./executor.js";
 import type { Executor, OpenParams, PositionMark } from "./executor.js";
 import { quoteToSolLamports, swapToSolEscalating } from "./jupiter.js";
+
+/**
+ * Leftover-token share of the close mark at or above which an under-filled
+ * exit is an INCIDENT (error level, Telegram alert, counted in error stats).
+ * Below it the sweep sells the sliver within minutes and it is logged at warn.
+ * 25% is the line the alert has used since v0.8.0.
+ */
+export const UNDERFILL_INCIDENT_SHARE = 0.25;
 import {
   computeUnitLimitFor, computeUnitLimitIx, escalate, hasComputeUnitLimit,
   priorityFeeSettings, recentFeeMicroLamports, setComputeUnitPrice, writableAccountsOf,
@@ -1069,16 +1077,24 @@ export class LiveExecutor implements Executor {
               `(~${leftoverTokenSol!.toFixed(6)} SOL) — dust below the ${RESIDUAL_SWEEP_MIN_SOL} SOL sweep floor, written off`
             );
           } else {
+            // Only a leftover that is a real share of the position is an
+            // incident. Three of the last three reports (BUTTHOLE, Z500,
+            // 67coin) were 1–2% slivers — fee accrual on winning P3 closes —
+            // that the sweep sold within minutes; paging on those is noise
+            // that trains the operator to ignore the one that matters.
+            const material = share !== null && share >= UNDERFILL_INCIDENT_SHARE;
             const msg = `[live] pos#${position.id} ${position.symbol}: close left ${leftRaw} raw tokens in wallet` +
               (leftoverTokenSol !== null ? ` (~${leftoverTokenSol.toFixed(4)} SOL, ${share !== null ? (share * 100).toFixed(0) + "% of mark" : "?"})` : "") +
-              ` — swap under-filled; residual sweep will sell it. Position is NOT fully out.`;
-            console.error(msg);
+              (material
+                ? ` — swap under-filled; residual sweep will sell it. Position is NOT fully out.`
+                : ` — sliver; residual sweep will sell it.`);
+            if (material) console.error(msg); else console.log(msg);
             logError({
-              source: "live", code: "close_underfilled", message: msg,
-              detail: { positionId: position.id, leftRaw: leftRaw.toString(), leftoverTokenSol, markedExitSol: before.valueSol, closeReturnSol },
+              source: "live", code: "close_underfilled", message: msg, level: material ? "error" : "warn",
+              detail: { positionId: position.id, leftRaw: leftRaw.toString(), leftoverTokenSol, markedExitSol: before.valueSol, closeReturnSol, share },
               symbol: position.symbol, mint: position.tokenMint, pool: position.poolAddress, dedupeSec: 60,
             });
-            if (share !== null && share >= 0.25) {
+            if (material) {
               await alert("watchdog",
                 `⚠️ ${position.symbol} pos#${position.id}: exit swap under-filled — ~${leftoverTokenSol!.toFixed(3)} SOL of tokens ` +
                 `(${(share * 100).toFixed(0)}% of the position) still in wallet. Sweep will retry; not fully out yet.`
