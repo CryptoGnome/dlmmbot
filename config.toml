@@ -154,7 +154,7 @@ safety_tvl_drop_pct = 40         # in 10 min
 # on one reading; the token then round-tripped +260% and its pool stayed the
 # best fee/TVL on the board. Rug-evidence triggers (pool_dead, price_crash,
 # rugcheck_flip, holder/insider) keep the permanent one-strike ban.
-tvl_drain_cooldown_h = 6         # token cooldown after a tvl_drain exit
+tvl_drain_cooldown_h = 1         # token cooldown after a tvl_drain exit (was 6; 0/12 drains were rugs, 6/12 recovered within 1h — 2026-08-19)
 # Price is the tie-breaker, not volume. A pool whose price is RUNNING UP is
 # having its ask-side inventory bought out — TVL falls because it is being
 # traded through. A rug drains TVL alongside a price COLLAPSE. Both print heavy
