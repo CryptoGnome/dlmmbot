@@ -19,7 +19,7 @@ export function enter(frame: number, delay: number, dur: number): number {
  */
 export function Stage({
   label, children, rail,
-}: { label: string; children: React.ReactNode; rail?: React.ReactNode }) {
+}: { label: string; children: React.ReactNode; rail?: React.ReactNode; file?: string }) {
   const frame = useCurrentFrame();
   const { durationInFrames } = useVideoConfig();
   // Every scene fades its last 8 frames so cuts never hard-flash.
@@ -130,8 +130,8 @@ export function Sub({ children, delay = 0, color = C.muted }: { children: React.
  * the video wasn't quite the same product as the site.
  */
 export function Card({
-  k, v, c, delay = 0, minWidth = 300,
-}: { k: string; v: string; c?: string; delay?: number; minWidth?: number }) {
+  k, v, c, delay = 0, minWidth = 300, icon,
+}: { k: string; v: string; c?: string; delay?: number; minWidth?: number; icon?: string | null }) {
   const frame = useCurrentFrame();
   const t = enter(frame, delay, 16);
   return (
@@ -142,7 +142,12 @@ export function Card({
         padding: "18px 30px", minWidth,
       }}
     >
-      <div style={{ fontSize: 26, color: C.dim, letterSpacing: 3, textTransform: "uppercase" }}>{k}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 26, color: C.dim, letterSpacing: 3, textTransform: "uppercase" }}>
+        {icon ? (
+          <Img src={staticFile(icon)} style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover", border: `1px solid ${C.grid}`, flex: "0 0 auto" }} />
+        ) : null}
+        <span>{k}</span>
+      </div>
       <div style={{ fontSize: 50, color: c ?? C.fg, marginTop: 8, fontFamily: SANS, fontWeight: 600 }}>{v}</div>
     </div>
   );
@@ -209,5 +214,90 @@ export function ShotStage({
         {label}
       </div>
     </AbsoluteFill>
+  );
+}
+
+/**
+ * A scene built on a generated mascot card (scripts/mascot.mjs). The card is
+ * composed with its subject right-of-centre and the left third empty, so the
+ * copy sits in that gutter over a soft dark scrim — no letterbox, the
+ * character fills the frame. Same font and outro fade as `Stage`; the last
+ * time a scene skipped those the overlay rendered in a serif fallback.
+ */
+export function MascotStage({
+  file, label, children,
+}: { file: string; label: string; children: React.ReactNode }) {
+  const frame = useCurrentFrame();
+  const { durationInFrames } = useVideoConfig();
+  const t = enter(frame, 0, 18);
+  // A slow push-in keeps a still image from reading as a freeze-frame.
+  const drift = interpolate(frame, [0, durationInFrames], [1.0, 1.04], { extrapolateRight: "clamp" });
+  const out = interpolate(frame, [durationInFrames - 8, durationInFrames], [1, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  return (
+    <AbsoluteFill style={{ fontFamily: MONO, color: C.fg, backgroundColor: C.bg, opacity: out }}>
+      <AbsoluteFill style={{ opacity: t, overflow: "hidden" }}>
+        <Img
+          src={staticFile(file)}
+          style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center", scale: String(drift) }}
+        />
+      </AbsoluteFill>
+      {/* Scrim under the copy so white type holds on any card, without dimming the character. */}
+      <AbsoluteFill
+        style={{
+          background: `linear-gradient(90deg, ${C.bg} 0%, ${C.bg}F0 30%, ${C.bg}99 44%, transparent 60%)`,
+        }}
+      />
+      {/*
+        The cards put their subject from ~40% of the width rightward, so the
+        copy column stops at 40% and the scrim carries it. Anything wider ran
+        the subtitle under the desk and the domain into the monitor.
+      */}
+      <AbsoluteFill style={{ padding: 96, paddingRight: 0, display: "flex", flexDirection: "column", justifyContent: "center", width: "40%" }}>
+        {children}
+      </AbsoluteFill>
+      <div
+        style={{
+          position: "absolute", left: 96, bottom: 52, display: "flex", gap: 14, alignItems: "center",
+          fontSize: 24, letterSpacing: 5, color: C.dim, textTransform: "uppercase",
+        }}
+      >
+        <span style={{ width: 11, height: 11, backgroundColor: C.green, borderRadius: 2 }} />
+        {label}
+      </div>
+    </AbsoluteFill>
+  );
+}
+
+/**
+ * A token's icon beside its ticker. The icon is a local file fetched by
+ * data.mjs (public/icons/<mint>.*) so the render is deterministic; when the
+ * fetch failed `icon` is null and only the ticker renders — a bare ticker is
+ * fine, a broken image is not. Icon is round with a hairline ring, matching
+ * how the dashboard's position cards draw it.
+ */
+export function TokenBadge({
+  symbol, icon, size = 120, color = C.fg, delay = 0,
+}: { symbol: string; icon?: string | null; size?: number; color?: string; delay?: number }) {
+  const frame = useCurrentFrame();
+  const t = enter(frame, delay, 18);
+  const iconPx = Math.round(size * 0.92);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: Math.round(size * 0.22), opacity: t, translate: `0px ${(1 - t) * 20}px` }}>
+      {icon ? (
+        <Img
+          src={staticFile(icon)}
+          style={{
+            width: iconPx, height: iconPx, borderRadius: "50%", objectFit: "cover",
+            border: `2px solid ${C.grid}`, backgroundColor: C.panel, flex: "0 0 auto",
+          }}
+        />
+      ) : null}
+      <div style={{ fontSize: size, lineHeight: 1, fontWeight: 600, letterSpacing: -3, fontFamily: SANS, color }}>
+        {symbol}
+      </div>
+    </div>
   );
 }

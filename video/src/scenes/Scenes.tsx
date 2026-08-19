@@ -1,10 +1,10 @@
 import React from "react";
 import { useCurrentFrame, interpolate, Easing } from "remotion";
 import { C, SANS, sol, pct, tone, commas } from "../theme";
-import { Stage, ShotStage, Kicker, Big, Sub, Rail, Card, enter } from "../ui";
+import { Stage, ShotStage, MascotStage, Kicker, Big, Sub, Rail, Card, TokenBadge, enter } from "../ui";
 import type { Daily } from "../plan";
 
-type P = { d: Daily };
+type P = { d: Daily; mascot?: { open: boolean; close: boolean } };
 
 /** Count a number up from 0 — the one place a value animates rather than fades. */
 function useCountUp(target: number, dur = 30, delay = 0) {
@@ -16,21 +16,24 @@ function useCountUp(target: number, dur = 30, delay = 0) {
   });
 }
 
-export const Title: React.FC<P> = ({ d }) => {
+export const Title: React.FC<P> = ({ d, mascot }) => {
   const frame = useCurrentFrame();
   const t = enter(frame, 0, 22);
   const date = new Date(`${d.day}T00:00:00Z`).toLocaleDateString("en-GB", {
     day: "numeric", month: "short", year: "numeric", timeZone: "UTC",
   });
+  // With a mascot card the copy sits in the left third the image was
+  // composed to leave empty; without one it's the plain title as before.
+  const Frame = mascot?.open ? MascotStage : Stage;
   return (
-    <Stage label="dlmmbot.com">
+    <Frame label="dlmmbot.com" file="mascot-open.png">
       <div style={{ opacity: t, translate: `0px ${(1 - t) * 30}px` }}>
         <div style={{ fontSize: 34, letterSpacing: 10, color: C.green, textTransform: "uppercase" }}>
           Daily update
         </div>
         <div
           style={{
-            fontSize: 260, fontWeight: 600, lineHeight: 1, letterSpacing: -8, marginTop: 10,
+            fontSize: mascot?.open ? 200 : 260, fontWeight: 600, lineHeight: 1, letterSpacing: -8, marginTop: 10,
             fontFamily: SANS, color: C.fg,
           }}
         >
@@ -40,7 +43,7 @@ export const Title: React.FC<P> = ({ d }) => {
           {date} · autonomous Meteora DLMM bot · live on Solana
         </div>
       </div>
-    </Stage>
+    </Frame>
   );
 };
 
@@ -174,7 +177,7 @@ export const Trade: React.FC<P> = ({ d }) => {
       }
     >
       <Kicker>Standout close</Kicker>
-      <Big size={170}>{b.symbol}</Big>
+      <TokenBadge symbol={b.symbol} icon={b.icon} size={150} />
       <Big size={190} color={tone(b.pnl)} delay={8}>{sol(v, 4)} <span style={{ fontSize: 80, color: C.dim }}>SOL</span></Big>
       <Sub delay={30}>
         Exit rule: <span style={{ color: C.accent }}>{b.reason}</span>
@@ -193,6 +196,7 @@ export const Positions: React.FC<P> = ({ d }) => {
             <Card
               key={`${p.symbol}-${i}`}
               k={`${p.symbol} · ${p.status} range`}
+              icon={p.icon}
               v={`${sol(p.pnl, 4)} SOL`}
               c={tone(p.pnl)}
               delay={10 + i * 6}
@@ -259,23 +263,24 @@ export const Shipped: React.FC<P> = ({ d }) => {
   );
 };
 
-export const Outro: React.FC<P> = ({ d }) => {
+export const Outro: React.FC<P> = ({ d, mascot }) => {
   const frame = useCurrentFrame();
   const t = enter(frame, 0, 20);
+  const Frame = mascot?.close ? MascotStage : Stage;
   return (
-    <Stage label={`v${d.version ?? ""}`}>
+    <Frame label={`v${d.version ?? ""}`} file="mascot-close.png">
       <div style={{ opacity: t, translate: `0px ${(1 - t) * 20}px` }}>
         <div style={{ fontSize: 40, color: C.dim, letterSpacing: 6, textTransform: "uppercase" }}>
           Follow the run
         </div>
-        <div style={{ fontSize: 170, fontWeight: 700, color: C.green, marginTop: 14, letterSpacing: -5 }}>
+        <div style={{ fontSize: mascot?.close ? 118 : 170, fontWeight: 700, color: C.green, marginTop: 14, letterSpacing: -5 }}>
           dlmmbot.com
         </div>
         <div style={{ fontSize: 36, color: C.muted, marginTop: 26 }}>
           Open dashboard · every trade, every rule, every bug — in public.
         </div>
       </div>
-    </Stage>
+    </Frame>
   );
 };
 

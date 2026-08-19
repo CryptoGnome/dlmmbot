@@ -3,14 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Daily X update video for DLMM Bot — data from the live dashboard API, rendered with Remotion.",
+  "description": "Daily X update video for DLMM Bot \u2014 data from the live dashboard API, rendered with Remotion.",
   "scripts": {
     "data": "node scripts/data.mjs",
     "capture": "node scripts/capture.mjs",
-    "daily": "npm run data && npm run capture && npm run render",
+    "daily": "npm run data && npm run mascot && npm run capture && npm run render",
     "studio": "remotion studio",
     "render": "remotion render Daily out/daily.mp4",
-    "still": "remotion still Daily out/still.png"
+    "still": "remotion still Daily out/still.png",
+    "mascot": "node scripts/mascot.mjs"
   },
   "dependencies": {
     "@remotion/cli": "^4.0.0",

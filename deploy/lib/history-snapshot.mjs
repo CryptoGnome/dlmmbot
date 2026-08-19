@@ -518,8 +518,15 @@ export function buildHistorySnapshot(root, range = "30d") {
       };
     }
 
-    // Entry fee/TVL buckets vs outcome
-    const withFee = enriched.filter((r) => r.fee_tvl_24h != null && Number.isFinite(r.fee_tvl_24h));
+    // Entry fee/TVL buckets vs outcome — meme/micro only. Majors sit at
+    // ~0–4% fee/TVL by construction (that is what makes them majors), so
+    // mixing them into the terciles turned the "Low" bucket into a majors
+    // bucket and the chart read "low fee/TVL loses" no matter what the meme
+    // gates did (24 of 36 "Low" rows on 2026-08-19 were PUMP/MET/ANSEM at
+    // ≈0 PnL). Majors get their own row instead.
+    const hasFee = enriched.filter((r) => r.fee_tvl_24h != null && Number.isFinite(r.fee_tvl_24h));
+    const withFee = hasFee.filter((r) => r.sleeve !== "majors");
+    const majorsFee = hasFee.filter((r) => r.sleeve === "majors");
     withFee.sort((a, b) => a.fee_tvl_24h - b.fee_tvl_24h);
     const fee_tvl_buckets = [];
     if (withFee.length >= 3) {
@@ -545,6 +552,14 @@ export function buildHistorySnapshot(root, range = "30d") {
         fee_tvl_min: Math.round(Math.min(...withFee.map((r) => r.fee_tvl_24h)) * 100) / 100,
         fee_tvl_max: Math.round(Math.max(...withFee.map((r) => r.fee_tvl_24h)) * 100) / 100,
         ...aggBucket(withFee),
+      });
+    }
+    if (majorsFee.length) {
+      fee_tvl_buckets.push({
+        label: "Majors (all)",
+        fee_tvl_min: Math.round(Math.min(...majorsFee.map((r) => r.fee_tvl_24h)) * 100) / 100,
+        fee_tvl_max: Math.round(Math.max(...majorsFee.map((r) => r.fee_tvl_24h)) * 100) / 100,
+        ...aggBucket(majorsFee),
       });
     }
 

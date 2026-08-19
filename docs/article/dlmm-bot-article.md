@@ -1,0 +1,113 @@
+# I built a bot that LPs memecoins on Meteora. Here's every rule it follows, and every time it was wrong.
+
+*Header image: docs/article/header-mascot-v4.png*
+
+---
+
+Four days ago I put 10 SOL into a wallet, turned on a bot, and started posting what it did every single day. Wins, losses, bugs, all of it. No hopium, just the ledger.
+
+Right now that wallet is at 9.98 SOL. Flat. Which is exactly why I'm writing this instead of waiting for a screenshot with a big green number on it.
+
+There are a lot of great LP guides on here. @satsmonkes wrote the playbook. @0xMrBeefman wrote the beginner walkthrough. Read both. This isn't a replacement for either. This is what happens when you take those exact ideas, write them down as rules a computer can follow, and let it run on real money while you sleep.
+
+It's called DLMM Bot. It's open source. And this is everything about how it works.
+
+## What it actually does
+
+Every 60 seconds it looks at every hot SOL pool on @MeteoraAG. Every 15 seconds it checks on every position it holds. It never sleeps and it never gets greedy, because it can't. It only does what the rules say.
+
+The rules are the whole product. So let me walk you through them the way I'd walk you through a position by hand.
+
+## Step 1. Find the volume
+
+Beefman's first rule is the right one. No volume, no fees, skip the token. The bot lives by it.
+
+It pulls every SOL-quoted pool on Meteora and sorts by 30-minute fee-to-TVL. That's the one number that tells you a pool is printing right now, not yesterday. Then it throws almost everything away.
+
+Since I turned it on, the bot has looked at 328 different tokens across 175,335 pool checks and entered 112 positions. That's a hit rate of about 0.06%. Almost everything fails a gate. That is the job.
+
+## Step 2. Vet the token, or skip it
+
+Sats says take the framework and adapt it to your own risk. Here's what the bot won't touch, ever:
+
+Any pool under $5k TVL. Any token where one wallet holds more than 15% of supply, or the top ten hold too much. Any token where the holders look like a cluster of wallets funded from the same place. Anything RugCheck flags. Any pool where our position would be more than 20% of the liquidity, because then we'd be the exit.
+
+And it remembers. Any creator who has rugged before is banned forever. Any token the bot cut for a loss is benched for 24 hours so it can't buy back the thing it just decided was broken.
+
+Beefman tells beginners to check whether he's personally in a token before entering. The bot can't do that. So it has to be able to say no on its own. That's what all of these gates are.
+
+## Step 3. Open one-sided SOL, bid-ask, below price
+
+This is the part everyone agrees on and it's the part the bot does exactly the way both guides describe.
+
+It picks the deepest pool for the token, not the one with the flashiest fee number. Learned that one the hard way. Thin pools swing 50% on nothing and it isn't a rug, it's just thin.
+
+Then it opens a one-sided SOL bid-ask position starting at the current price and going down. How far down? It draws a Fibonacci retracement from the recent swing high to swing low, the exact 0.786 level Sats uses, and it never goes shallower than 40% below or deeper than 50%. It also refuses to enter within 3% of the all-time high. Never top-blast.
+
+Beefman has the cleanest explanation of why bid-ask I've ever read. We make money first on the drop, and only then on the move back up. Price falls into our bins, our SOL turns into the token, and every bin it crosses pays us a fee. Then it bounces, crosses back, and pays us again.
+
+The bot's whole design is built around that sentence.
+
+## Step 4. Exit by rules, not by feeling
+
+This is where the bot stops being a script and starts being a strategy, and it's the part I've spent the most time on.
+
+There are six exits and they run in a strict order every 15 seconds:
+
+First, safety. If the pool's TVL collapses, or the price crashes, or a whale dumps, or the holder picture changes fast, the bot is out. It doesn't wait to see if it's a wick.
+
+Second, the stop. If the position is worth less than 75% of what went in, it's cut. Below the range it has to stay under for a full minute first, because I got burned by a two-minute wick that recovered 58% within the hour. Above range it's immediate.
+
+Third, rotation. If the pool goes quiet, fees dry up and volume dies, the bot leaves and goes to find something that's actually printing.
+
+Fourth, take-profit. If price rips up out the top of the range and stays there, we're back to all SOL with fees on top. Close it, bank it, look for the next one.
+
+Fifth, claim. If there's more than a small amount of unclaimed fees sitting there, claim them to SOL. Fees get banked. They don't ride.
+
+Sixth, the red one. If price falls below the bottom of the range and doesn't come back within 15 minutes, the bot closes and eats the loss. It never bag-holds. Not once. That's the rule I chose on day one and I've stuck to it even when it hurt.
+
+There's also an escape hatch. If price falls deep into the range but the token's still alive, the bot can pull out and re-bid lower instead of just sitting there.
+
+## What's actually happened
+
+Here's the challenge wallet's ledger as of tonight. 32 closed positions, 34% win rate, average win 0.015 SOL, average loss 0.009 SOL. Total realized: minus 0.03 SOL. Flat.
+
+The bigger bot I run on my own server has been going 11 days on 24 SOL. 109 closes, 49% win rate, plus 0.56 SOL realized. And here's the number that actually matters from that book: it's collected 1.46 SOL in fees to make 0.56 SOL of profit. The fees are more than the entire profit. Everything else, the token drift, the losses, the rent, ate the rest. Fees are where the edge lives. Everything the bot does is in service of sitting in range while volume moves through it.
+
+Its best trade ever was a coin called claudius, plus 0.17 SOL, on the escape hatch. Its worst was Niles, minus 0.17, a safety exit that fired on a pool that really was dying.
+
+## Every time it was wrong
+
+This is the part neither guide can give you, because a person doesn't keep a log of every mistake. The bot does. It's a database. Here are the ones that cost me something.
+
+Early on, it bailed on a coin in seven minutes because it thought the pool was draining. The coin then did a multiple. The pool wasn't draining, it was being bought. I taught it the difference between a stampede and a rug: price direction, not volume. A rug is a stampede too.
+
+Then it booked a half-SOL loss on a trade that actually broke even, because a swap under-filled and the recovery landed a minute later than the loss did. That fake loss tripped the daily circuit breaker. Fixed the accounting so a position that's still settling doesn't read as dead.
+
+This week, it re-entered a token six seconds after cutting it for a loss. The cooldown was written to the database, but the majors entry path never read it. Fixed.
+
+Same day, I found it had been paying rent for bins above the current price on every majors position. SOL-only liquidity can't sit above the price. Every one of those bins was empty, every time. Fixed.
+
+Tonight, I found the stop loss has been cutting positions that had already paid for themselves in fees. Six of the last seven stops fired on positions that were ahead once you counted the fees they'd already claimed. One of them was up 76% an hour later. I haven't changed the stop. I've made it log what it would have done differently, so a week from now the ledger tells me whether to change it, not my gut.
+
+That's the honest version. Somewhere north of fifteen real bugs in two weeks of live trading, every one only visible once real SOL was on the line, every one fixed the same day it was found. Thirty-seven releases since the challenge started, every one public with a version number.
+
+## Why post it every day
+
+Because everyone posts the wins. Sats posts the wins and the reasoning. Beefman posts the wins and the walkthrough. Both are great, and both are people making judgment calls in real time that you can't copy.
+
+A bot has no judgment. It has rules. So the interesting question isn't "how much did it make," it's "were the rules right." And the only way to answer that honestly is to show every day, including the flat ones and the red ones, and say what changed.
+
+So that's the challenge. 10 SOL, one wallet, every day, until the rules are good enough to trust with more.
+
+## If you want to run it
+
+It's open source. It ships in paper mode, so you can watch it work with no wallet and no money. Every rule above is a number in a config file you can change, and it reloads live. There's a dashboard that shows every position, every exit, every skip, and every bug.
+
+If you go live, start with dust. Live trading is double-gated on purpose. Memecoin LP is high risk, this bot is young, and I'm four days into finding out where it's wrong.
+
+dlmmbot.com
+
+Follow the daily updates here. Green days, red days, and the ledger.
+
+*Not financial advice. This is a public experiment with real money and real bugs.*
