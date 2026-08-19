@@ -269,7 +269,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
       },
       {
         type: "p",
-        text: "Very high scores may add a second, deeper “tranche” pocket. Tranches count toward your max open slots.",
+        text: "Very high scores may add a second, deeper “tranche” pocket. Tranches count toward your max open slots. When that happens you see the same symbol twice in Open positions: the first one is tagged “core”, the second “tranche of #N” pointing back at it.",
       },
       {
         type: "callout",

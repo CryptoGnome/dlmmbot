@@ -214,3 +214,39 @@ export function GmgnLink({ mint }: { mint?: string | null }) {
     </a>
   );
 }
+
+/**
+ * Core / tranche pill. Shown only when a position is half of a pair: a core
+ * with a live second tranche, or the tranche itself (pointing back at its core).
+ */
+export function TrancheBadge({
+  id,
+  trancheOf,
+  openTranches,
+}: {
+  id: number;
+  trancheOf?: number | null;
+  openTranches?: number;
+}) {
+  if (trancheOf != null) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 border border-dim px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-dim"
+        title={`Second tranche added to core #${trancheOf} after it proved itself`}
+      >
+        tranche of #{trancheOf}
+      </span>
+    );
+  }
+  if ((openTranches ?? 0) > 0) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 border border-dim px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-dim"
+        title={`Core position #${id} — has ${openTranches} live tranche${openTranches === 1 ? "" : "s"} stacked on it`}
+      >
+        core
+      </span>
+    );
+  }
+  return null;
+}

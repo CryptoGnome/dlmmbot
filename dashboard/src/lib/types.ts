@@ -95,6 +95,10 @@ export interface LiveWatch {
     opened: string;     fees_claimed_sol?: number;
     /** Operator asked for a close; the farmer actions it on the next tick. */
     close_requested_at?: number | null;
+    /** Set on a second tranche: id of the core position it was added to. */
+    tranche_of?: number | null;
+    /** Number of live tranches hanging off this (core) position. */
+    open_tranches?: number;
     min_bin_id?: number; max_bin_id?: number; range_status?: string;
     /** Latest Meteora datapi snapshot for this pool (from scanner). */
     pool?: {
