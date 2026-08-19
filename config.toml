@@ -229,6 +229,11 @@ fee_destination = "bank"         # bank | compound | hybrid
 compound_score_min = 70
 escape_hatch_depth_pct = 60
 escape_hatch_recovery_pct = 25
+# After an escape close the token is benched this long before the scanner may
+# re-enter it. The escape fires BECAUSE the token just fell through 60% of our
+# range; "close and reset" used to re-buy it on the next tick (3 of 6 observed
+# re-entries were same-minute; net -0.10 SOL across both bots). 0 disables.
+escape_reentry_cooldown_min = 30
 profit_lock_enabled = true
 profit_lock_at_frac = 1.30
 profit_lock_withdraw_pct = 30

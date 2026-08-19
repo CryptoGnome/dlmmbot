@@ -239,6 +239,20 @@ describe("managePositions contracts", () => {
     await managePositions(exec);
     expect(exec.escapeRebalanced).toEqual([id]);
     expect(exec.closed).toEqual([{ id, reason: "escape" }]);
+    // "Close and reset" must not re-buy on the next tick: the token is benched.
+    const bl = getDb().prepare("SELECT reason, expires_ts FROM blacklist WHERE key = ?").get("mint1") as { reason: string; expires_ts: number } | undefined;
+    expect(bl?.reason).toBe("escape cooldown");
+    expect(bl!.expires_ts - Math.floor(Date.now() / 1000)).toBeGreaterThan(25 * 60);
+    expect(bl!.expires_ts - Math.floor(Date.now() / 1000)).toBeLessThanOrEqual(30 * 60);
+  });
+
+  it("escape cooldown of 0 leaves the token re-enterable", async () => {
+    installConfig((c) => { c.manage.escape_reentry_cooldown_min = 0; });
+    const id = insertOpenPosition({ entrySol: 0.4, minBinId: 100, maxBinId: 200, fellDeep: 1 });
+    exec.setMark(id, { valueSol: 0.42, price: 1.05, activeBinId: 180, inRange: true });
+    await managePositions(exec);
+    expect(exec.closed).toEqual([{ id, reason: "escape" }]);
+    expect(getDb().prepare("SELECT 1 FROM blacklist WHERE key = ?").get("mint1")).toBeUndefined();
   });
 
   it("profit lock withdraws at configured threshold", async () => {

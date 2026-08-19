@@ -438,7 +438,7 @@ export const REALIZED_PNL_SQL = `
  * indefinitely on a false positive — but "we just cut this position for a
  * loss" is sleeve-independent and must block re-entry everywhere.
  */
-const EXIT_COOLDOWN_PREFIXES = ["P0 safety exit", "stop loss cooldown", "below range cut"];
+const EXIT_COOLDOWN_PREFIXES = ["P0 safety exit", "stop loss cooldown", "below range cut", "escape cooldown"];
 
 /** True when a blacklist reason came from an exit rather than from vetting. */
 export function isExitCooldown(reason: string): boolean {
