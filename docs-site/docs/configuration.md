@@ -158,6 +158,7 @@ Thresholds:
 | `compound_score_min` | `70` | Min pool score for compounding (if ever enabled) |
 | `escape_hatch_depth_pct` | `60` | Escape hatch: dip through this % of range depth… |
 | `escape_hatch_recovery_pct` | `25` | …then recovery into the top % of range → close & reset |
+| `escape_reentry_cooldown_min` | `30` | Bench the token this long after an escape close before re-entering it (0 = off) |
 | `profit_lock_enabled` | `true` | Bank a slice of strong runners |
 | `profit_lock_at_frac` | `1.30` | Fires at mark ≥ entry × 1.30 while in range |
 | `profit_lock_withdraw_pct` | `30` | Withdraw this % of liquidity |

@@ -142,6 +142,8 @@ export interface Config {
     grace_claim_min_sol: number;
     fee_destination: "bank" | "compound" | "hybrid"; compound_score_min: number;
     escape_hatch_depth_pct: number; escape_hatch_recovery_pct: number;
+    /** Minutes the token is benched after an escape close; 0 disables. Optional: predates some volumes. */
+    escape_reentry_cooldown_min?: number;
     profit_lock_enabled: boolean; profit_lock_at_frac: number;
     profit_lock_withdraw_pct: number; profit_lock_max_fires: number;
     below_range_grace_min: number;
