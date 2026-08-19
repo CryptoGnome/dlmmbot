@@ -309,7 +309,10 @@ export function AnalyticsPage({
 
       {/* Extra edge: fee/TVL buckets + capital + TIR */}
       <div className="grid gap-3 xl:grid-cols-3">
-        <Panel title="Entry fee/TVL vs outcome">
+        <Panel
+          title="Entry fee/TVL vs outcome"
+          right={<span className="text-[10px] text-dim">meme/micro terciles · majors separate</span>}
+        >
           {(s?.fee_tvl_buckets ?? []).length ? (
             <ul className="space-y-2 text-[12px]">
               {s!.fee_tvl_buckets.map((b) => (
