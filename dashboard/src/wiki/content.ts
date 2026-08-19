@@ -764,7 +764,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           ["Fixed sizing", "Exact SOL or % of deployable per sleeve — Settings → Book & size."],
           ["Active bin", "Where the pool’s price is right now."],
           ["Swap", "Jupiter converts the token side back into SOL when we exit."],
-          ["Escape hatch", "Deep dip, then recovery → close and free the slot (reset), not a slow bleed. The token is benched 30 min (escape_reentry_cooldown_min) so the reset doesn’t re-buy it on the next tick."],
+          ["Escape hatch", "Deep dip, then recovery → close and free the slot (reset), not a slow bleed. The token is benched 15 min (escape_reentry_cooldown_min) so the reset doesn’t re-buy it on the next tick."],
           ["Profit lock", "Bank a slice of a big winner while the rest keeps earning."],
           ["Usage fee", "1% on live wins → GNME buy+burn. See dlmmbot.com/setup/fees."],
           ["Profile", "Pack of Bot settings — official / local / GitHub community. See Wiki → Settings profiles."],

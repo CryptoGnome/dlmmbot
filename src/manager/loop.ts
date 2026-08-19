@@ -910,7 +910,7 @@ export async function managePositions(exec: Executor): Promise<void> {
             // both bots 6 escapes re-entered inside 60 min (3 same-minute) for
             // net −0.10 SOL. Win exits carry no loss cooldown, so this is the
             // only thing that separates "reset" from "chase".
-            const coolMin = config().manage.escape_reentry_cooldown_min ?? 30;
+            const coolMin = config().manage.escape_reentry_cooldown_min ?? 15;
             if (coolMin > 0) blacklist(pos.tokenMint, "token", "escape cooldown", coolMin / 60);
             recordDecision(pos.tokenMint, pos.poolAddress, "exited", "escape_hatch", null, { frac, mark, sleeve, coolMin });
             continue;

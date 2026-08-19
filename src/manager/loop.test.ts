@@ -242,8 +242,8 @@ describe("managePositions contracts", () => {
     // "Close and reset" must not re-buy on the next tick: the token is benched.
     const bl = getDb().prepare("SELECT reason, expires_ts FROM blacklist WHERE key = ?").get("mint1") as { reason: string; expires_ts: number } | undefined;
     expect(bl?.reason).toBe("escape cooldown");
-    expect(bl!.expires_ts - Math.floor(Date.now() / 1000)).toBeGreaterThan(25 * 60);
-    expect(bl!.expires_ts - Math.floor(Date.now() / 1000)).toBeLessThanOrEqual(30 * 60);
+    expect(bl!.expires_ts - Math.floor(Date.now() / 1000)).toBeGreaterThan(12 * 60);
+    expect(bl!.expires_ts - Math.floor(Date.now() / 1000)).toBeLessThanOrEqual(15 * 60);
   });
 
   it("escape cooldown of 0 leaves the token re-enterable", async () => {
