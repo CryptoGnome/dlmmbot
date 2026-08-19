@@ -902,7 +902,17 @@ export async function managePositions(exec: Executor): Promise<void> {
             const { exitSol } = await closeAndReport(exec, pos, "escape", config().exec.exit_slippage_bps, "close",
               "escape hatch: deep dip recovered to range top — close and reset");
             bankProfit(pos, exitSol, "escape hatch");
-            recordDecision(pos.tokenMint, pos.poolAddress, "exited", "escape_hatch", null, { frac, mark, sleeve });
+            // Bench the token briefly. The hatch fired because price just fell
+            // through 60% of our range — the token is demonstrably breaching
+            // ranges — yet "close and reset" re-bought it on the next tick.
+            // TROOPET 2026-08-19 (Railway): escape +0.026 at 20:07:04, re-entry
+            // at 20:08:25 47% lower, P0 stop −0.051 six minutes later. Across
+            // both bots 6 escapes re-entered inside 60 min (3 same-minute) for
+            // net −0.10 SOL. Win exits carry no loss cooldown, so this is the
+            // only thing that separates "reset" from "chase".
+            const coolMin = config().manage.escape_reentry_cooldown_min ?? 30;
+            if (coolMin > 0) blacklist(pos.tokenMint, "token", "escape cooldown", coolMin / 60);
+            recordDecision(pos.tokenMint, pos.poolAddress, "exited", "escape_hatch", null, { frac, mark, sleeve, coolMin });
             continue;
           }
         }

@@ -58,6 +58,7 @@ describe("majors re-entry cooldown", () => {
     expect(isExitCooldown("below range cut")).toBe(true);
     expect(isExitCooldown("stop loss cooldown")).toBe(true);
     expect(isExitCooldown("P0 safety exit (price_crash)")).toBe(true);
+    expect(isExitCooldown("escape cooldown")).toBe(true);
     // Written by vet.ts — meme heuristics, deliberately not enforced on majors.
     expect(isExitCooldown("insider_clusters,age_max")).toBe(false);
     expect(isExitCooldown("rugcheck_veto,top10_holders")).toBe(false);
