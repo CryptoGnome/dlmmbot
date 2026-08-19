@@ -214,6 +214,11 @@ export async function computeUnitLimitFor(
   probe.recentBlockhash = tx.recentBlockhash;
   probe.feePayer = tx.feePayer;
   probe.add(computeUnitLimitIx(MAX_COMPUTE_UNITS), ...tx.instructions);
+  // The caller sets a compute-unit price AFTER sizing, and that instruction
+  // costs ~150 CU of its own. A 2-account rent reclaim simulated at 390 CU →
+  // limit 468, then ran at 540 and died "ComputeBudget: Computational budget
+  // exceeded" on every attempt (2026-08-19). Size for the tx that will run.
+  if (computeUnitPriceIxIndex(tx) < 0) probe.add(computeUnitPriceIx(1));
 
   const sim = await connection.simulateTransaction(probe).catch(() => null);
   const consumed = sim?.value?.unitsConsumed;

@@ -207,6 +207,29 @@ describe("compute unit limit", () => {
     expect(probe.instructions[0]!.data.readUInt32LE(1)).toBe(MAX_COMPUTE_UNITS);
   });
 
+  // 2026-08-19: a 2-account rent-reclaim batch simulated at 390 CU → limit
+  // 468; the priority-price ix appended AFTER sizing costs 150 more, so the
+  // real tx needed 540 and every attempt died with "Program ComputeBudget
+  // failed: Computational budget exceeded". The probe must carry the price ix
+  // the caller will add, so tiny txs are sized for what actually runs.
+  it("probe includes a compute-unit-price ix so the sized limit covers it", async () => {
+    const simulateTransaction = vi.fn().mockResolvedValue({ value: { unitsConsumed: 540, err: null } });
+    const tx = plainTx();
+    await computeUnitLimitFor({ simulateTransaction }, tx, settings());
+    const probe = simulateTransaction.mock.calls[0]![0] as Transaction;
+    expect(computeUnitPriceIxIndex(probe)).toBeGreaterThanOrEqual(0);
+    expect(tx.instructions.length).toBe(plainTx().instructions.length);
+  });
+
+  it("probe does not duplicate a price ix the tx already carries", async () => {
+    const simulateTransaction = vi.fn().mockResolvedValue({ value: { unitsConsumed: 540, err: null } });
+    const tx = plainTx();
+    setComputeUnitPrice(tx, 1000);
+    await computeUnitLimitFor({ simulateTransaction }, tx, settings());
+    const probe = simulateTransaction.mock.calls[0]![0] as Transaction;
+    expect(probe.instructions.filter((ix) => computeUnitPriceIxIndex(new Transaction().add(ix)) >= 0)).toHaveLength(1);
+  });
+
   it("never requests more than the runtime ceiling", async () => {
     const simulateTransaction = vi.fn().mockResolvedValue({ value: { unitsConsumed: 1_390_000, err: null } });
     expect(await computeUnitLimitFor({ simulateTransaction }, plainTx(), settings())).toBe(MAX_COMPUTE_UNITS);
