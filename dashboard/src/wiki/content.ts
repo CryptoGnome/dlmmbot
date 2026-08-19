@@ -298,7 +298,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
             code: "P0",
             title: "Safety — leave NOW",
             when: "Rug vibes: TVL collapse, dumps, metadata flip, violent crash…",
-            then: "Close and dump token→SOL fast. Rug evidence (dead pool, -60% crash, RugCheck flip, holder dumps) bans the mint + creator for good; a TVL drain only cools the token off for 6h — liquidity leaving a pool looks the same whether it is being traded through or actually rugging, so it does not earn a life sentence",
+            then: "Close and dump token→SOL fast. Rug evidence (dead pool, -60% crash, RugCheck flip, holder dumps) bans the mint + creator for good; a TVL drain only cools the token off for 1h — liquidity leaving a pool looks the same whether it is being traded through or actually rugging, so it does not earn a life sentence",
             tone: "danger",
           },
           {
