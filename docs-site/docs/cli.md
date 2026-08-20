@@ -72,6 +72,9 @@ npm run sim -- --profile aggressive --db server=srv.db --db railway=rw.db
 **Scenarios**: `--set section.key=value` (repeatable), `--profile <id|path>` (a [profile](./profiles) — exit keys only), `--sweep key=a,b,c` (one run per value).
 **Cohort**: `--sleeve`, `--age-max` / `--age-min` (token age at entry, in minutes), `--book`, `--since YYYY-MM-DD`, `--min-marks`, `--include-flagged`.
 **Output**: `--list` to see the cohort, `--top N` for per-position rows, `--json <path>` for the full result set.
+**Post-exit audit**: `--post-exit [min]` (default 60) answers "did we cut this too early?" — for each exit rule it reports the median high and low price reached after the exit as a multiple of what we sold at, how many rose 25%+ afterwards, how many got back to the entry price (where the whole range is traversed and the position would have converted fully to SOL), and how long the high took to arrive. Needs `npm run sim:backfill` first.
+
+That audit is deliberately about **price, not position value**: valuing an LP position at a future price needs bin-by-bin liquidity and would swap a measurement for a model. Direction, extremes and "did it come back to entry" are enough to see whether an exit rule is systematically early.
 
 Each scenario ends in a **verdict** — `IMPROVES`, `HURTS`, `NOISE`, or `NO-OP` — that a result has to earn. A delta only counts as real if it survives dropping its best two positions, fires on at least 8 positions, and points the same way on every book loaded. That is deliberate: the rule that scored +0.94 SOL in the 2026-08-20 young-launch research turned out to be one position with broken marks.
 
@@ -81,6 +84,23 @@ Two numbers to read before any delta:
 - **Cohort** — how many traces were dropped as unusable, and how many were kept despite exiting by a rule the replay cannot reproduce.
 
 **What it cannot answer.** Marks written before v0.19.1 carry no TVL, pool fee rate or volume, so P0 `tvl_drain` / `pool_dead` / `rugcheck_flip` and P2 fee-volume decay are not simulated — the run reports how much of the cohort now records pool health, and those exit paths become replayable once enough of the book does. Neither are entry gates, vetting or sizing — there is no data for trades the bot never took, so a profile comparison here is about **exit behaviour only**. And because a position's marks stop at its real exit, the replay can evaluate exiting *earlier* far better than exiting *later*.
+
+### `npm run sim:backfill -- [options]`
+
+Fetches the **price path after each closed position** from GeckoTerminal (keyless, rate-limited) into the local DB, so the backtester can judge holding *longer* — not just cutting earlier. A position's own marks stop the moment it closes, which is why this exists.
+
+```bash
+npm run sim:backfill                       # fill everything pending
+npm run sim:backfill -- --limit 50         # a chunk at a time
+```
+
+`--db <path>`, `--window <min>` (default 80, the cap for one API call), `--limit <n>` (default 200), `--pace <ms>` (default 2500), `--refetch`.
+
+It is **resumable and honest about gaps**. Every position attempted gets a row, so a re-run continues where the last stopped, and each ends in one of: `ok`, `too_recent` (the window has not elapsed yet — retried on a later run), `no_bars`, `no_overlap`, `miscalibrated`, or `error`.
+
+**Calibration is the point.** GeckoTerminal is not our price feed, so each fetch also covers the 20 minutes *before* the exit, where we have our own recorded marks, and stores the ratio between the two series. A ratio near 1.0 means the same convention; a tight non-unit ratio is applied as a scale factor; a noisy one marks the position `miscalibrated` and its bars are stored but never used. An external price series is never averaged into a conclusion without first proving it tracks what we measured ourselves.
+
+Then read it back with the audit below.
 
 ### `npm run heartbeat-check`
 

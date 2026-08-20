@@ -163,6 +163,32 @@ CREATE TABLE IF NOT EXISTS position_marks (
 );
 CREATE INDEX IF NOT EXISTS idx_position_marks ON position_marks(position_id, ts);
 
+-- Price after a position closed, backfilled from GeckoTerminal by
+-- npm run sim:backfill. A position's own marks stop at its exit, so without
+-- this the backtester can only judge exiting EARLIER; these bars are what make
+-- "did we cut a recovery?" answerable. Minute bars, one row per bar.
+CREATE TABLE IF NOT EXISTS post_exit_prices (
+  position_id INTEGER NOT NULL,
+  ts INTEGER NOT NULL,               -- bar open, unix seconds
+  open REAL, high REAL, low REAL, close REAL,
+  PRIMARY KEY (position_id, ts)
+);
+
+-- One row per position attempted, so a backfill is resumable and its failures
+-- are visible rather than looking like "no recovery happened".
+CREATE TABLE IF NOT EXISTS post_exit_backfill (
+  position_id INTEGER PRIMARY KEY,
+  fetched_ts INTEGER NOT NULL,
+  window_min INTEGER NOT NULL,
+  bars INTEGER NOT NULL DEFAULT 0,
+  -- median(our recorded mark price / the bar close at the same minute) over the
+  -- overlap before the exit. An external series is never trusted until it lines
+  -- up with what we measured ourselves; ~1 means the same convention.
+  calib_ratio REAL,
+  calib_n INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL               -- ok | too_recent | no_bars | no_overlap | miscalibrated | error
+);
+
 CREATE TABLE IF NOT EXISTS config_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts INTEGER NOT NULL,

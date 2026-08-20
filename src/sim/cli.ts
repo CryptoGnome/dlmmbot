@@ -1,10 +1,13 @@
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { config } from "../config.js";
+import { openDb } from "../db/db.js";
+import { loadPath, recovery } from "./postExit.js";
 import { applyCohort, cohortSummary, loadTraces, poolMetricCoverage } from "./load.js";
 import { applyOverlay, exitKeysOnly, loadProfile, parseValue } from "./overlay.js";
 import {
-  compare, fidelity, formatFidelity, formatOutcomes, formatVerdict, monotonicity, score,
+  compare, fidelity, formatExitAudit, formatFidelity, formatOutcomes,
+  formatVerdict, monotonicity, score, type AuditRow,
 } from "./report.js";
 import type { CohortFilter, ConfigOverlay, Trace } from "./types.js";
 
@@ -26,6 +29,7 @@ interface Args {
   top: number;
   json: string | null;
   list: boolean;
+  postExit: number | null;
 }
 
 const USAGE = `
@@ -52,6 +56,8 @@ npm run sim -- [options]
     --top <n>                per-position rows to print (default 10)
     --json <path>            write the full result set
     --list                   list the cohort and exit
+    --post-exit [min]        what price did in the N minutes AFTER each exit
+                             (default 60; run npm run sim:backfill first)
 
   Examples
     npm run sim -- --sleeve meme --age-max 120 --set manage.stop_loss_frac=0.65
@@ -60,7 +66,10 @@ npm run sim -- [options]
 `.trim();
 
 export function parseArgs(argv: string[]): Args {
-  const a: Args = { dbs: [], profiles: [], sets: [], sweep: null, cohort: {}, top: 10, json: null, list: false };
+  const a: Args = {
+    dbs: [], profiles: [], sets: [], sweep: null, cohort: {}, top: 10, json: null,
+    list: false, postExit: null,
+  };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
     const next = () => argv[++i] ?? "";
@@ -91,6 +100,11 @@ export function parseArgs(argv: string[]): Args {
       case "--top": a.top = Number(next()); break;
       case "--json": a.json = next(); break;
       case "--list": a.list = true; break;
+      case "--post-exit": {
+        const v = argv[i + 1];
+        a.postExit = v && !v.startsWith("--") ? Number(argv[++i]) : 60;
+        break;
+      }
       case "--help": case "-h": console.log(USAGE); return a;
       default: throw new Error(`unknown argument: ${arg} (--help for usage)`);
     }
@@ -127,6 +141,36 @@ function scenariosFrom(args: Args): Array<{ label: string; overlay: ConfigOverla
   return out;
 }
 
+/**
+ * The post-exit audit reads from whichever book each trace came from, so a
+ * multi-book run still attributes each price path to the right DB.
+ */
+function exitAuditReport(args: Args, traces: Trace[]): string {
+  const windowMin = args.postExit ?? 60;
+  const rows: AuditRow[] = [];
+  let missing = 0;
+  for (const d of args.dbs) {
+    const db = openDb(d.path);
+    try {
+      for (const t of traces.filter((x) => x.book === d.label)) {
+        const last = t.marks[t.marks.length - 1];
+        const path = last ? loadPath(db, t.id, t.exitTs) : null;
+        const rec = path ? recovery(path, last!.price, t.entryPrice, windowMin) : null;
+        if (!rec || !last) { missing++; continue; }
+        // Where price stood at the exit decides what a later recovery means.
+        rows.push({ reason: t.actualReason, rec, belowAtExit: last.belowRange });
+      }
+    } finally {
+      db.close();
+    }
+  }
+  const head = formatExitAudit(rows, windowMin);
+  return missing > 0
+    ? `${head}
+  ${missing} of ${traces.length} traces have no usable price path yet (not backfilled, or excluded by calibration).`
+    : head;
+}
+
 export function run(argv: string[]): void {
   if (argv.includes("--help") || argv.includes("-h")) { console.log(USAGE); return; }
   const args = parseArgs(argv);
@@ -161,7 +205,13 @@ export function run(argv: string[]): void {
       `P0 tvl_drain and P2 decay stay out of the replay until the rest of the book carries it.`);
   }
 
+  if (args.postExit != null) {
+    console.log(`\n${"─".repeat(70)}`);
+    console.log(exitAuditReport(args, traces));
+  }
+
   const scenarios = scenariosFrom(args);
+  if (!scenarios.length && args.postExit != null) return;
   if (!scenarios.length) {
     console.log("\nNo scenario given — pass --set, --profile or --sweep. (--help for examples)");
     return;
