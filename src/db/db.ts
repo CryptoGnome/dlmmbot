@@ -148,7 +148,18 @@ CREATE TABLE IF NOT EXISTS position_marks (
   value_sol REAL,
   value_frac REAL,               -- value_sol / entry_sol, the P1 stop's input
   unclaimed_fees_sol REAL,
-  in_range INTEGER NOT NULL DEFAULT 0
+  in_range INTEGER NOT NULL DEFAULT 0,
+  -- Pool health the executor already fetches for P0/P2 on every mark. Recorded
+  -- since v0.19.1 so the backtester can replay tvl_drain and rotation decay,
+  -- which were 39% of closed positions and unsimulatable without them.
+  tvl_usd REAL,
+  vol_30m_usd REAL,
+  fee_tvl_30m_pct REAL,
+  pool_age_s REAL,
+  -- Fees banked by this mark. Without it, claims can only be inferred from
+  -- unclaimed dropping, and value_sol already contains the unclaimed part --
+  -- the ambiguity that produced a double-count in the first sim scripts.
+  fees_claimed_cum_sol REAL
 );
 CREATE INDEX IF NOT EXISTS idx_position_marks ON position_marks(position_id, ts);
 
@@ -240,6 +251,14 @@ function migrate(database: Database.Database): void {
   try {
     database.exec("ALTER TABLE positions ADD COLUMN stranded_sol REAL NOT NULL DEFAULT 0");
   } catch { /* column already exists */ }
+  for (const col of [
+    "tvl_usd REAL", "vol_30m_usd REAL", "fee_tvl_30m_pct REAL",
+    "pool_age_s REAL", "fees_claimed_cum_sol REAL",
+  ]) {
+    try {
+      database.exec(`ALTER TABLE position_marks ADD COLUMN ${col}`);
+    } catch { /* column already exists */ }
+  }
   // Operator "close this one now" request from the dashboard. The dashboard
   // cannot close a position itself — only the loop holds the executor and the
   // wallet — so it sets this and the next manage tick performs the close.
@@ -588,6 +607,27 @@ export function pruneHistory(opts: {
     try { db.exec("VACUUM"); vacuumed = true; } catch { /* no scratch space or busy — next pass */ }
   }
   return { decisions, snapshots, vacuumed, mode, bytesBefore, bytesAfter: dbFileBytes() };
+}
+
+/**
+ * Snapshot config.toml into `config_history` whenever it differs from the last
+ * row. The table shipped empty and unwritten; it is worth filling because the
+ * backtester replays TODAY's exit ladder over positions closed under whatever
+ * rules were live at the time — the below-range stop sustain (2026-08-16) alone
+ * moves replay fidelity on the server book from 76% to 91%. With a dated trail
+ * of the settings, a replay can be told which rules a position actually ran
+ * under instead of guessing from the calendar.
+ *
+ * One row per edit, not per tick: config changes are rare and the whole file is
+ * a few KB.
+ */
+export function recordConfigSnapshot(toml: string): boolean {
+  const db = getDb();
+  const last = db.prepare("SELECT toml FROM config_history ORDER BY id DESC LIMIT 1").get() as
+    { toml: string } | undefined;
+  if (last?.toml === toml) return false;
+  db.prepare("INSERT INTO config_history (ts, toml) VALUES (?, ?)").run(now(), toml);
+  return true;
 }
 
 export function recordDecision(

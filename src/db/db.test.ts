@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { getDb, isBlacklisted, REALIZED_PNL_SQL, STRANDED_GRACE_S, logError, now, pruneHistory, recordCreatorRug, recordDecision, upsertTokenMeta } from "./db.js";
+import { getDb, isBlacklisted, REALIZED_PNL_SQL, STRANDED_GRACE_S, logError, now, pruneHistory, recordConfigSnapshot, recordCreatorRug, recordDecision, upsertTokenMeta } from "./db.js";
 import { useMemoryDb, resetTestDb, insertClosedPosition } from "../test/db.js";
 
 function pnlFor(id: number): number | null {
@@ -327,5 +327,35 @@ describe("pruneHistory", () => {
     expect(row.l).toBeLessThan(400);
     expect(JSON.parse(row.f).pool).toBeUndefined();
     expect(JSON.parse(row.f).gateFailures[0].gate).toBe("vol_30m"); // the reason survives
+  });
+});
+
+/**
+ * `config_history` shipped in the schema with nothing ever writing to it. It
+ * now carries the dated settings trail the backtester needs to know which exit
+ * rules a given position actually ran under.
+ */
+describe("recordConfigSnapshot", () => {
+  beforeEach(() => useMemoryDb());
+  afterEach(() => resetTestDb());
+
+  const rows = () => getDb().prepare("SELECT ts, toml FROM config_history ORDER BY id").all() as Array<{ ts: number; toml: string }>;
+
+  it("stores a snapshot, then ignores an unchanged config", () => {
+    expect(recordConfigSnapshot("stop_loss_frac = 0.75")).toBe(true);
+    expect(recordConfigSnapshot("stop_loss_frac = 0.75")).toBe(false);
+    expect(rows()).toHaveLength(1);
+  });
+
+  it("stores each edit so the trail can be read back by date", () => {
+    recordConfigSnapshot("stop_loss_frac = 0.75");
+    recordConfigSnapshot("stop_loss_frac = 0.65");
+    recordConfigSnapshot("stop_loss_frac = 0.75"); // reverted — still a distinct event
+    const all = rows();
+    expect(all).toHaveLength(3);
+    expect(all.map((r) => r.toml)).toEqual([
+      "stop_loss_frac = 0.75", "stop_loss_frac = 0.65", "stop_loss_frac = 0.75",
+    ]);
+    expect(all.every((r) => r.ts > 0)).toBe(true);
   });
 });

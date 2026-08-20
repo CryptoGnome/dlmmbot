@@ -1,7 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { config } from "../config.js";
-import { applyCohort, cohortSummary, loadTraces } from "./load.js";
+import { applyCohort, cohortSummary, loadTraces, poolMetricCoverage } from "./load.js";
 import { applyOverlay, exitKeysOnly, loadProfile, parseValue } from "./overlay.js";
 import {
   compare, fidelity, formatFidelity, formatOutcomes, formatVerdict, monotonicity, score,
@@ -155,6 +155,11 @@ export function run(argv: string[]): void {
   const actual = traces.reduce((a, t) => a + t.actualPnl, 0);
   console.log(`Actual realized PnL over the cohort: ${actual >= 0 ? "+" : ""}${actual.toFixed(3)} SOL\n`);
   console.log(formatFidelity(fidelity(traces, base)));
+  const cov = poolMetricCoverage(traces);
+  if (cov.withMetrics < cov.total) {
+    console.log(`  Pool health (TVL/volume) recorded on ${cov.withMetrics}/${cov.total} traces — ` +
+      `P0 tvl_drain and P2 decay stay out of the replay until the rest of the book carries it.`);
+  }
 
   const scenarios = scenariosFrom(args);
   if (!scenarios.length) {

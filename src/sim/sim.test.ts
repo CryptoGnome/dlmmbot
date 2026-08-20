@@ -15,7 +15,8 @@ import type { SimMark, Trace } from "./types.js";
 function mark(over: Partial<SimMark> & { ts: number }): SimMark {
   return {
     binId: 150, price: 1, valueSol: 1, valueFrac: 1, cumFeesSol: 0,
-    inRange: true, belowRange: false, aboveRange: false, depthFrac: 0.5, unclaimedSol: 0, ...over,
+    inRange: true, belowRange: false, aboveRange: false, depthFrac: 0.5, unclaimedSol: 0,
+    tvlUsd: null, vol30mUsd: null, feeTvl30mPct: null, poolAgeS: null, claimedCumSol: null, ...over,
   };
 }
 

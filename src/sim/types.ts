@@ -16,6 +16,18 @@ export interface SimMark {
   aboveRange: boolean;
   /** 0 = bottom bin, 1 = top bin, <0 below the range, >1 above it. */
   depthFrac: number | null;
+  /**
+   * Pool health as the executor saw it, recorded since v0.19.1 — null on any
+   * mark written before that. P0 `tvl_drain` and P2 rotation decay are the two
+   * exit paths that need these; until enough marks carry them, neither can be
+   * replayed, so `poolMetricCoverage` reports how close that is.
+   */
+  tvlUsd: number | null;
+  vol30mUsd: number | null;
+  feeTvl30mPct: number | null;
+  poolAgeS: number | null;
+  /** Fees banked by this mark, as recorded rather than inferred from claims. */
+  claimedCumSol: number | null;
 }
 
 /** Why a trace cannot be trusted for counterfactuals. */
