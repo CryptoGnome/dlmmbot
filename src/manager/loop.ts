@@ -1,10 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { resolveBuildLabel } from "../buildLabel.js";
-import { config, currentMode, isLive, syncFarmerModeFromDisk } from "../config.js";
+import { config, configToml, currentMode, isLive, onConfigChange, syncFarmerModeFromDisk } from "../config.js";
 import { reconcileLive } from "./reconcile.js";
 import { alert, type AlertKind } from "../alerts.js";
-import { blacklist, getDb, now, pruneHistory, recordCreatorRug, recordDecision, REALIZED_PNL_SQL, logError, installProcessErrorHooks } from "../db/db.js";
+import { blacklist, getDb, now, pruneHistory, recordConfigSnapshot, recordCreatorRug, recordDecision, REALIZED_PNL_SQL, logError, installProcessErrorHooks } from "../db/db.js";
 import { RESIDUAL_SWEEP_MIN_SOL } from "../executor/executor.js";
 import type { Executor } from "../executor/executor.js";
 import { LiveExecutor } from "../executor/live.js";
@@ -626,12 +626,18 @@ export async function managePositions(exec: Executor): Promise<void> {
       unrealizedSol += mark.valueSol - pos.entrySol;
       const valueFrac = pos.entrySol > 0 ? mark.valueSol / pos.entrySol : 1;
       try {
+        // Pool health and banked fees ride along: the executor fetched them for
+        // P0/P2 on this very tick, so recording them is free, and without them
+        // the backtester cannot replay tvl_drain or rotation decay at all.
         getDb().prepare(
           `INSERT INTO position_marks
-             (position_id, ts, active_bin_id, price, value_sol, value_frac, unclaimed_fees_sol, in_range)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+             (position_id, ts, active_bin_id, price, value_sol, value_frac, unclaimed_fees_sol, in_range,
+              tvl_usd, vol_30m_usd, fee_tvl_30m_pct, pool_age_s, fees_claimed_cum_sol)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         ).run(pos.id, now(), mark.activeBinId, mark.price, mark.valueSol, valueFrac,
-              mark.unclaimedFeesSol, mark.inRange ? 1 : 0);
+              mark.unclaimedFeesSol, mark.inRange ? 1 : 0,
+              mark.tvlUsd, mark.vol30mUsd, mark.feeTvl30mPct, mark.poolAgeS ?? null,
+              pos.feesClaimedSol);
       } catch (e) {
         console.error("[manager] position_marks insert failed:", (e as Error).message);
       }
@@ -1578,6 +1584,20 @@ export async function runLoop(): Promise<void> {
   installProcessErrorHooks("farmer");
   acquireInstanceLock();
   syncFarmerModeFromDisk();
+  // Dated trail of the settings every position ran under, for the backtester.
+  // Once on boot, then on each hot reload; identical content is not re-stored.
+  try {
+    recordConfigSnapshot(configToml());
+    onConfigChange(() => {
+      try {
+        if (recordConfigSnapshot(configToml())) console.log("[config] settings change recorded to config_history");
+      } catch (e) {
+        console.error("[config] snapshot failed:", (e as Error).message);
+      }
+    });
+  } catch (e) {
+    console.error("[config] snapshot failed:", (e as Error).message);
+  }
   let exec: Executor;
   if (isLive()) {
     const { LiveExecutor } = await import("../executor/live.js");

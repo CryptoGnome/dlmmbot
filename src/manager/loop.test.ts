@@ -104,6 +104,26 @@ describe("managePositions contracts", () => {
   });
 
   /**
+   * The executor fetches pool health for P0/P2 on every mark; before v0.19.1 the
+   * insert dropped it, which left tvl_drain and rotation decay — 39% of closed
+   * positions — impossible to replay in the backtester.
+   */
+  it("records pool health and banked fees on every mark", async () => {
+    const id = insertOpenPosition({ entrySol: 0.4 });
+    getDb().prepare("UPDATE positions SET fees_claimed_sol = 0.03 WHERE id = ?").run(id);
+    exec.setMark(id, { valueSol: 0.4, price: 1, activeBinId: 150, inRange: true });
+    await managePositions(exec);
+    const row = getDb().prepare(
+      `SELECT tvl_usd, vol_30m_usd, fee_tvl_30m_pct, fees_claimed_cum_sol
+         FROM position_marks WHERE position_id = ?`
+    ).get(id) as Record<string, number | null>;
+    expect(row.tvl_usd).toBe(50_000);
+    expect(row.vol_30m_usd).toBe(80_000);
+    expect(row.fee_tvl_30m_pct).toBe(1);
+    expect(row.fees_claimed_cum_sol).toBe(0.03);
+  });
+
+  /**
    * 2026-08-20 young-launch research: every simulated quicker-exit rule tested
    * flat to negative on the ledger, so nothing acts — but the closest-to-even
    * trigger (2 min sustained below band midpoint) is logged once per position
