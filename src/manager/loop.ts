@@ -107,6 +107,8 @@ const tvlHistory = new Map<number, Array<{ ts: number; tvl: number; price: numbe
 const decayStreak = new Map<number, number>();        // P2 consecutive decay polls
 const stopStreak = new Map<number, number>();         // P1 consecutive under-stop polls while below range
 const feeOffsetLogged = new Set<number>();            // P1 fee-offset counterfactual logged once per position
+const midBandSince = new Map<number, number>();       // young-exit telemetry: sustained below band midpoint
+const midBandLogged = new Set<number>();              // young-exit telemetry logged once per position
 const rugcheckLastCheck = new Map<number, number>();  // P0 rugcheck-flip throttle
 const everInRange = new Set<number>();                // P3 win-vs-missed classification
 const fellDeep = new Set<number>();                   // escape hatch armed (also persisted)
@@ -119,6 +121,8 @@ export function resetManagerStateForTests(): void {
   decayStreak.clear();
   stopStreak.clear();
   feeOffsetLogged.clear();
+  midBandSince.clear();
+  midBandLogged.clear();
   rugcheckLastCheck.clear();
   everInRange.clear();
   fellDeep.clear();
@@ -174,6 +178,8 @@ function clearRangeTimers(posId: number): void {
   decayStreak.delete(posId);
   stopStreak.delete(posId);
   feeOffsetLogged.delete(posId);
+  midBandSince.delete(posId);
+  midBandLogged.delete(posId);
   rugcheckLastCheck.delete(posId);
   everInRange.delete(posId);
   fellDeep.delete(posId);
@@ -647,6 +653,34 @@ export async function managePositions(exec: Executor): Promise<void> {
       const valueFrac = pos.entrySol > 0 ? mark.valueSol / pos.entrySol : 1;
       const sleeve = sleeveAtEntry(pos);
       const pm = manageForSleeve(sleeve);
+
+      // --- TELEMETRY ONLY: young-launch quick-exit candidate ---
+      // 2026-08-20 research (38 clean young-pool closes + Railway's 21): every
+      // quicker-exit rule simulated — tighter below-range grace, fee-secured
+      // exit, 0.85/0.90 stop, band-depth cuts — tested flat to negative,
+      // because winners routinely dip mid-band (apes, EYE, CLUG) then recover
+      // and keep printing fees, while the real killers are <5-min flash
+      // crashes no band rule sees coming. Backtest n is too small to close the
+      // question, so log the trigger the sims found closest to break-even
+      // (2 min sustained below band midpoint) and judge it on forward data
+      // before ever acting on it. One row per position, meme sleeves only.
+      if (sleeve !== "majors" && pos.maxBinId > pos.minBinId && mark.activeBinId != null) {
+        const depthFrac = (mark.activeBinId - pos.minBinId) / (pos.maxBinId - pos.minBinId);
+        if (depthFrac < 0.5) {
+          if (!midBandSince.has(pos.id)) midBandSince.set(pos.id, now());
+          const since = midBandSince.get(pos.id) ?? now();
+          if (now() - since >= 120 && !midBandLogged.has(pos.id)) {
+            midBandLogged.add(pos.id);
+            recordDecision(pos.tokenMint, pos.poolAddress, "skipped", "young_exit_candidate", null, {
+              posId: pos.id, depthFrac, valueFrac, feesClaimedSol: pos.feesClaimedSol,
+              holdMin: (now() - pos.entryTs) / 60, mark, sleeve,
+            });
+            console.log(`[manager] pos#${pos.id} ${pos.symbol}: 2m sustained below band midpoint (depth ${(depthFrac * 100).toFixed(0)}%) — young-exit candidate logged`);
+          }
+        } else {
+          midBandSince.delete(pos.id);
+        }
+      }
 
       // --- OPERATOR CLOSE: dashboard "Close now" on this position ---
       // Ahead of the whole P0–P5 ladder on purpose. The operator looked at this
