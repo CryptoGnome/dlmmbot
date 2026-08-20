@@ -57,6 +57,31 @@ One scanner sweep, printed: how many pools were swept, the top candidates with s
 
 Runs the full vetting engine on a single token and prints the verdict, soft score /100, each hard failure with its value vs limit, and the raw facts JSON (authorities, holders, clusters, RugCheck, age). Use it to answer "why won't the bot touch this token?"
 
+### `npm run sim -- [options]`
+
+Replays closed positions against **alternative exit settings** — the backtest that answers "would a different stop / grace / escape setting have made more SOL on the trades we actually took?"
+
+It reads `position_marks` (one row per 15s manager poll: price, position value, active bin, unclaimed fees) and re-runs the mark-derivable part of the P0–P5 ladder over them with your overrides.
+
+```bash
+npm run sim -- --sleeve meme --age-max 120 --set manage.stop_loss_frac=0.65
+npm run sim -- --sweep manage.below_range_grace_min=5,10,15,25,40
+npm run sim -- --profile aggressive --db server=srv.db --db railway=rw.db
+```
+
+**Scenarios**: `--set section.key=value` (repeatable), `--profile <id|path>` (a [profile](./profiles) — exit keys only), `--sweep key=a,b,c` (one run per value).
+**Cohort**: `--sleeve`, `--age-max` / `--age-min` (token age at entry, in minutes), `--book`, `--since YYYY-MM-DD`, `--min-marks`, `--include-flagged`.
+**Output**: `--list` to see the cohort, `--top N` for per-position rows, `--json <path>` for the full result set.
+
+Each scenario ends in a **verdict** — `IMPROVES`, `HURTS`, `NOISE`, or `NO-OP` — that a result has to earn. A delta only counts as real if it survives dropping its best two positions, fires on at least 8 positions, and points the same way on every book loaded. That is deliberate: the rule that scored +0.94 SOL in the 2026-08-20 young-launch research turned out to be one position with broken marks.
+
+Two numbers to read before any delta:
+
+- **Fidelity** — how many real exits the replay reproduces from the current config. Below ~85% usually means the exit rules changed since those positions closed (it replays *today's* ladder); re-run with `--since <date of the change>`.
+- **Cohort** — how many traces were dropped as unusable, and how many were kept despite exiting by a rule the replay cannot reproduce.
+
+**What it cannot answer.** Marks carry no TVL, pool fee rate, volume, holder or RugCheck data, so P0 `tvl_drain` / `pool_dead` / `rugcheck_flip` and P2 fee-volume decay are never simulated. Neither are entry gates, vetting or sizing — there is no data for trades the bot never took, so a profile comparison here is about **exit behaviour only**. And because a position's marks stop at its real exit, the replay can evaluate exiting *earlier* far better than exiting *later*.
+
 ### `npm run heartbeat-check`
 
 Runs the out-of-process liveness checker once by hand (normally it lives in cron). Exit codes: `0` healthy, `1` heartbeat stale/missing (alert sent), `2` the checker itself couldn't read the DB — which deliberately does **not** alert, so a broken checker can't page you about itself.
