@@ -104,6 +104,60 @@ describe("managePositions contracts", () => {
   });
 
   /**
+   * 2026-08-20 young-launch research: every simulated quicker-exit rule tested
+   * flat to negative on the ledger, so nothing acts — but the closest-to-even
+   * trigger (2 min sustained below band midpoint) is logged once per position
+   * as `young_exit_candidate` to be judged on forward data.
+   */
+  describe("young-exit candidate telemetry", () => {
+    const candidateRows = () =>
+      (getDb().prepare("SELECT features_json FROM decisions WHERE failed_gate = 'young_exit_candidate'").all() as Array<{ features_json: string }>);
+
+    it("logs once after 2 min sustained below band midpoint, without closing", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-08-20T12:00:00Z"));
+      const id = insertOpenPosition({ entrySol: 0.3, minBinId: 100, maxBinId: 200 });
+      exec.setMark(id, { valueSol: 0.29, price: 0.95, activeBinId: 130, inRange: true });
+
+      await managePositions(exec);
+      expect(candidateRows()).toHaveLength(0); // streak just started
+
+      vi.setSystemTime(new Date("2026-08-20T12:03:00Z"));
+      await managePositions(exec);
+      const rows = candidateRows();
+      expect(rows).toHaveLength(1);
+      const f = JSON.parse(rows[0]!.features_json);
+      expect(f.posId).toBe(id);
+      expect(f.depthFrac).toBeCloseTo(0.3);
+      expect(exec.closed).toHaveLength(0); // telemetry only — nothing closes
+
+      vi.setSystemTime(new Date("2026-08-20T12:06:00Z"));
+      await managePositions(exec);
+      expect(candidateRows()).toHaveLength(1); // once per position
+    });
+
+    it("recovery above the midpoint resets the sustain streak", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-08-20T12:00:00Z"));
+      const id = insertOpenPosition({ entrySol: 0.3, minBinId: 100, maxBinId: 200 });
+      exec.setMark(id, { valueSol: 0.29, price: 0.95, activeBinId: 130, inRange: true });
+      await managePositions(exec);
+
+      vi.setSystemTime(new Date("2026-08-20T12:03:00Z"));
+      exec.setMark(id, { valueSol: 0.3, price: 1.05, activeBinId: 160, inRange: true });
+      await managePositions(exec); // back above midpoint — streak cleared
+
+      vi.setSystemTime(new Date("2026-08-20T12:04:00Z"));
+      exec.setMark(id, { valueSol: 0.29, price: 0.95, activeBinId: 130, inRange: true });
+      await managePositions(exec);
+
+      vi.setSystemTime(new Date("2026-08-20T12:05:00Z"));
+      await managePositions(exec); // only 60s into the new dip
+      expect(candidateRows()).toHaveLength(0);
+    });
+  });
+
+  /**
    * 4680 pos#11 (2026-08-16): a -54% wick lasting under two minutes. P5 armed
    * its 15m grace to ride out exactly that; P1 read one 15s mark at -25% and
    * cut the position 80s later. Token was +58% within the hour — the biggest
