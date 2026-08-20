@@ -228,7 +228,7 @@ Thresholds:
 |---|---|---|
 | `enabled` / `discovery` | `true` / `true` | Sleeve on; discovery sweep on |
 | `discovery_pages` | `8` | Datapi pages for the majors sweep |
-| `symbol_allowlist` | `PUMP, ANSEM, JTO, BONK, WIF, RAY, JUP` | Only these symbols |
+| `symbol_allowlist` | `PUMP, JTO, BONK, WIF, RAY, JUP` | Only these symbols (ANSEM removed 2026-08-20 — it carried ~92% of majors losses on both live bots) |
 | `mcap_min_usd` | `0` | No mcap floor (allowlist is the gate) |
 | `age_min_days` | `7` | Token must be ≥ 7 days old |
 | `strategy_shape` | `"spot"` | Uniform bins — not the meme BidAsk ramp |
@@ -238,7 +238,7 @@ Thresholds:
 | `entry_swing_avoid_top` | `0.75` | Never enter above 75% of the swing range |
 | `fee_tvl_24h_min_pct` / `fee_tvl_30m_daily_min_pct` | `0.08` / `0.05` | Much lower heat floors than meme |
 | `tvl_min_usd` / `tvl_max_usd` | `100000` / `10000000` | TVL band |
-| `vol_30m_min_usd` | `5000` | Volume floor |
+| `vol_30m_min_usd` | `15000` | Volume floor (was 5000; sub-15k entries only ever churned P2 rotations) |
 | `max_pool_share_pct` | `5` | Pool-share cap |
 | `size_sol` / `max_position_sol` | `0.75` / `1.5` | Fixed entry size / absolute cap |
 | `max_slots` | `1` | One majors position at a time |
@@ -255,7 +255,7 @@ Thresholds:
 | `rotation_fee_daily_min_pct` | `0.05` | Rotation floor (must sit at/below the entry floor) |
 | `rotation_vol_30m_min_usd` | `2000` | Rotation volume floor |
 | `rotation_polls` | `20` | Sustained decay before rotating |
-| `[[majors.pools]]` | PUMP, ANSEM seeds | Optional whitelist seeds; discovery still finds the best live pool per symbol |
+| `[[majors.pools]]` | PUMP seed | Optional whitelist seeds; discovery still finds the best live pool per symbol |
 
 ## `[rotation]` — capital agility
 

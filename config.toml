@@ -202,7 +202,9 @@ loss_reentry_cooldown_h = 24
 # P2 rotation
 rotation_fee_daily_min_pct = 5
 rotation_polls = 3
-rotation_vol_30m_min_usd = 5000
+rotation_# 5000 until 2026-08-20: every sub-15k entry (11 of 18 non-ANSEM) died as P2
+# churn within hours, net negative; every winner entered at >=15k.
+vol_30m_min_usd = 15000
 max_age_h = 48
 # P3 above range / take profit
 above_range_pct = 5
@@ -366,7 +368,10 @@ open_fail_cooldown_s = 300 # after a failed leg open, wait before retrying (was 
 enabled = true
 discovery = true
 discovery_pages = 8
-symbol_allowlist = ["PUMP", "ANSEM", "JTO", "BONK", "WIF", "RAY", "JUP"]
+# ANSEM removed 2026-08-20: it carried ~92% of the sleeve's realized losses on
+# both live bots (P5 cuts at meme-like volatility) while PUMP/MET sat flat.
+# The meme sleeve still trades it when it is genuinely hot.
+symbol_allowlist = ["PUMP", "JTO", "BONK", "WIF", "RAY", "JUP"]
 mcap_min_usd = 0
 age_min_days = 7
 strategy_shape = "spot"            # uniform liquidity — not meme BidAsk ramp
@@ -410,10 +415,6 @@ rotation_polls = 120
 [[majors.pools]]
 pool = "HbjYfcWZBjCBYTJpZkLGxqArVmZVu3mQcRudb6Wg1sVh"
 symbol = "PUMP"
-
-[[majors.pools]]
-pool = "6e7V9eegCHw997T72MxgwwJipZ6GJyZF8NvjkzT1rvpN"
-symbol = "ANSEM"
 
 # Optional whitelist seeds — discovery still finds the best live pool per symbol.
 # Remove [[majors.pools]] entries entirely to rely on discovery + symbol_allowlist only.
