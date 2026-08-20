@@ -21,5 +21,6 @@ video/public/shots/
 video/public/icons/
 video/public/daily.json
 video/public/mascot-*.png
+video/public/sfx/
 # X Article review artifact (676 KB, image embedded as base64) — regenerable from the .md + png; the sources are tracked
 docs/article/article-review.html

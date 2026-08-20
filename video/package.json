@@ -6,8 +6,9 @@
   "description": "Daily X update video for DLMM Bot \u2014 data from the live dashboard API, rendered with Remotion.",
   "scripts": {
     "data": "node scripts/data.mjs",
+    "sfx": "node scripts/sfx.mjs",
     "capture": "node scripts/capture.mjs",
-    "daily": "npm run data && npm run mascot && npm run capture && npm run render",
+    "daily": "npm run data && npm run sfx && npm run mascot && npm run capture && npm run render",
     "studio": "remotion studio",
     "render": "remotion render Daily out/daily.mp4",
     "still": "remotion still Daily out/still.png",
