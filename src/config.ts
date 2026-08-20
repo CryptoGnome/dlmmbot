@@ -373,6 +373,11 @@ export function _setConfigForTests(c: Config | null): void {
   current = c === null ? load() : c;
 }
 
+/** Raw config.toml text, for the dated settings trail in `config_history`. */
+export function configToml(): string {
+  return readFileSync(CONFIG_PATH, "utf8");
+}
+
 export function onConfigChange(fn: (c: Config) => void): void {
   listeners.push(fn);
 }

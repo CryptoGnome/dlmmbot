@@ -23,6 +23,8 @@ interface MarkRow {
   ts: number; active_bin_id: number | null; price: number | null;
   value_sol: number | null; value_frac: number | null;
   unclaimed_fees_sol: number | null; in_range: number | null;
+  tvl_usd: number | null; vol_30m_usd: number | null; fee_tvl_30m_pct: number | null;
+  pool_age_s: number | null; fees_claimed_cum_sol: number | null;
 }
 
 /** Exit reasons the mark-replay ladder cannot reproduce (no TVL/fee/volume in marks). */
@@ -52,6 +54,8 @@ function buildMarks(rows: MarkRow[], minBin: number, maxBin: number): SimMark[] 
       belowRange: bin != null && bin < minBin,
       aboveRange: bin != null && bin > maxBin,
       depthFrac,
+      tvlUsd: r.tvl_usd, vol30mUsd: r.vol_30m_usd, feeTvl30mPct: r.fee_tvl_30m_pct,
+      poolAgeS: r.pool_age_s, claimedCumSol: r.fees_claimed_cum_sol,
     };
   });
 }
@@ -95,7 +99,8 @@ export function loadTraces(dbPath: string, book: string): Trace[] {
        ORDER BY p.id
     `).all() as PositionRow[];
     const markStmt = db.prepare(`
-      SELECT ts, active_bin_id, price, value_sol, value_frac, unclaimed_fees_sol, in_range
+      SELECT ts, active_bin_id, price, value_sol, value_frac, unclaimed_fees_sol, in_range,
+             tvl_usd, vol_30m_usd, fee_tvl_30m_pct, pool_age_s, fees_claimed_cum_sol
         FROM position_marks WHERE position_id = ? ORDER BY ts
     `);
     // Sleeve comes from the entry decision, bound per position rather than as a
@@ -166,4 +171,15 @@ export function cohortSummary(all: Trace[], kept: Trace[], f: CohortFilter = {})
   const unreplayable = kept.filter((t) => t.flags.includes("unreplayable_exit")).length;
   if (unreplayable) parts.push(`${unreplayable} kept but exited by a rule the replay cannot reproduce`);
   return parts.join(", ");
+}
+
+/**
+ * Share of the cohort whose marks carry pool health (TVL / volume / fee rate).
+ * Recording started in v0.19.1, so this climbs from zero as positions close.
+ * Until it is high, P0 `tvl_drain` and P2 decay stay out of the replay and
+ * every run says so rather than quietly pretending those exits do not exist.
+ */
+export function poolMetricCoverage(traces: Trace[]): { withMetrics: number; total: number } {
+  const withMetrics = traces.filter((t) => t.marks.some((m) => m.tvlUsd != null)).length;
+  return { withMetrics, total: traces.length };
 }

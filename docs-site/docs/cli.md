@@ -80,7 +80,7 @@ Two numbers to read before any delta:
 - **Fidelity** — how many real exits the replay reproduces from the current config. Below ~85% usually means the exit rules changed since those positions closed (it replays *today's* ladder); re-run with `--since <date of the change>`.
 - **Cohort** — how many traces were dropped as unusable, and how many were kept despite exiting by a rule the replay cannot reproduce.
 
-**What it cannot answer.** Marks carry no TVL, pool fee rate, volume, holder or RugCheck data, so P0 `tvl_drain` / `pool_dead` / `rugcheck_flip` and P2 fee-volume decay are never simulated. Neither are entry gates, vetting or sizing — there is no data for trades the bot never took, so a profile comparison here is about **exit behaviour only**. And because a position's marks stop at its real exit, the replay can evaluate exiting *earlier* far better than exiting *later*.
+**What it cannot answer.** Marks written before v0.19.1 carry no TVL, pool fee rate or volume, so P0 `tvl_drain` / `pool_dead` / `rugcheck_flip` and P2 fee-volume decay are not simulated — the run reports how much of the cohort now records pool health, and those exit paths become replayable once enough of the book does. Neither are entry gates, vetting or sizing — there is no data for trades the bot never took, so a profile comparison here is about **exit behaviour only**. And because a position's marks stop at its real exit, the replay can evaluate exiting *earlier* far better than exiting *later*.
 
 ### `npm run heartbeat-check`
 
