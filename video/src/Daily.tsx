@@ -1,5 +1,6 @@
 import React from "react";
 import { Series, useVideoConfig } from "remotion";
+import { AudioTrack } from "./audio";
 import { SCENES } from "./scenes/Scenes";
 import { planScenes, type Daily as D } from "./plan";
 
@@ -8,6 +9,8 @@ export const Daily: React.FC<{ daily: D; mascot: { open: boolean; close: boolean
   const { fps } = useVideoConfig();
   const beats = planScenes(daily);
   return (
+    <>
+    <AudioTrack beats={beats} daily={daily} />
     <Series>
       {beats.map((b, i) => {
         const Scene = SCENES[b.id];
@@ -18,5 +21,6 @@ export const Daily: React.FC<{ daily: D; mascot: { open: boolean; close: boolean
         );
       })}
     </Series>
+    </>
   );
 };

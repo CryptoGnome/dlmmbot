@@ -154,7 +154,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           {
             title: "Majors",
             badge: "alts",
-            text: "Allowlisted SOL-quoted alts. Spot (flat) bins + separate timing. P2 rotation needs BOTH fee and volume dead (and a lower fee floor than entry) so parks like PUMP don’t churn every few minutes. Settings → Majors parking: search a ticker on Meteora and add to the allowlist. Runs after memes so hot memes keep slots. Since v0.14.0 majors also respect the 24h re-entry cooldown after our own stop / below-range / safety exit — but not meme vetting bans. Since v0.15.0 the range tops out at the current price: the old band reached 6% above price, but SOL-only liquidity can’t sit in bins above price, so those bins were always empty and just cost rent.",
+            text: "Allowlisted SOL-quoted alts. Spot (flat) bins + separate timing. P2 rotation needs BOTH fee and volume dead (and a lower fee floor than entry) so parks like PUMP don’t churn every few minutes. Settings → Majors parking: search a ticker on Meteora and add to the allowlist. Runs after memes so hot memes keep slots. Since v0.14.0 majors also respect the 24h re-entry cooldown after our own stop / below-range / safety exit — but not meme vetting bans. Since v0.15.0 the range tops out at the current price: the old band reached 6% above price, but SOL-only liquidity can’t sit in bins above price, so those bins were always empty and just cost rent. 2026-08-20: ANSEM was dropped from the default allowlist (it carried ~92% of the sleeve’s realized losses on both live bots) and the entry volume floor rose 5k → 15k — every sub-15k entry only ever churned a P2 rotation.",
             icon: "layers",
           },
         ],
