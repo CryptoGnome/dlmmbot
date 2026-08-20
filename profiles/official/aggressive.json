@@ -52,6 +52,6 @@
     "majors.enabled": true,
     "majors.size_sol": 1.0,
     "majors.max_slots": 2,
-    "majors.symbol_allowlist": ["PUMP", "ANSEM", "JTO", "BONK", "WIF", "RAY", "JUP"]
+    "majors.symbol_allowlist": ["PUMP", "JTO", "BONK", "WIF", "RAY", "JUP"]
   }
 }

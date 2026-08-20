@@ -202,9 +202,7 @@ loss_reentry_cooldown_h = 24
 # P2 rotation
 rotation_fee_daily_min_pct = 5
 rotation_polls = 3
-rotation_# 5000 until 2026-08-20: every sub-15k entry (11 of 18 non-ANSEM) died as P2
-# churn within hours, net negative; every winner entered at >=15k.
-vol_30m_min_usd = 15000
+rotation_vol_30m_min_usd = 5000
 max_age_h = 48
 # P3 above range / take profit
 above_range_pct = 5
@@ -385,7 +383,9 @@ fee_tvl_24h_min_pct = 0.08
 fee_tvl_30m_daily_min_pct = 0.05
 tvl_min_usd = 100000
 tvl_max_usd = 10000000
-vol_30m_min_usd = 5000
+# 5000 until 2026-08-20: every sub-15k entry (11 of 18 non-ANSEM) died as P2
+# churn within hours, net negative; every winner entered at >=15k.
+vol_30m_min_usd = 15000
 max_pool_share_pct = 5
 size_sol = 0.75
 max_position_sol = 1.5
