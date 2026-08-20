@@ -14,6 +14,7 @@
     "vet": "tsx src/cli.ts vet",
     "run": "tsx src/cli.ts run",
     "status": "tsx src/cli.ts status",
+    "sim": "tsx src/sim/cli.ts",
     "halt": "tsx src/cli.ts halt",
     "pause": "tsx src/cli.ts pause",
     "blacklist": "tsx src/cli.ts blacklist",

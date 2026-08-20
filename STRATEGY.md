@@ -272,6 +272,7 @@ Tables:
 - GMGN trending/security/smart-money, holder-watch P0 (dump/whale), funding-cluster + launch-slot sniper fallback (`clusters.ts`)
 - Cluster brake, open bin-slippage fix, P3 missed sustain (45m), `open_failed` error codes
 - Range-shape instrumentation (`position_marks`, per-bin open/claim/close snapshots)
+- Exit backtester (`npm run sim`) — replays those marks against alternative exit settings; **every proposed change to an exit rule goes through it first**, and a delta only counts if it survives dropping its best two positions, fires on 8+ positions, and agrees across both books
 - Three-tier sleeves: micro loss-budget caps, meme (main), majors discovery + spot + TA entry + separate manage
 - Residual token sweep, Telegram alerts, out-of-process heartbeat, config hot-reload, auto-deploy watcher
 - Jupiter versioned /swap token→SOL on close/claim/sweep/profit-lock (the zap path was removed in v0.11.0)
