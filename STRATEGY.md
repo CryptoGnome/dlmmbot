@@ -307,6 +307,20 @@ Tables:
 - Multi-wallet sharding
 - Majors continuous Kelly on daily marks; on-chain fee compound (explicitly off)
 
+## 10a. Tested and rejected (2026-08-21)
+
+**Entry height vs outcome — REAL, instrumented, not yet a gate.** Across 88 closed positions matched to their own entry decision, bucketed by `entry_price / fibAnchor.swingHigh`: `>=0.97` n=5 win 40% mean **+0.0002 SOL**; `0.90–0.97` n=7 win 71% **+0.0031**; `0.70–0.90` n=31 win 58% **+0.0138**; `<0.70` n=45 win 69% **+0.0219**. Mean PnL is monotone in how far *below* the swing high we entered; winners averaged 0.677 of the swing high, losers 0.727. The mechanism is not mysterious — the escape hatch is 19/19 wins and **+1.463 SOL against a whole-book net of +1.437** (more than the entire edge), and it triggers on recovery into the top 25% of the range, measured from a range top planted at the entry price. Enter at the high and the one rule that pays moves out of reach; CatGPT is the worked example (13 bins of placement, and the bounce that paid the other bot landed 19 bins short of ours). §2.3 already penalises this but only as 15% of a soft score. **The top bucket is 5 rows, so nothing is gated:** entries now log `entryOfSwingHigh` flat, plus a `top_blast_candidate` decision above `[0.97]`, and forward data decides.
+
+**Escape hatch measured from the dip instead of the range top — REJECTED.** The obvious follow-on: since the trigger moves with wherever we entered, fire on "price recovered X% of its fall" instead of "price is back in the top 25% of the range". Replayed over 46 armed positions with recorded marks. At X=50% the headline is **+0.7294 SOL**, and every robustness check kills it:
+
+- **It is four rows.** Net excluding the top 1/2/3/4 contributors: +0.382, +0.172, +0.064, **−0.032**. Three of those four were `P1_stop` positions, i.e. the gain is about the stop exiting late, not about escape geometry.
+- **It harms the typical position.** Worse on **18 of 28** changed positions; **median delta −0.0023 SOL**.
+- **It damages what already works.** On the 22 positions the current rule escapes, net **−0.0814 SOL**, improving only 4 — firing earlier gives back recovery the current rule captures.
+- **The sweep points the wrong way.** X=50 → +0.729, X=60 → +0.554, X=70 → **−0.035**. Monotone, but toward *looser*, which extrapolates to "exit on any bounce" — not a credible rule, and the signature of fitting the four outliers.
+- **The measurement flatters it.** Counterfactual proceeds are `value_sol` at a mark, which ignores exit slippage — on crashed, thin pools, exactly where slippage is worst (CatGPT's real exit swap under-filled by 90%).
+
+The current 60/25 escape already catches **17 of the 20** armed positions that recovered ≥50% of their fall. There is very little headroom here, and what looks like headroom is the P1 stop wearing a disguise.
+
 ## 11. Operating conclusions (live book 2026-08-07 → 2026-08-13)
 
 57 closes, measured **+0.251 SOL**. Fees **+1.24**. The edge is the escape hatch (+0.62 / 9); the tax is P1 (−0.55 / 8). P3 is mostly slot-churn (18/27 near-zero, 13 red, many exactly the 10 min sustain).
