@@ -319,6 +319,30 @@ The four near-miss escapes on record — armed, best recovery 0.25–0.45, i.e. 
 
 What did go wrong on CatGPT was **timing, not a strategy knob**: Railway planned off a quote the pool had printed 56 s earlier and executed 13 bins higher than the server. That is fixed by the re-quote guard (§3 step 1a), not by a height rule. §2.3 continues to penalise height as 15% of the soft score, entries log `entryOfSwingHigh` flat plus a `top_blast_candidate` decision above `[0.97]`, and the sample keeps building.
 
+**P1 fee offset (`stop_loss_count_claimed_fees`) — measured 2026-08-21, KEEP IT OFF.**
+
+First, a defect worth naming. `valueFrac` is `value_sol / entry_sol`, and `value_sol` carries **unclaimed** fees but not claimed ones — so **the act of claiming pushes a position toward its own stop.** Banking 20% of entry in fees moves the number the stop reads down 20 points against a 25-point threshold. Every P1 stop on record is a hairline breach for exactly this reason:
+
+| pos | entry SOL | fees claimed | fees/entry | last `valueFrac` | + fees | realized |
+|---|---|---|---|---|---|---|
+| 27 DCN | 0.300 | 0.0684 | 22.8% | 0.740 | 0.968 | +0.0001 |
+| 37 BOT | 0.716 | 0.0811 | 11.3% | 0.731 | 0.844 | −0.1286 |
+| 48 COGE | 0.545 | 0.0430 | 7.9% | 0.683 | 0.762 | −0.1241 |
+| 53 PITCOIN | 0.722 | 0.1064 | 14.7% | 0.730 | 0.877 | −0.0714 |
+| 54 KYOKO | 0.597 | 0.0630 | 10.5% | 0.748 | 0.854 | −0.0996 |
+| 106 Z500 | 0.672 | 0.1399 | 20.8% | 0.733 | 0.942 | −0.0327 |
+| 113 67coin | 0.250 | 0.0337 | 13.5% | 0.721 | 0.856 | −0.0312 |
+| 123 TROOPET | 1.257 | **0.5061** | **40.2%** | 0.741 | **1.143** | +0.2669 |
+| 97 4680 | 0.244 | **0.0000** | 0.0% | 0.745 | 0.745 | +0.0348 |
+
+Every `valueFrac` sits between 0.68 and 0.75 — none of these was a crash, they are all hairline. **8 of the 9 would not have fired with claimed fees counted**, and the one that survives the test (4680) is the only position that had never claimed. TROOPET was stopped "at −25.9%" while up **+14.3%** overall.
+
+**And yet the knob should stay off.** Post-exit price paths (`post_exit_prices`, 1-minute bars, ~108 minutes after each close) say deferring would have been worse. For the 8 positions the knob changes, price at **+30 minutes**: DCN −43%, BOT −29%, COGE −30%, PITCOIN −33%, KYOKO −4%, Z500 **+21%**, 67coin −19%, TROOPET −68%. **Seven of eight lower, median ≈ −29%.** Most eventually printed a large bounce inside the window (+103% to +166% off the exit), but only after first going −25% to −78% — the recovery is on the far side of a hole the position would have had to survive.
+
+So the defect is real and the fix is not this knob: measuring on a basis the bot itself moves is wrong, but the direction it moves happens to make the stop *tighter* on fee-earning positions, and tighter is what the post-exit data rewards. Two caveats on that evidence — it is price-only (no LP mechanics, no exit slippage) and it cannot see past ~108 minutes. Left off, still logged.
+
+**Why there was no telemetry to read.** `P1_fee_offset_deferred` had **zero** rows despite firing live (Railway logged it twice on 08-21). All counterfactual telemetry is written as `skipped` decisions, and retention deletes `skipped` decisions — by age and, once the size ceiling is hit, oldest-first every pass. On the server 986 of the 1068 surviving skipped rows were `fee_tvl_24h` pool rejections and **the retained window was eight minutes.** `P1_fee_offset_deferred`, `young_exit_candidate`, `top_blast_candidate` and `give_back_candidate` all read 0 — four experiments collecting nothing. Retention now exempts `TELEMETRY_GATES`; they are at most one row per position against ~900 rejection rows an hour.
+
 **Give-back stop — REAL, instrumented, not yet a rule.** Once a position has been up ≥[0.02] SOL on a fee-inclusive basis, cut it when it hands back to [75%] of that peak. Replayed over 120 closed positions with recorded marks (mark against mark, so it isolates *timing* and not fills): it changes 22 exits for a net **+2.657 SOL** — winners cut early cost **−0.360** across 11, losses avoided gained **+3.017** across 11. Unlike the dip-relative escape hatch below, it survives the checks: worse on only **10 of 22**, **median +0.0009**, **+0.493 excluding the top four contributors**, **+2.133** after a 3% slippage haircut, and flat across thresholds (75%→95% all land 2.6–2.7) rather than balanced on a knife edge.
 
 Two reasons it logs rather than acts. The measurement is from the **server** bot, and the question was asked about the **Railway** one — different entries, different book. And its two largest contributors (pos#63 +0.819, pos#60 +0.811) are `P0_tvl_drain` safety exits, where the final mark sits near zero and a mark-based counterfactual flatters itself; whether a real exit was *executable* at the trigger price is unproven. So positions now carry `peak_pnl_sol` and log one `give_back_candidate` decision at the moment the stop would have fired, on both bots, and forward data decides.

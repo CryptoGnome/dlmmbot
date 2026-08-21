@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { describeError, getDb, isBlacklisted, REALIZED_PNL_SQL, STRANDED_GRACE_S, logError, now, pruneHistory, recordConfigSnapshot, recordCreatorRug, recordDecision, upsertTokenMeta } from "./db.js";
+import { describeError, getDb, isBlacklisted, REALIZED_PNL_SQL, STRANDED_GRACE_S, TELEMETRY_GATES, logError, now, pruneHistory, recordConfigSnapshot, recordCreatorRug, recordDecision, upsertTokenMeta } from "./db.js";
 import { useMemoryDb, resetTestDb, insertClosedPosition } from "../test/db.js";
 
 function pnlFor(id: number): number | null {
@@ -297,6 +297,33 @@ describe("pruneHistory", () => {
     const r = pruneHistory({ skippedDays: 30, snapshotDays: 3 });
     expect(r.decisions).toBe(1);
     expect(count("SELECT COUNT(*) c FROM decisions WHERE action IN ('entered','exited')")).toBe(2);
+  });
+
+  /**
+   * Counterfactual telemetry rides in as a `skipped` decision, which put it in
+   * the same bucket as scanner rejections. Measured on the server 2026-08-21:
+   * 986 of 1068 surviving skipped rows were `fee_tvl_24h` rejections and the
+   * retained window was EIGHT MINUTES — all four experiments had zero rows.
+   */
+  it("never prunes counterfactual telemetry, by age or by ceiling", () => {
+    const db = getDb();
+    const t = now();
+    const ins = db.prepare("INSERT INTO decisions (ts, mint, pool, action, failed_gate, score, features_json) VALUES (?,?,?,?,?,?,?)");
+    for (const g of TELEMETRY_GATES) ins.run(t - 400 * DAY, "m1", "p1", "skipped", g, null, "{}");
+    ins.run(t - 400 * DAY, "m1", "p1", "skipped", "vol_30m", 50, "{}"); // an ordinary skip, same age
+
+    const age = pruneHistory({ skippedDays: 30, snapshotDays: 3 });
+    expect(age.decisions).toBe(1); // only the rejection
+    expect(count("SELECT COUNT(*) c FROM decisions WHERE failed_gate IN ('" + TELEMETRY_GATES.join("','") + "')"))
+      .toBe(TELEMETRY_GATES.length);
+
+    // And the size ceiling, which is what actually runs on Railway.
+    const fat = "x".repeat(2000);
+    db.transaction(() => { for (let i = 0; i < 3000; i++) ins.run(t - i, "m", "p", "skipped", "vol_30m", 50, fat); })();
+    const size = pruneHistory({ skippedDays: 30, snapshotDays: 3, maxBytes: 1024 * 1024 });
+    expect(size.mode).toBe("size");
+    expect(count("SELECT COUNT(*) c FROM decisions WHERE failed_gate IN ('" + TELEMETRY_GATES.join("','") + "')"))
+      .toBe(TELEMETRY_GATES.length);
   });
 
   /**
