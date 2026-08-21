@@ -691,6 +691,35 @@ function loadOpenPositions(): Position[] {
  * the bot already logs 429 backoff ladders at the serial rate. 1 restores the
  * old strictly-serial behaviour.
  */
+/**
+ * Is the next scan due? Measured on the server, 2026-08-21, over 637 sweeps.
+ *
+ * The scan fires from inside the manage tick, so it can only ever start on a
+ * poll boundary — and `interval_s` is an exact multiple of `poll_s` (60 = 4 x
+ * 15), which put the old `elapsed > interval` test exactly ON the 4th
+ * boundary. Whether it passed came down to a millisecond of timer jitter, and
+ * losing meant waiting a whole extra poll. The gap histogram was two clean
+ * spikes and nothing in between:
+ *
+ *     59s  x42     73s  x12
+ *     60s  x144    74s  x77
+ *     61s  x68     75s  x198
+ *     62s  x9      76s  x53
+ *
+ * 288 scans landed on the 4th tick, 348 on the 5th — a coin flip costing 15s,
+ * a quarter of the interval, and averaging 7.8s of staleness per scan. That is
+ * the whole "tick overrun": not a slow tick (the scanning tick measures the
+ * same 15s as any other, and the deferral guard has never once fired) but a
+ * boundary the schedule sat exactly on.
+ *
+ * Half a poll of tolerance snaps it to the nearest tick instead. It cannot
+ * fire early: the previous boundary is a full poll below the target, so it
+ * stays outside the window by the same half-poll margin.
+ */
+export function scanDue(sinceLastScanMs: number, intervalMs: number, pollMs: number): boolean {
+  return sinceLastScanMs > intervalMs - pollMs / 2;
+}
+
 export const DEFAULT_MARK_CONCURRENCY = 4;
 
 /**
@@ -1920,12 +1949,13 @@ export async function runLoop(): Promise<void> {
           logError({ source: "follow", code: "tick", message: (e as Error).message, err: e, dedupeSec: 60 });
         }
       }
+      const due = scanDue(Date.now() - lastScan, config().scanner.interval_s * 1000, pollMs);
       if (entriesFrozen()) {
-        if (Date.now() - lastScan > config().scanner.interval_s * 1000) {
+        if (due) {
           lastScan = Date.now();
           console.warn(`[farmer] entries frozen — ${probeFailures} consecutive RPC probe failures`);
         }
-      } else if (Date.now() - lastScan > config().scanner.interval_s * 1000) {
+      } else if (due) {
         // Defer scan when manage already ate the poll window — otherwise a close
         // + fixed sleep stacked to 70–80s mark gaps (RANGE-SHAPE integrity (a)).
         if (Date.now() - tickStart < pollMs) {

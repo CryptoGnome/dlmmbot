@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { CLAIM_EST_TX_COST_SOL, managePositions, pollSleepMs, resetManagerStateForTests, shouldClaimFees } from "./loop.js";
+import { CLAIM_EST_TX_COST_SOL, managePositions, pollSleepMs, resetManagerStateForTests, scanDue, shouldClaimFees } from "./loop.js";
 import { FakeExecutor } from "../test/fakeExecutor.js";
 import { installConfig, restoreConfig } from "../test/config.js";
 import { useMemoryDb, resetTestDb, insertOpenPosition } from "../test/db.js";
@@ -12,6 +12,34 @@ describe("pollSleepMs", () => {
     expect(pollSleepMs(2_000, 15_000)).toBe(13_000);
     expect(pollSleepMs(15_000, 15_000)).toBe(0);
     expect(pollSleepMs(50_000, 15_000)).toBe(0);
+  });
+});
+
+describe("scanDue", () => {
+  const INTERVAL = 60_000, POLL = 15_000;
+
+  it("fires on the 4th tick instead of coin-flipping to the 5th", () => {
+    // The old test was `elapsed > 60000`, sitting exactly on the boundary:
+    // 288 of 637 measured scans passed it and 348 missed and waited 15s more.
+    expect(scanDue(60_000, INTERVAL, POLL)).toBe(true);  // dead on
+    expect(scanDue(59_998, INTERVAL, POLL)).toBe(true);  // the losing side
+    expect(scanDue(60_002, INTERVAL, POLL)).toBe(true);  // the winning side
+  });
+
+  it("never fires a tick early", () => {
+    expect(scanDue(45_000, INTERVAL, POLL)).toBe(false); // tick 3
+    expect(scanDue(30_000, INTERVAL, POLL)).toBe(false);
+    expect(scanDue(0, INTERVAL, POLL)).toBe(false);
+  });
+
+  it("puts the line at half a poll before the target", () => {
+    expect(scanDue(52_501, INTERVAL, POLL)).toBe(true);
+    expect(scanDue(52_500, INTERVAL, POLL)).toBe(false);
+  });
+
+  it("still behaves when the poll does not divide the interval", () => {
+    expect(scanDue(56_501, INTERVAL, 7_000)).toBe(true);
+    expect(scanDue(56_499, INTERVAL, 7_000)).toBe(false);
   });
 });
 
