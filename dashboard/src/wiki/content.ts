@@ -354,6 +354,12 @@ export const WIKI_SECTIONS: WikiSection[] = [
             icon: "x",
           },
           {
+            title: "Fresh quote or no trade",
+            text: "Right before building the range we re-price the pool. If it has run more than a few bins since the scan that picked it, we skip instead of chasing — the range top is planted at that price, and every upside exit is measured from the top, so entering late puts our own profit targets out of reach.",
+            tone: "ok",
+            icon: "check",
+          },
+          {
             title: "Restarts don’t reset the clock",
             text: "Every exit timer — the stop streak, the rotation streak, the above-range and below-range clocks, the TVL-drain window — is saved with the position. A deploy or crash resumes them where they were, instead of granting a fresh grace period to a position that was already most of the way through one.",
             tone: "ok",

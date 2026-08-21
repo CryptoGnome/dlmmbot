@@ -109,6 +109,7 @@ Thresholds:
 | `fib_bottom` | `0.786` | Fib retracement anchoring the range bottom |
 | `max_down_pct` | `50` | Max range depth below price (was 65; deepest bins sat below where P0 fires) |
 | `min_down_pct` | `40` | Minimum depth — never a thin sliver |
+| `max_quote_drift_bins` | `3` | Re-quote the pool just before planning the range; skip the entry if it moved more than this many bins since the scan. `0` disables |
 | `max_position_accounts` | `2` | Max DLMM position accounts per entry (69 bins each) |
 | `bin_rent_budget_sol` | `0.075` | Soft rent budget (one bin array) — shrink range first |
 | `bin_rent_hard_sol` | `0.15` | Hard budget (two arrays), only when score qualifies |

@@ -693,6 +693,14 @@ function loadOpenPositions(): Position[] {
  */
 export const DEFAULT_MARK_CONCURRENCY = 4;
 
+/**
+ * Default quote-drift tolerance, in bins. 3 bins is 3% on the 100-bp pools
+ * memecoins actually list in — wide enough that ordinary jitter between the
+ * scan and the open does not cost an entry, tight enough to have caught the
+ * 4-bin CatGPT drift that mispriced the whole position.
+ */
+export const DEFAULT_MAX_QUOTE_DRIFT_BINS = 3;
+
 /** One manager tick over all open positions.
  * Two-pass: mark every position before any close/claim. A sibling exit used to
  * delay peer marks by 50–80s (3/4161 gaps ≥60s, but enough to fail RANGE-SHAPE
@@ -1532,13 +1540,57 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       }
     }
 
+    // --- STALE QUOTE GUARD ---
+    // `cand.pool.price` is the scanner sweep's quote, and everything between
+    // that sweep and this line — vetting, holders, RugCheck, the SOL feed —
+    // is measured in seconds to minutes. The range top is planned AT that
+    // price, and every upside exit is measured from the range top, so a stale
+    // quote does not just cost a few basis points: it moves the goalposts.
+    //
+    // CatGPT 2026-08-21, one pool, two bots. The server entered 15:39:14 with
+    // its top at bin -579 and took +0.0102 on a P3 win, then +0.0347 on an
+    // escape. Railway entered 15:42:19 off a quote the pool had printed at
+    // 15:41:23, putting its top at -566 — 13 bins higher on a 1%-per-bin pool.
+    // The same price path then cleared the server's top for the full 10-minute
+    // P3 sustain but Railway's for only ~4, and the same bounce landed inside
+    // the server's escape band and 19 bins short of Railway's. It stopped out
+    // at -39.3%. Nothing about the rules differed; the range was in the wrong
+    // place because the quote was a minute old.
+    //
+    // So: re-quote, and if the pool has moved more than the tolerance, SKIP.
+    // Skip rather than re-plan on the fresh price, because re-planning is the
+    // wrong instinct here — on the CatGPT drift it would have placed the top 4
+    // bins HIGHER still. A pool that has run since we scored it has invalidated
+    // the score, not just the price. A failed re-quote falls through on the old
+    // one: datapi hiccups must not cost every entry.
+    let entryPrice = cand.pool.price;
+    const driftLimit = config().entry.max_quote_drift_bins ?? DEFAULT_MAX_QUOTE_DRIFT_BINS;
+    if (driftLimit > 0 && entryPrice > 0 && cand.pool.binStep > 0) {
+      const fresh = await fetchPool(cand.pool.address).catch(() => null);
+      if (fresh && fresh.price > 0) {
+        const driftBins = Math.log(fresh.price / entryPrice) / Math.log(1 + cand.pool.binStep / 10_000);
+        if (Math.abs(driftBins) > driftLimit) {
+          recordDecision(cand.tokenMint, cand.pool.address, "skipped", "quote_stale", score, {
+            symbol: cand.symbol, quotedPrice: entryPrice, freshPrice: fresh.price,
+            driftBins, driftLimit, binStep: cand.pool.binStep,
+          });
+          console.log(
+            `[enter] ${cand.symbol}: quote moved ${driftBins > 0 ? "+" : ""}${driftBins.toFixed(1)} bins ` +
+            `since the scan (limit ${driftLimit}) — skipping rather than chasing`
+          );
+          continue;
+        }
+        entryPrice = fresh.price;
+      }
+    }
+
     const candles = await fetchCandlesDeep(cand.pool.address, "5m").catch(() => []);
-    const planned = planRange(cand.pool.price, cand.pool.binStep, candles, cand.pool.decimalsX);
+    const planned = planRange(entryPrice, cand.pool.binStep, candles, cand.pool.decimalsX);
     const rent = await applyBinRentGate({
       range: planned,
       score,
       poolAddress: cand.pool.address,
-      price: cand.pool.price,
+      price: entryPrice,
       binStep: cand.pool.binStep,
       decimalsX: cand.pool.decimalsX,
       minDownPct: config().entry.min_down_pct,
@@ -1583,7 +1635,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
         symbol: cand.symbol,
         sizeSol: size,
         range,
-        entryPrice: cand.pool.price,
+        entryPrice,
       }));
     } catch (e) {
       const err = e as Error & { code?: string; logs?: string[] };
@@ -1628,7 +1680,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       experiment: { feePath, isMicro, baseScore, trendingBonus, flowBonus, flowPenalty },
     });
     await alert("entry",
-      `${cand.symbol} pos#${pos.id}: entered ${size.toFixed(2)} SOL @ ${cand.pool.price.toPrecision(4)} (score ${score.toFixed(0)}/base ${baseScore.toFixed(0)}${isAlpha ? ", alpha" : ""}${isMicro ? ", micro" : ""}${feePath === "recent_hot" ? ", recent-hot" : ""}, range depth ${range.bottomPricePct.toFixed(0)}%)${flowNote}\n` +
+      `${cand.symbol} pos#${pos.id}: entered ${size.toFixed(2)} SOL @ ${entryPrice.toPrecision(4)} (score ${score.toFixed(0)}/base ${baseScore.toFixed(0)}${isAlpha ? ", alpha" : ""}${isMicro ? ", micro" : ""}${feePath === "recent_hot" ? ", recent-hot" : ""}, range depth ${range.bottomPricePct.toFixed(0)}%)${flowNote}\n` +
       `chart: https://gmgn.ai/sol/token/${cand.tokenMint}`);
     console.log(
       `[enter] ${cand.symbol} score=${score.toFixed(1)} size=${size.toFixed(2)} SOL ` +
@@ -1647,14 +1699,14 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       const roomTok = roomCap - tokenExposureSol(cand.tokenMint);
       if (tSize >= tFloor && slotsLeft >= 1 && tSize <= roomTok) {
         const tPlan = planTrancheRange(
-          cand.pool.price, cand.pool.binStep, candles, cand.pool.decimalsX, range,
+          entryPrice, cand.pool.binStep, candles, cand.pool.decimalsX, range,
         );
         if (tPlan) {
           const tRent = await applyBinRentGate({
             range: tPlan,
             score,
             poolAddress: cand.pool.address,
-            price: cand.pool.price,
+            price: entryPrice,
             binStep: cand.pool.binStep,
             decimalsX: cand.pool.decimalsX,
             minDownPct: Math.abs(tPlan.bottomPricePct),
@@ -1668,7 +1720,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
                 symbol: cand.symbol,
                 sizeSol: tSize,
                 range: tRent.range,
-                entryPrice: cand.pool.price,
+                entryPrice,
                 trancheOf: pos.id,
               }));
               recordDecision(cand.tokenMint, cand.pool.address, "entered", null, score, {
