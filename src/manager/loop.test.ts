@@ -251,6 +251,79 @@ describe("managePositions contracts", () => {
   });
 
   /**
+   * TELEMETRY ONLY. Fee-inclusive peak, then the give-back. Nothing closes —
+   * the whole point is to collect the counterfactual before deciding.
+   */
+  describe("give-back telemetry", () => {
+    const candidates = () =>
+      (getDb().prepare("SELECT features_json FROM decisions WHERE failed_gate = 'give_back_candidate'").all() as
+        Array<{ features_json: string }>);
+
+    // entry 0.4: value 0.45 => peak +0.05; value 0.43 => +0.03, which is under
+    // 75% of that peak (0.0375).
+    const mark = (id: number, valueSol: number) =>
+      exec.setMark(id, { valueSol, price: 1, activeBinId: 150, inRange: true });
+
+    it("logs once when a qualifying peak is handed back, and closes nothing", async () => {
+      const id = insertOpenPosition({ entrySol: 0.4, minBinId: 100, maxBinId: 200 });
+      mark(id, 0.45);
+      await managePositions(exec);
+      expect(candidates()).toHaveLength(0); // still at the peak
+
+      mark(id, 0.43);
+      await managePositions(exec);
+      const rows = candidates();
+      expect(rows).toHaveLength(1);
+      const f = JSON.parse(rows[0]!.features_json);
+      expect(f.peakPnlSol).toBeCloseTo(0.05, 5);
+      expect(f.pnlNowSol).toBeCloseTo(0.03, 5);
+      expect(exec.closed).toHaveLength(0); // telemetry only
+
+      mark(id, 0.41);
+      await managePositions(exec);
+      expect(candidates()).toHaveLength(1); // once per position
+    });
+
+    it("stays quiet when the peak never cleared the floor", async () => {
+      const id = insertOpenPosition({ entrySol: 0.4, minBinId: 100, maxBinId: 200 });
+      mark(id, 0.41); // +0.01 peak, under GIVE_BACK_MIN_PEAK_SOL
+      await managePositions(exec);
+      mark(id, 0.40);
+      await managePositions(exec);
+      expect(candidates()).toHaveLength(0);
+    });
+
+    it("remembers the peak across a restart", async () => {
+      const id = insertOpenPosition({ entrySol: 0.4, minBinId: 100, maxBinId: 200 });
+      mark(id, 0.45);
+      await managePositions(exec);
+
+      resetManagerStateForTests(); // the restart
+
+      mark(id, 0.43);
+      await managePositions(exec);
+      // Without a persisted peak, 0.43 would BE the peak and nothing would fire.
+      expect(candidates()).toHaveLength(1);
+      expect(JSON.parse(candidates()[0]!.features_json).peakPnlSol).toBeCloseTo(0.05, 5);
+    });
+
+    it("does not log twice when a restart follows the first log", async () => {
+      const id = insertOpenPosition({ entrySol: 0.4, minBinId: 100, maxBinId: 200 });
+      mark(id, 0.45);
+      await managePositions(exec);
+      mark(id, 0.43);
+      await managePositions(exec);
+      expect(candidates()).toHaveLength(1);
+
+      resetManagerStateForTests();
+
+      mark(id, 0.42);
+      await managePositions(exec);
+      expect(candidates()).toHaveLength(1);
+    });
+  });
+
+  /**
    * resetManagerStateForTests() IS a restart in miniature: it drops every
    * in-memory map while the DB survives, exactly as a redeploy does. Before
    * these timers were persisted, a restart handed a position 14 minutes into

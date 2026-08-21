@@ -277,6 +277,15 @@ function migrate(database: Database.Database): void {
   try {
     database.exec("ALTER TABLE positions ADD COLUMN stranded_sol REAL NOT NULL DEFAULT 0");
   } catch { /* column already exists */ }
+  // Give-back telemetry: the running peak of fee-inclusive PnL, and whether the
+  // counterfactual has already been logged for this position. Persisted for the
+  // same reason the timers are — a restart that forgot the peak would silently
+  // re-arm the experiment and log a second, wrong row.
+  for (const col of ["peak_pnl_sol REAL", "give_back_logged INTEGER NOT NULL DEFAULT 0"]) {
+    try {
+      database.exec(`ALTER TABLE positions ADD COLUMN ${col}`);
+    } catch { /* column already exists */ }
+  }
   // Exit timers. They used to live only in the manager's memory, so a restart
   // granted a fresh grace window to a position already most of the way through
   // one and reset a part-served stop streak. See hydrateTimers() in
