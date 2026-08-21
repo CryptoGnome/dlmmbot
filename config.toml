@@ -4,6 +4,12 @@
 [scanner]
 interval_s = 60
 pages = 3                  # datapi pages per sweep (100 pools/page)
+# Max datapi requests in flight. Sweep pages and the majors whitelist lookups are
+# independent round-trips that used to run one at a time, so a sweep paid the SUM
+# of their latency — majors discovery is 8 pages plus one call per allowlisted
+# pool, and that sweep measured 71.8s mean against interval_s = 60. Page 1 is
+# still fetched alone: its page count is what says how many others exist.
+datapi_concurrency = 4
 copycat_ignore_h = 24      # losers of symbol dedupe ignored this long
 # 2026-08-15: which of a token's pools we trade. Was "highest 24h fee/TVL",
 # which — because fee/TVL is inversely proportional to TVL — structurally picks

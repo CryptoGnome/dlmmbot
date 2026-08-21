@@ -1,7 +1,8 @@
 import { config, SOL_MINT } from "../config.js";
 import { recordDecision } from "../db/db.js";
 import type { PoolInfo } from "../types.js";
-import { fetchPool, sweepMajorsPools, type RawPoolExtras } from "./meteora.js";
+import { DEFAULT_DATAPI_CONCURRENCY, fetchPool, sweepMajorsPools, type RawPoolExtras } from "./meteora.js";
+import { mapGrouped } from "../concurrent.js";
 import { majorsDiscoveryEligible, majorsPoolGates, majorsScore, majorsSymbol } from "./majorsGates.js";
 
 export interface MajorsCandidate {
@@ -37,8 +38,22 @@ export function pickBestMajorsPerSymbol(cands: MajorsCandidate[]): MajorsCandida
 
 async function loadWhitelist(): Promise<MajorsCandidate[]> {
   const out: MajorsCandidate[] = [];
-  for (const entry of config().majors.pools) {
-    const raw = await fetchPool(entry.pool);
+  // One independent round-trip per allowlisted pool. Serially this was the
+  // second half of the majors sweep's latency, after its 8 discovery pages.
+  const fetched = await mapGrouped(
+    config().majors.pools,
+    (entry) => entry.pool,
+    (entry) => fetchPool(entry.pool),
+    config().scanner.datapi_concurrency ?? DEFAULT_DATAPI_CONCURRENCY,
+  );
+  for (const { item: entry, value, error } of fetched) {
+    if (error !== undefined) {
+      recordDecision(entry.pool, entry.pool, "skipped", "majors_pool_error", null, {
+        sleeve: "majors", pool: entry.pool, error: (error as Error).message,
+      });
+      continue;
+    }
+    const raw = value ?? null;
     if (!raw) {
       recordDecision(entry.pool, entry.pool, "skipped", "majors_pool_missing", null, { sleeve: "majors", pool: entry.pool });
       continue;

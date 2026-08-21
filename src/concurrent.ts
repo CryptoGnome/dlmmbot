@@ -27,6 +27,27 @@ export type Settled<T, R> =
  * per-item try/catch semantics they had when this was a `for` loop. Results
  * come back in input order.
  */
+/**
+ * Bounded-concurrency map that rejects on the first failure.
+ *
+ * mapGrouped with one group per item. Use it for independent requests to the
+ * same host — datapi pages, whitelist pool lookups — where the work is a fixed
+ * list of round-trips with no ordering between them and a failure should
+ * surface rather than be swallowed. When the caller wants per-item failures
+ * instead, use mapGrouped directly.
+ */
+export async function mapLimit<T, R>(
+  items: readonly T[],
+  fn: (item: T) => Promise<R>,
+  limit: number,
+): Promise<R[]> {
+  const indexed = items.map((item, i) => ({ item, i }));
+  const settled = await mapGrouped(indexed, (x) => String(x.i), (x) => fn(x.item), limit);
+  const failed = settled.find((s) => s.error !== undefined);
+  if (failed) throw failed.error;
+  return settled.map((s) => s.value as R);
+}
+
 export async function mapGrouped<T, R>(
   items: readonly T[],
   groupKey: (item: T) => string,
