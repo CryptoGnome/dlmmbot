@@ -798,6 +798,22 @@ export const TOP_BLAST_TELEMETRY_FRAC = 0.97;
 export const GIVE_BACK_MIN_PEAK_SOL = 0.02;
 export const GIVE_BACK_KEEP_FRAC = 0.75;
 
+/**
+ * The floor above, capped at a share of the position. 0.02 SOL was measured on
+ * the server's book, where the winners are 0.5-0.75 SOL positions; on Railway's
+ * meme sleeve an entry is 0.10-0.25 SOL, so a flat 0.02 asks for a +8-20% peak
+ * before the experiment will look at all — and CatGPT pos#82 (entry 0.15,
+ * 0.0319 SOL of fees banked, stopped at MTM -29% / fee-inclusive -7.4%) sat
+ * right on that line. A floor that cannot see the positions the rule is meant
+ * to catch collects nothing, so take whichever floor is lower.
+ */
+export const GIVE_BACK_MIN_PEAK_FRAC = 0.05;
+
+/** Peak a position must have reached before the give-back counterfactual arms. */
+export function giveBackPeakFloor(entrySol: number): number {
+  return Math.min(GIVE_BACK_MIN_PEAK_SOL, entrySol * GIVE_BACK_MIN_PEAK_FRAC);
+}
+
 /** One manager tick over all open positions.
  * Two-pass: mark every position before any close/claim. A sibling exit used to
  * delay peer marks by 50–80s (3/4161 gaps ≥60s, but enough to fail RANGE-SHAPE
@@ -922,12 +938,13 @@ export async function managePositions(exec: Executor): Promise<void> {
         getDb().prepare("UPDATE positions SET peak_pnl_sol = ? WHERE id = ?").run(pnlNow, pos.id);
       }
       const peak = peakPnl.get(pos.id)!;
-      if (!giveBackLogged.has(pos.id) && peak >= GIVE_BACK_MIN_PEAK_SOL && pnlNow <= peak * GIVE_BACK_KEEP_FRAC) {
+      const peakFloor = giveBackPeakFloor(pos.entrySol);
+      if (!giveBackLogged.has(pos.id) && peak >= peakFloor && pnlNow <= peak * GIVE_BACK_KEEP_FRAC) {
         giveBackLogged.add(pos.id);
         getDb().prepare("UPDATE positions SET give_back_logged = 1 WHERE id = ?").run(pos.id);
         recordDecision(pos.tokenMint, pos.poolAddress, "skipped", "give_back_candidate", null, {
           posId: pos.id, symbol: pos.symbol, peakPnlSol: peak, pnlNowSol: pnlNow,
-          keepFrac: GIVE_BACK_KEEP_FRAC, minPeakSol: GIVE_BACK_MIN_PEAK_SOL,
+          keepFrac: GIVE_BACK_KEEP_FRAC, minPeakSol: peakFloor,
           feesClaimedSol: pos.feesClaimedSol, valueSol: mark.valueSol, entrySol: pos.entrySol,
           holdMin: (now() - pos.entryTs) / 60, sleeve, mark,
         });
