@@ -9,6 +9,7 @@ import { resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { applyRuntimeEnv } from "./lib/runtime-paths.mjs";
+import { resolveBotMode } from "./lib/bot-mode.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const paths = applyRuntimeEnv(root);
@@ -84,7 +85,12 @@ if (process.env.WALLET_PASSPHRASE && !process.env.WALLET_PRIVATE_KEY) {
   }
 }
 
-console.log(`[railway] mode=${process.env.FARMER_MODE} dash_port=${process.env.DASH_PORT}`);
+// Report the double gate the farmer actually applies, not one half of it.
+// This printed `process.env.FARMER_MODE`, which loadEnvFile lets the container
+// env win — but the farmer calls syncFarmerModeFromDisk(), where the volume
+// .env overrides it. A Railway var of FARMER_MODE=paper plus a dashboard
+// paper→live flip therefore logged `mode=paper` on a bot that was trading live.
+console.log(`[railway] mode=${resolveBotMode(root)} dash_port=${process.env.DASH_PORT}`);
 
 // Fresh installs: trading engine OFF until the operator finishes setup and
 // flips Engine ON. PAUSE lives on the volume so redeploys keep it.
