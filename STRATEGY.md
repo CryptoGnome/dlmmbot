@@ -315,7 +315,20 @@ Tables:
 
 Two reasons it logs rather than acts. The measurement is from the **server** bot, and the question was asked about the **Railway** one — different entries, different book. And its two largest contributors (pos#63 +0.819, pos#60 +0.811) are `P0_tvl_drain` safety exits, where the final mark sits near zero and a mark-based counterfactual flatters itself; whether a real exit was *executable* at the trigger price is unproven. So positions now carry `peak_pnl_sol` and log one `give_back_candidate` decision at the moment the stop would have fired, on both bots, and forward data decides.
 
-**What this is not.** The shape usually described — green, then red, then back to break-even, then down again — **does not exist in the book.** Of 25 positions that were green at some mark and closed red, **zero** returned to break-even after going red; 11 closed at their own low, and the other 14 recovered only to a median of **−0.054 SOL**. There is no second chance being missed. Whatever edge exists is in leaving *before* the give-back completes, not in waiting for a round trip.
+**The round trip — corrected 2026-08-21.** It was first written here that the "green → red → back to break-even → down again" shape does not exist. That was measured on the **server's** 25 green-then-red closes, where zero returned to break-even (11 closed at their own low, the rest recovered to a median of −0.054 SOL). It does not generalise: **Railway printed the shape twice the same day.**
+
+| | CatGPT pos#82 | CEZ pos#78 |
+|---|---|---|
+| entry | 0.15 SOL, range `[-617,-566]` | 0.25 SOL, range `[-325,-290]` |
+| fell out of range | escape hatch armed at **71%** depth | below range 5m after entry |
+| came back | grace timer **restarted** 16m later | grace restarted **twice** in 5m |
+| fees banked meanwhile | **0.0319 SOL** = 21% of entry | **0.0547 SOL** = 22% of entry |
+| at the stop | MTM **−28.9%**, fee-inclusive **−7.4%** | MTM **−25.3%**, fee-inclusive **−3.4%** |
+| closed | `P1_stop` −39.3% | `P1_stop` −35.6% |
+
+A grace timer can only restart if the position climbed back **into** range, so the price round trip is proven from the logs. Whether fee-inclusive PnL actually crossed zero on the way back is not — that needs the marks, which is what `give_back_candidate` and `peak_pnl_sol` now record on both bots.
+
+Two things follow. First, the shape is plausibly a **symptom of entry height** rather than a separate phenomenon: the server held the same CatGPT pool through the same price path and exited it twice in profit, off a range top 13 bins lower. Second, and independent of any give-back rule, **fees had already absorbed three quarters of the drawdown at the moment the stop fired** — which is the `stop_loss_count_claimed_fees` question (§4 P1), not this one, and these are the first two live data points for it.
 
 **Escape hatch measured from the dip instead of the range top — REJECTED.** The obvious follow-on: since the trigger moves with wherever we entered, fire on "price recovered X% of its fall" instead of "price is back in the top 25% of the range". Replayed over 46 armed positions with recorded marks. At X=50% the headline is **+0.7294 SOL**, and every robustness check kills it:
 

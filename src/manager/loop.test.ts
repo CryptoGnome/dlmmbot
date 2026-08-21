@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { CLAIM_EST_TX_COST_SOL, managePositions, pollSleepMs, resetManagerStateForTests, scanDue, shouldClaimFees } from "./loop.js";
+import { CLAIM_EST_TX_COST_SOL, giveBackPeakFloor, managePositions, pollSleepMs, resetManagerStateForTests, scanDue, shouldClaimFees } from "./loop.js";
 import { FakeExecutor } from "../test/fakeExecutor.js";
 import { installConfig, restoreConfig } from "../test/config.js";
 import { useMemoryDb, resetTestDb, insertOpenPosition } from "../test/db.js";
@@ -291,6 +291,26 @@ describe("managePositions contracts", () => {
       mark(id, 0.40);
       await managePositions(exec);
       expect(candidates()).toHaveLength(0);
+    });
+
+    /**
+     * 0.02 SOL is 5% of the 0.4 above but 13% of a 0.15 SOL Railway meme entry —
+     * a flat floor is blind to exactly the positions this is meant to watch.
+     */
+    it("scales the floor down for a small position", async () => {
+      const id = insertOpenPosition({ entrySol: 0.15, minBinId: 100, maxBinId: 200 });
+      expect(giveBackPeakFloor(0.15)).toBeCloseTo(0.0075, 6); // 5% of entry, not 0.02
+      mark(id, 0.16);   // +0.010 peak — under the flat 0.02, over the scaled floor
+      await managePositions(exec);
+      mark(id, 0.1565); // +0.0065, i.e. 65% of the peak
+      await managePositions(exec);
+      expect(candidates()).toHaveLength(1);
+      expect(exec.closed).toHaveLength(0);
+    });
+
+    it("caps the floor at the flat 0.02 for a large position", async () => {
+      expect(giveBackPeakFloor(0.75)).toBe(0.02);
+      expect(giveBackPeakFloor(5)).toBe(0.02);
     });
 
     it("remembers the peak across a restart", async () => {
