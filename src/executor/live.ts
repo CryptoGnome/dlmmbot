@@ -169,7 +169,7 @@ export class LiveExecutor implements Executor {
   readonly mode = "live" as const;
   readonly connection: Connection;
   readonly wallet: Keypair;
-  private pools = new Map<string, DlmmPool>();
+  private pools = new Map<string, Promise<DlmmPool>>();
 
   constructor() {
     if (!isLive()) {
@@ -186,10 +186,20 @@ export class LiveExecutor implements Executor {
     console.log(`[live] executor armed — wallet ${this.wallet.publicKey.toBase58()}`);
   }
 
-  private async pool(address: string): Promise<DlmmPool> {
+  /**
+   * Cache the in-flight PROMISE, not the resolved pool. Marks now run
+   * concurrently across pools, and a value-cache leaves a check-then-set gap:
+   * two first-touch callers would both await DLMM.create and build two pool
+   * objects for one address, so the loser's mutable state (refetchStates writes
+   * lbPair in place) would drift from the one the map kept.
+   */
+  private pool(address: string): Promise<DlmmPool> {
     let p = this.pools.get(address);
     if (!p) {
-      p = await DLMM.create(this.connection, new PublicKey(address));
+      p = DLMM.create(this.connection, new PublicKey(address));
+      // A failed create must not be cached: the next tick has to retry it,
+      // otherwise one RPC blip poisons that pool for the process's lifetime.
+      p.catch(() => { if (this.pools.get(address) === p) this.pools.delete(address); });
       this.pools.set(address, p);
     }
     return p;

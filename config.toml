@@ -145,6 +145,11 @@ tranche_max_down_pct = 70
 
 [manage]                   # STRATEGY.md §4
 poll_s = 15
+# How many pools may be marked at once per tick. Marking was strictly serial, so
+# a tick paid the SUM of every position's RPC latency and mean mark gaps ran
+# past poll_s. Same calls, same rate-limit budget — they just stop queueing.
+# Positions in the same pool always mark one at a time. 1 = old serial behaviour.
+mark_concurrency = 4
 # P0 safety
 safety_tvl_drop_pct = 40         # in 10 min
 # 2026-08-15: a tvl_drain EXIT is cheap insurance and stays. What it no longer

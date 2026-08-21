@@ -125,6 +125,7 @@ Thresholds:
 | Key | Default | Meaning |
 |---|---|---|
 | `poll_s` | `15` | Seconds between position polls |
+| `mark_concurrency` | `4` | How many **pools** may be marked at once per tick. Marking used to be strictly serial, so a tick cost the sum of every position's RPC latency and mean mark gaps ran past `poll_s`. Same calls and same rate-limit budget — they just stop queueing behind each other. Positions in the same pool always mark one at a time; `1` restores the old serial behaviour |
 | `safety_tvl_drop_pct` | `40` | P0: pool TVL drop in 10 min |
 | `tvl_drain_min_tvl_usd` | `20000` | Skip `tvl_drain` when the pool's median TVL over the window is below this — a thin pool's TVL is a handful of LPs and swings 40–50% on ordinary repositioning (measured: same token, same 4 min, $8k pool −51% vs $67k pool −9%). `pool_dead` / `price_crash` still cover a real collapse |
 | `tvl_drain_min_pool_age_min` | `20` | Skip `tvl_drain` on a pool younger than this — the 10-min median of a newborn pool is its own birth. Unknown age does not suppress |

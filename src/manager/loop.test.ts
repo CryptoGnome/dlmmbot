@@ -4,6 +4,7 @@ import { FakeExecutor } from "../test/fakeExecutor.js";
 import { installConfig, restoreConfig } from "../test/config.js";
 import { useMemoryDb, resetTestDb, insertOpenPosition } from "../test/db.js";
 import { getDb } from "../db/db.js";
+import { config } from "../config.js";
 import type { ExitReason, Position } from "../types.js";
 
 describe("pollSleepMs", () => {
@@ -87,6 +88,104 @@ describe("managePositions contracts", () => {
     expect(order.indexOf(`close:${a}`)).toBeGreaterThanOrEqual(0);
     expect(Math.max(order.indexOf(`mark:${a}`), order.indexOf(`mark:${b}`)))
       .toBeLessThan(order.indexOf(`close:${a}`));
+  });
+
+  /**
+   * Marking used to be strictly serial, so a tick cost the SUM of every
+   * position's RPC latency — the reason mean mark gaps measured 16-19s against
+   * poll_s = 15, with no sleep left to give back. These four cases pin the
+   * contract the parallel version has to keep: overlap across pools, never
+   * within one, and a ledger that still reads in book order.
+   */
+  function instrumentMarks() {
+    const mark = exec.mark.bind(exec);
+    const state = { inFlight: 0, max: 0, done: [] as number[] };
+    exec.mark = async (pos: Position) => {
+      state.inFlight++;
+      state.max = Math.max(state.max, state.inFlight);
+      // A real macrotask, so serial code cannot look concurrent by accident.
+      await new Promise((r) => setTimeout(r, 5));
+      state.inFlight--;
+      state.done.push(pos.id);
+      return mark(pos);
+    };
+    return state;
+  }
+
+  /** A mark that holds a position flat — nothing for the exit ladder to fire on. */
+  function setFlatMark(id: number) {
+    exec.setMark(id, { valueSol: 0.4, price: 1, activeBinId: 150, inRange: true });
+  }
+
+  it("marks different pools concurrently", async () => {
+    const ids = ["poolA", "poolB", "poolC"].map((pool) =>
+      insertOpenPosition({ entrySol: 0.4, pool }));
+    ids.forEach(setFlatMark);
+    config().manage.mark_concurrency = 4;
+    const state = instrumentMarks();
+
+    await managePositions(exec);
+    expect(state.max).toBe(3);
+    expect(state.done.sort()).toEqual(ids.sort());
+  });
+
+  /**
+   * The live executor caches one pool object per address and refetchStates()
+   * mutates it in place, so a tranche pair or a re-entry must never mark at the
+   * same time as its sibling.
+   */
+  it("never marks two positions in the same pool at once", async () => {
+    const ids = [0, 1, 2].map(() => insertOpenPosition({ entrySol: 0.4, pool: "poolA" }));
+    ids.forEach(setFlatMark);
+    config().manage.mark_concurrency = 4;
+    const state = instrumentMarks();
+
+    await managePositions(exec);
+    expect(state.max).toBe(1);
+    expect(state.done).toEqual(ids);
+  });
+
+  it("mark_concurrency = 1 restores strictly serial marking", async () => {
+    const ids = ["poolA", "poolB", "poolC"].map((pool) =>
+      insertOpenPosition({ entrySol: 0.4, pool }));
+    ids.forEach(setFlatMark);
+    config().manage.mark_concurrency = 1;
+    const state = instrumentMarks();
+
+    await managePositions(exec);
+    expect(state.max).toBe(1);
+    expect(state.done).toEqual(ids);
+  });
+
+  it("keeps a failed mark from costing its peers their tick", async () => {
+    const bad = insertOpenPosition({ entrySol: 0.4, symbol: "BAD", pool: "poolA" });
+    const good = insertOpenPosition({ entrySol: 0.4, symbol: "GOOD", pool: "poolB" });
+    // No setMark for `bad`: FakeExecutor throws, the shape of an RPC failure.
+    exec.setMark(good, { valueSol: 0.28, price: 0.8, activeBinId: 150, inRange: true });
+    config().manage.mark_concurrency = 4;
+
+    await managePositions(exec);
+    expect(exec.closed).toEqual([{ id: good, reason: "P1_stop" }]);
+    const rows = getDb().prepare("SELECT position_id FROM position_marks").all() as Array<{ position_id: number }>;
+    expect(rows.map((r) => r.position_id)).toEqual([good]);
+    const state = getDb().prepare("SELECT state FROM positions WHERE id = ?").get(bad) as { state: string };
+    expect(state.state).toBe("open");
+  });
+
+  it("writes marks in book order even when a later pool answers first", async () => {
+    const slow = insertOpenPosition({ entrySol: 0.4, symbol: "SLOW", pool: "poolA" });
+    const fast = insertOpenPosition({ entrySol: 0.4, symbol: "FAST", pool: "poolB" });
+    [slow, fast].forEach(setFlatMark);
+    config().manage.mark_concurrency = 4;
+    const mark = exec.mark.bind(exec);
+    exec.mark = async (pos: Position) => {
+      await new Promise((r) => setTimeout(r, pos.id === slow ? 30 : 1));
+      return mark(pos);
+    };
+
+    await managePositions(exec);
+    const rows = getDb().prepare("SELECT position_id FROM position_marks ORDER BY rowid").all() as Array<{ position_id: number }>;
+    expect(rows.map((r) => r.position_id)).toEqual([slow, fast]);
   });
 
   it("P1 stop when valueFrac < stop_loss_frac", async () => {

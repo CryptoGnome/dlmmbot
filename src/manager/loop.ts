@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { dirname, resolve } from "node:path";
 import { resolveBuildLabel } from "../buildLabel.js";
 import { config, configToml, currentMode, isLive, onConfigChange, syncFarmerModeFromDisk } from "../config.js";
+import { mapGrouped } from "../concurrent.js";
 import { reconcileLive } from "./reconcile.js";
 import { alert, type AlertKind } from "../alerts.js";
 import { blacklist, describeError, getDb, now, pruneHistory, recordConfigSnapshot, recordCreatorRug, recordDecision, REALIZED_PNL_SQL, logError, installProcessErrorHooks } from "../db/db.js";
@@ -596,6 +597,15 @@ function loadOpenPositions(): Position[] {
   }));
 }
 
+/**
+ * How many pools may be marked at once when `manage.mark_concurrency` is unset.
+ * Above the book's usual size there is nothing left to overlap (one group per
+ * pool), and the peak request rate is what trips a provider's rate limiter —
+ * the bot already logs 429 backoff ladders at the serial rate. 1 restores the
+ * old strictly-serial behaviour.
+ */
+export const DEFAULT_MARK_CONCURRENCY = 4;
+
 /** One manager tick over all open positions.
  * Two-pass: mark every position before any close/claim. A sibling exit used to
  * delay peer marks by 50–80s (3/4161 gaps ≥60s, but enough to fail RANGE-SHAPE
@@ -607,10 +617,30 @@ export async function managePositions(exec: Executor): Promise<void> {
   let marksFailed = 0, unrealizedSol = 0;
   const marked: Array<{ pos: Position; mark: Awaited<ReturnType<Executor["mark"]>> }> = [];
 
-  for (const pos of positions) {
-    try {
+  // Network pass. Each position's mark is 4-5 independent round trips (the
+  // live one includes a getProgramAccounts, the slowest method any provider
+  // sells), and doing them one position at a time made the tick cost their
+  // SUM — the reason mean mark gaps measured 16-19s against a 15s poll. Same
+  // calls, same rate-limit budget; they just stop queueing behind each other.
+  // Same-pool positions still mark one at a time (see mapGrouped).
+  const settled = await mapGrouped(
+    positions,
+    (pos) => pos.poolAddress,
+    async (pos) => {
       if (exec instanceof PaperExecutor) await exec.accrueFees(pos, m.poll_s);
-      const mark = await exec.mark(pos);
+      return exec.mark(pos);
+    },
+    m.mark_concurrency ?? DEFAULT_MARK_CONCURRENCY,
+  );
+
+  // Ledger pass, serial and in book order: every write below is cross-position
+  // state (the unrealized total, the marks table, the in-range set), and it
+  // stays single-threaded so the recorded order cannot depend on which RPC
+  // answered first.
+  for (const { item: pos, value, error } of settled) {
+    try {
+      if (error !== undefined) throw error;
+      const mark = value!;
       // Adopted rows (reconcile inserts entry_sol = 0, no basis) get their cost
       // basis from the first successful mark — "PnL from adoption point", as the
       // adoption event promises. Without this the row has no P1 stop (value/0),

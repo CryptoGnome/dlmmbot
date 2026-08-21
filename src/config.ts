@@ -100,6 +100,12 @@ export interface Config {
   };
   manage: {
     poll_s: number;
+    /**
+     * How many pools may be marked concurrently per tick. Positions in the same
+     * pool always mark one at a time. Optional: defaults in code for installs
+     * whose config predates the key; 1 is the old strictly-serial behaviour.
+     */
+    mark_concurrency?: number;
     safety_tvl_drop_pct: number; safety_wallet_dump_pct: number;
     /**
      * Token cooldown (hours) after a P0 `tvl_drain` exit, instead of the
