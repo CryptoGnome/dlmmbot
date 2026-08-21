@@ -99,6 +99,8 @@ Default shape — **Tux entry**: one-sided SOL, bid-ask, below current price.
 
 Each open position is polled every `[30s]`. States and transitions, in strict priority order (a higher rule preempts a lower one):
 
+**Exit timers survive a restart (2026-08-21).** P1's sustain streak, P2's decay streak, P3's above-range timer and P5's grace timer are written through to the `positions` row on every change, and P0's 10-minute TVL window is rebuilt from `position_marks`. They used to live only in the manager's memory, so every redeploy reset them: a position 14 minutes into a 15-minute grace got a fresh 15, a 3-of-4 stop streak went back to 0, and P0 was blind until four fresh polls had accumulated. The bias is one-directional — above range the position is sitting in SOL and a late exit costs only opportunity, below range it is 100% in a falling token and a late exit costs principal — and it fell hardest on the Railway bot, which redeploys on every merge to `main` (12 restarts in the 29h of 08-20/21). Rehydrated timers are trusted as read: every exit still re-checks its live condition against the current mark before firing, so the worst a stale timer can do is exit a position that is bad *right now* sooner than a fresh timer would.
+
 ### P0 — SAFETY EXIT (checked first, always)
 Trigger on any of:
 - Pool TVL drops > `[40%]` in 10 min (LP pull).
