@@ -176,10 +176,17 @@ export async function vetToken(mint: string, poolCreatedAtMs: number | null): Pr
   }
 
   // --- GMGN cross-check layer (degrades silently on API failure) ---
+  // Jupiter has nothing to do with GMGN — different host, different limiter,
+  // neither gates the other — but it was awaited behind both, so a vet paid
+  // GMGN + Jupiter instead of the slower of the two. No extra calls: there is
+  // no early return between here and the old jupAsset await, so exactly the
+  // same requests go out, they just stop queueing. The trader-tags call still
+  // waits on gmgnSec, because it is only made when the security read landed.
+  const jupPending = jupAsset(mint);
   const gmgnSec = await tokenSecurity(mint);
   const traderTags = config().vetting.gmgn_trader_tags_enabled && gmgnSec
     ? await tokenTraderTags(mint) : null;
-  const jup = await jupAsset(mint);
+  const jup = await jupPending;
   if (gmgnSec) {
     facts.gmgnHoneypot = gmgnSec.honeypot;
     facts.gmgnSellTaxPct = gmgnSec.sellTaxPct;
