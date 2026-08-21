@@ -592,6 +592,33 @@ export interface PruneResult {
   bytesAfter: number;
 }
 
+/**
+ * Counterfactual telemetry: one row per POSITION recording what a rule that is
+ * not switched on would have done. They are written as `skipped` decisions
+ * because that is the only action a non-event has — which put them in the same
+ * bucket as scanner rejections and got them deleted.
+ *
+ * Measured 2026-08-21 on the server: 986 of the 1068 surviving `skipped` rows
+ * were `fee_tvl_24h` pool rejections, and the retained window was **8 minutes**
+ * — the size ceiling is hit continuously, so the oldest-first trim below runs
+ * every pass. Every experiment row ever written had already been deleted:
+ * P1_fee_offset_deferred 0, young_exit_candidate 0, top_blast_candidate 0,
+ * give_back_candidate 0. Four experiments collecting nothing.
+ *
+ * These are rare — at most one per position, against ~900 rejection rows an
+ * hour — so exempting them costs almost nothing and is the difference between
+ * a decision made on data and one made on log scraping.
+ */
+export const TELEMETRY_GATES = [
+  "P1_fee_offset_deferred",
+  "young_exit_candidate",
+  "top_blast_candidate",
+  "give_back_candidate",
+] as const;
+
+/** SQL fragment: true for a row that is NOT counterfactual telemetry. */
+const NOT_TELEMETRY_SQL = `COALESCE(failed_gate, '') NOT IN (${TELEMETRY_GATES.map((g) => `'${g}'`).join(", ")})`;
+
 export function pruneHistory(opts: {
   skippedDays: number;
   snapshotDays: number;
@@ -604,7 +631,7 @@ export function pruneHistory(opts: {
 
   // Age windows first — the normal steady state on a mature install.
   let decisions = db.prepare(
-    "DELETE FROM decisions WHERE action = 'skipped' AND ts < ?"
+    `DELETE FROM decisions WHERE action = 'skipped' AND ${NOT_TELEMETRY_SQL} AND ts < ?`
   ).run(t - opts.skippedDays * 86_400).changes;
   let snapshots = db.prepare(
     "DELETE FROM pool_snapshots WHERE ts < ?"
@@ -637,11 +664,11 @@ export function pruneHistory(opts: {
         "DELETE FROM pool_snapshots WHERE rowid IN (SELECT rowid FROM pool_snapshots ORDER BY ts ASC LIMIT 5000)"
       ).run().changes;
       const d = db.prepare(
-        "DELETE FROM decisions WHERE rowid IN (SELECT rowid FROM decisions WHERE action = 'skipped' ORDER BY ts ASC LIMIT 5000)"
+        `DELETE FROM decisions WHERE rowid IN (SELECT rowid FROM decisions WHERE action = 'skipped' AND ${NOT_TELEMETRY_SQL} ORDER BY ts ASC LIMIT 5000)`
       ).run().changes;
       snapshots += s;
       decisions += d;
-      if (s + d === 0) break; // nothing prunable left — never touch entered/exited
+      if (s + d === 0) break; // nothing prunable left — never touch entered/exited or telemetry
       mode = "size";
     }
   }
