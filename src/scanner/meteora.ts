@@ -78,10 +78,19 @@ async function getJson<T>(path: string): Promise<T> {
 /**
  * Pages 2..N of a sweep do not depend on each other, but they were fetched in
  * a `for` loop, so a sweep paid the SUM of every page's latency before it
- * could score anything. Majors discovery is 8 pages; on the Railway host that
- * sweep ran a measured 71.8s mean against `interval_s = 60`. Page 1 still goes
- * first — its `pages` field is what tells us how many of the rest exist, so
- * fetching it alone also stops us requesting pages that are not there.
+ * could score anything: 3 pages on every meme sweep, and 8 on majors
+ * discovery whenever a majors slot is actually free.
+ *
+ * Correction worth keeping: this was first blamed for the 71.8s mean gap
+ * measured between `[majors]` log lines against `interval_s = 60`. It is not
+ * the cause. Those lines were `already parked` bails, which return BEFORE
+ * scanMajors and issue no requests at all — so the 8-page path was not even
+ * running in the window that was measured. The gap is whole-tick overrun and
+ * still unexplained; do not treat it as closed.
+ *
+ * Page 1 still goes first — its `pages` field is what tells us how many of the
+ * rest exist, so fetching it alone also stops us requesting pages that are
+ * not there.
  */
 async function sweepPaged(
   url: (page: number) => string,
