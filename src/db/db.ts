@@ -727,10 +727,32 @@ function runtimeHost(): string | null {
   return cachedHost;
 }
 
+/**
+ * Flatten an Error and its `cause` chain into one line.
+ *
+ * undici throws a bare `TypeError: fetch failed` for every connect-level
+ * failure — DNS, refused TCP, dead TLS — and puts the only diagnosable part
+ * (`ENOTFOUND`, `ECONNREFUSED`, `CERT_HAS_EXPIRED`) on `err.cause`, which the
+ * stack does not show either. Reading just `.message` made every RPC outage in
+ * the Errors tab look identical and told the operator nothing.
+ */
+export function describeError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err).split("\n")[0]!;
+  const parts: string[] = [];
+  let cur: unknown = err;
+  for (let depth = 0; cur instanceof Error && depth < 4; depth++) {
+    const line = (cur.message || String(cur)).split("\n")[0]!;
+    const code = (cur as NodeJS.ErrnoException).code;
+    parts.push(code && !line.includes(code) ? `${line} (${code})` : line);
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return parts.join(" <- ");
+}
+
 function errParts(err: unknown): { message: string; stack: string | null } {
   if (err instanceof Error) {
     return {
-      message: (err.message || String(err)).split("\n")[0]!.slice(0, 800),
+      message: describeError(err).slice(0, 800),
       stack: err.stack ? err.stack.split("\n").slice(0, 40).join("\n") : null,
     };
   }

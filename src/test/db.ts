@@ -85,15 +85,18 @@ export function insertOpenPosition(opts?: {
   everInRange?: number;
   fellDeep?: number;
   followChainId?: number | null;
+  /** Defaults to one shared pool; override to test cross-pool behaviour. */
+  pool?: string;
 }): number {
   const res = getDb().prepare(
     `INSERT INTO positions (
        mode, pool, token_mint, symbol, entry_ts, entry_price, entry_sol,
        min_bin_id, max_bin_id, state, fees_claimed_sol, rent_paid_sol,
        ever_in_range, fell_deep, follow_chain_id, open_cost_sol
-     ) VALUES (?, 'pool1', 'mint1', ?, ?, ?, ?, ?, ?, 'open', 0, 0, ?, ?, ?, ?)`
+     ) VALUES (?, ?, 'mint1', ?, ?, ?, ?, ?, ?, 'open', 0, 0, ?, ?, ?, ?)`
   ).run(
     opts?.mode ?? "paper",
+    opts?.pool ?? "pool1",
     opts?.symbol ?? "TST",
     opts?.entryTs ?? now() - 600,
     opts?.entryPrice ?? 1,

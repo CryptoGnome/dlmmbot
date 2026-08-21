@@ -1,6 +1,7 @@
 import { Connection, PublicKey } from "@solana/web3.js";
 import { createRequire } from "node:module";
-import { config, env } from "../config.js";
+import { config } from "../config.js";
+import { makeConnection } from "../rpc.js";
 import type { RangePlan } from "../types.js";
 import { fitPlanToRentBudget } from "./planner.js";
 
@@ -30,7 +31,7 @@ const DLMM: DlmmStatic = dlmmMod.default ?? dlmmMod;
 let sharedConn: Connection | null = null;
 function rpc(): Connection {
   if (!sharedConn) {
-    sharedConn = new Connection(env().rpcUrl, { commitment: "confirmed" });
+    sharedConn = makeConnection({ commitment: "confirmed" });
   }
   return sharedConn;
 }

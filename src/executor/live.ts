@@ -10,6 +10,7 @@ import { createRequire } from "node:module";
 import type * as DLMMTypes from "@meteora-ag/dlmm";
 import type { LbPosition } from "@meteora-ag/dlmm";
 import { config, env, isLive, SOL_MINT } from "../config.js";
+import { makeConnection } from "../rpc.js";
 import { getDb, logError, now, upsertTokenMeta } from "../db/db.js";
 import { alert } from "../alerts.js";
 import { fetchPool } from "../scanner/meteora.js";
@@ -86,8 +87,6 @@ const StrategyType = dlmmMod.StrategyType;
 // ============================================================================
 
 const BINS_PER_ACCOUNT = 69;
-// Longer than any healthy call and far shorter than a manager tick backlog.
-const RPC_TIMEOUT_MS = 20_000;
 // Rebuilds on ExceededBinSlippageTolerance — resending the same tx never helps
 // (the active-bin check is baked into the instruction at build time).
 export const OPEN_SLIPPAGE_REBUILDS = 2;
@@ -170,7 +169,7 @@ export class LiveExecutor implements Executor {
   readonly mode = "live" as const;
   readonly connection: Connection;
   readonly wallet: Keypair;
-  private pools = new Map<string, DlmmPool>();
+  private pools = new Map<string, Promise<DlmmPool>>();
 
   constructor() {
     if (!isLive()) {
@@ -179,21 +178,28 @@ export class LiveExecutor implements Executor {
       );
     }
     this.wallet = loadKeypair(env().walletPrivateKey, env().walletKeypairPath);
-    // Every other outbound HTTP client in src/ carries an explicit timeout;
-    // this one did not, so a node that accepts the TCP connection and never
-    // answers wedges the manager tick indefinitely — the one failure shape the
-    // watchdog cannot help with, because the loop never gets to run it.
-    this.connection = new Connection(env().rpcUrl, {
-      commitment: "confirmed",
-      fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(RPC_TIMEOUT_MS) }),
-    });
+    // makeConnection owns both the per-request timeout (a node that accepts the
+    // TCP connection and never answers would otherwise wedge the manager tick
+    // indefinitely — the one failure shape the watchdog cannot help with,
+    // because the loop never gets to run it) and RPC_URL_FALLBACK failover.
+    this.connection = makeConnection({ commitment: "confirmed" });
     console.log(`[live] executor armed — wallet ${this.wallet.publicKey.toBase58()}`);
   }
 
-  private async pool(address: string): Promise<DlmmPool> {
+  /**
+   * Cache the in-flight PROMISE, not the resolved pool. Marks now run
+   * concurrently across pools, and a value-cache leaves a check-then-set gap:
+   * two first-touch callers would both await DLMM.create and build two pool
+   * objects for one address, so the loser's mutable state (refetchStates writes
+   * lbPair in place) would drift from the one the map kept.
+   */
+  private pool(address: string): Promise<DlmmPool> {
     let p = this.pools.get(address);
     if (!p) {
-      p = await DLMM.create(this.connection, new PublicKey(address));
+      p = DLMM.create(this.connection, new PublicKey(address));
+      // A failed create must not be cached: the next tick has to retry it,
+      // otherwise one RPC blip poisons that pool for the process's lifetime.
+      p.catch(() => { if (this.pools.get(address) === p) this.pools.delete(address); });
       this.pools.set(address, p);
     }
     return p;
