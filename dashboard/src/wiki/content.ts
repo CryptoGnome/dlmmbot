@@ -353,6 +353,12 @@ export const WIKI_SECTIONS: WikiSection[] = [
             tone: "warn",
             icon: "x",
           },
+          {
+            title: "Restarts don’t reset the clock",
+            text: "Every exit timer — the stop streak, the rotation streak, the above-range and below-range clocks, the TVL-drain window — is saved with the position. A deploy or crash resumes them where they were, instead of granting a fresh grace period to a position that was already most of the way through one.",
+            tone: "ok",
+            icon: "check",
+          },
         ],
       },
     ],

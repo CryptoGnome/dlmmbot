@@ -277,6 +277,19 @@ function migrate(database: Database.Database): void {
   try {
     database.exec("ALTER TABLE positions ADD COLUMN stranded_sol REAL NOT NULL DEFAULT 0");
   } catch { /* column already exists */ }
+  // Exit timers. They used to live only in the manager's memory, so a restart
+  // granted a fresh grace window to a position already most of the way through
+  // one and reset a part-served stop streak. See hydrateTimers() in
+  // manager/loop.ts. The P0 drain window is NOT here — it is rebuilt from
+  // position_marks, which already records tvl_usd per mark.
+  for (const col of [
+    "above_range_since INTEGER", "below_range_since INTEGER",
+    "stop_streak INTEGER NOT NULL DEFAULT 0", "decay_streak INTEGER NOT NULL DEFAULT 0",
+  ]) {
+    try {
+      database.exec(`ALTER TABLE positions ADD COLUMN ${col}`);
+    } catch { /* column already exists */ }
+  }
   for (const col of [
     "tvl_usd REAL", "vol_30m_usd REAL", "fee_tvl_30m_pct REAL",
     "pool_age_s REAL", "fees_claimed_cum_sol REAL",

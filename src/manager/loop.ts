@@ -101,7 +101,9 @@ function runRetention(): void {
   );
 }
 
-// Per-position manager state (all in-memory; rebuilt after restart).
+// Per-position manager state. The four that decide an exit are write-through
+// to the positions row (see hydrateTimers); the rest are telemetry or
+// throttles and are cheap to rebuild.
 const aboveRangeSince = new Map<number, number>();   // P3 sustain timer
 const belowRangeSince = new Map<number, number>();   // P5 grace timer
 const tvlHistory = new Map<number, Array<{ ts: number; tvl: number; price: number }>>(); // P0 TVL-drop window
@@ -114,8 +116,76 @@ const rugcheckLastCheck = new Map<number, number>();  // P0 rugcheck-flip thrott
 const everInRange = new Set<number>();                // P3 win-vs-missed classification
 const fellDeep = new Set<number>();                   // escape hatch armed (also persisted)
 
+/** Positions whose timers have been read back from the DB this process. */
+const hydrated = new Set<number>();
+
+/**
+ * Read a position exit timer set back out of the DB, once per process.
+ *
+ * These timers ARE the exit rules memory of "how long has this been true",
+ * and holding them only in RAM meant every restart wiped them: a position 14
+ * minutes into a 15-minute below-range grace got a fresh 15, a 3-of-4 stop
+ * streak went back to 0, and the P0 drain window started empty. Railway
+ * redeploys on every merge to main (12 restarts in the 29h of 2026-08-20/21),
+ * so this was not a rare edge, and it is asymmetric: above range the position
+ * is sitting in SOL and a late exit costs only opportunity, below range it is
+ * 100% in a falling token and a late exit costs principal. follow_chains
+ * already persists its streaks every tick for exactly this reason; the
+ * manager own ladder did not.
+ *
+ * Rehydrated values are trusted as read. Every exit still re-checks its live
+ * condition against the current mark before firing, so the worst a stale
+ * timer can do is exit a position that is bad RIGHT NOW sooner than a fresh
+ * timer would - the conservative direction for a bot that was blind.
+ *
+ * The P0 drain window is rebuilt from position_marks instead of a column of
+ * its own: that table already records tvl_usd and price per mark, and the
+ * window is pruned by timestamp, so a stale read cannot survive its own 10
+ * minutes. See loadTvlWindow.
+ */
+function hydrateTimers(posId: number): void {
+  if (hydrated.has(posId)) return;
+  hydrated.add(posId);
+  const row = getDb().prepare(
+    "SELECT above_range_since AS a, below_range_since AS b, stop_streak AS s, decay_streak AS d FROM positions WHERE id = ?"
+  ).get(posId) as { a: number | null; b: number | null; s: number | null; d: number | null } | undefined;
+  if (!row) return;
+  if (row.a != null) aboveRangeSince.set(posId, row.a);
+  if (row.b != null) belowRangeSince.set(posId, row.b);
+  if (row.s) stopStreak.set(posId, row.s);
+  if (row.d) decayStreak.set(posId, row.d);
+}
+
+/** Column each persisted timer writes through to. */
+const TIMER_COLUMN = new Map<Map<number, number>, string>([
+  [aboveRangeSince, "above_range_since"],
+  [belowRangeSince, "below_range_since"],
+  [stopStreak, "stop_streak"],
+  [decayStreak, "decay_streak"],
+]);
+
+/**
+ * Set a timer and mirror it to the DB, but only when it actually moved: the
+ * common tick is "still 0, still in range", and that one should cost no write.
+ */
+function setTimer(map: Map<number, number>, posId: number, value: number): void {
+  if (map.get(posId) === value) return;
+  map.set(posId, value);
+  getDb().prepare(`UPDATE positions SET ${TIMER_COLUMN.get(map)!} = ? WHERE id = ?`).run(value, posId);
+}
+
+/** Streaks reset to 0, timestamps to NULL - the values hydrateTimers reads as "not running". */
+function clearTimer(map: Map<number, number>, posId: number): void {
+  if (!map.has(posId)) return;
+  map.delete(posId);
+  const col = TIMER_COLUMN.get(map)!;
+  const empty = col.endsWith("_since") ? null : 0;
+  getDb().prepare(`UPDATE positions SET ${col} = ? WHERE id = ?`).run(empty, posId);
+}
+
 /** Clear in-memory per-position timers for unit tests (ids reuse across memory DB resets). */
 export function resetManagerStateForTests(): void {
+  hydrated.clear();
   aboveRangeSince.clear();
   belowRangeSince.clear();
   tvlHistory.clear();
@@ -178,6 +248,10 @@ function clearRangeTimers(posId: number): void {
   tvlHistory.delete(posId);
   decayStreak.delete(posId);
   stopStreak.delete(posId);
+  hydrated.delete(posId);
+  getDb().prepare(
+    "UPDATE positions SET above_range_since = NULL, below_range_since = NULL, stop_streak = 0, decay_streak = 0 WHERE id = ?"
+  ).run(posId);
   feeOffsetLogged.delete(posId);
   midBandSince.delete(posId);
   midBandLogged.delete(posId);
@@ -444,10 +518,23 @@ const median = (xs: number[]): number => {
  * and exiting early costs ~0.002 SOL, so it only suppresses the exit on STRONG
  * evidence of a buy-out (a large price rise). Flat or falling price still fires.
  */
+/**
+ * Rebuild the P0 drain window from the marks already on disk, so a restart
+ * does not blind the rug check until it has re-polled its way to 4 samples.
+ * `ts < now()` drops the mark this very tick wrote: tvlDropTriggered pushes
+ * that sample itself, and counting it twice would skew the median it is
+ * measured against.
+ */
+function loadTvlWindow(posId: number, windowS: number): Array<{ ts: number; tvl: number; price: number }> {
+  return getDb().prepare(
+    "SELECT ts, tvl_usd AS tvl, price FROM position_marks WHERE position_id = ? AND ts >= ? AND ts < ? AND tvl_usd > 0 ORDER BY ts"
+  ).all(posId, now() - windowS, now()) as Array<{ ts: number; tvl: number; price: number }>;
+}
+
 function tvlDropTriggered(posId: number, tvlNow: number, priceNow: number, poolAgeS: number | null): TvlDrainCheck {
   const m = config().manage;
   const windowS = 600; // 10 min per spec
-  const hist = tvlHistory.get(posId) ?? [];
+  const hist = tvlHistory.get(posId) ?? loadTvlWindow(posId, windowS);
   hist.push({ ts: now(), tvl: tvlNow, price: priceNow });
   while (hist.length && hist[0]!.ts < now() - windowS) hist.shift();
   tvlHistory.set(posId, hist);
@@ -685,6 +772,7 @@ export async function managePositions(exec: Executor): Promise<void> {
 
   for (const { pos, mark } of marked) {
     try {
+      hydrateTimers(pos.id);
       const ageH = (now() - pos.entryTs) / 3600;
       const valueFrac = pos.entrySol > 0 ? mark.valueSol / pos.entrySol : 1;
       const sleeve = sleeveAtEntry(pos);
@@ -840,7 +928,7 @@ export async function managePositions(exec: Executor): Promise<void> {
       if (stopFrac < pm.stop_loss_frac) {
         const inGrace = mark.belowRange;
         const streak = (stopStreak.get(pos.id) ?? 0) + 1;
-        stopStreak.set(pos.id, streak);
+        setTimer(stopStreak, pos.id, streak);
         const needed = inGrace ? (m.stop_loss_sustain_polls ?? 4) : 1;
         if (streak < needed) {
           if (streak === 1) console.log(`[manager] pos#${pos.id} ${pos.symbol}: under stop (${(stopFrac * 100 - 100).toFixed(1)}%) below range — sustaining ${needed} polls before P1`);
@@ -853,7 +941,7 @@ export async function managePositions(exec: Executor): Promise<void> {
           continue;
         }
       } else {
-        stopStreak.delete(pos.id);
+        clearTimer(stopStreak, pos.id);
       }
 
       // --- P2 ROTATION: age limit + consecutive fee/volume decay ---
@@ -870,7 +958,7 @@ export async function managePositions(exec: Executor): Promise<void> {
       const volDead = mark.vol30mUsd < pm.rotation_vol_30m_min_usd;
       const decayed = sleeve === "majors" ? (feeDead && volDead) : (feeDead || volDead);
       const streak = decayed ? (decayStreak.get(pos.id) ?? 0) + 1 : 0;
-      decayStreak.set(pos.id, streak);
+      setTimer(decayStreak, pos.id, streak);
       if (streak >= pm.rotation_polls) {
         const { exitSol } = await closeAndReport(exec, pos, "P2_rotation", config().exec.exit_slippage_bps, "close", `rotation: fee/volume decay (fee ${feeDaily.toFixed(3)}%/d, vol30m $${mark.vol30mUsd.toFixed(0)})`);
         clearRangeTimers(pos.id);
@@ -888,7 +976,7 @@ export async function managePositions(exec: Executor): Promise<void> {
         const sustainMin = traveled ? pm.above_range_sustain_min : pm.above_range_missed_sustain_min;
         const since = aboveRangeSince.get(pos.id);
         if (since === undefined) {
-          aboveRangeSince.set(pos.id, now());
+          setTimer(aboveRangeSince, pos.id, now());
         } else if (now() - since >= sustainMin * 60) {
           const classification = traveled ? "win" : "missed";
           const { exitSol } = await closeAndReport(
@@ -904,13 +992,13 @@ export async function managePositions(exec: Executor): Promise<void> {
         }
         continue;
       }
-      aboveRangeSince.delete(pos.id);
+      clearTimer(aboveRangeSince, pos.id);
 
       // --- P5 BELOW RANGE (grace timer, §4 P5: wick tolerance) ---
       if (mark.belowRange) {
         const since = belowRangeSince.get(pos.id);
         if (since === undefined) {
-          belowRangeSince.set(pos.id, now());
+          setTimer(belowRangeSince, pos.id, now());
           console.log(`[manager] pos#${pos.id} ${pos.symbol} below range — grace timer started (${pm.below_range_grace_min}m)`);
           if (mark.unclaimedFeesSol >= m.grace_claim_min_sol) {
             try {
@@ -928,7 +1016,7 @@ export async function managePositions(exec: Executor): Promise<void> {
         }
         continue;
       }
-      belowRangeSince.delete(pos.id);
+      clearTimer(belowRangeSince, pos.id);
 
       // --- ESCAPE HATCH (meme only by default) ---
       if (pos.followChainId == null && (sleeve !== "majors" || config().majors.escape_hatch_enabled)) {

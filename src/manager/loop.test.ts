@@ -223,6 +223,90 @@ describe("managePositions contracts", () => {
   });
 
   /**
+   * resetManagerStateForTests() IS a restart in miniature: it drops every
+   * in-memory map while the DB survives, exactly as a redeploy does. Before
+   * these timers were persisted, a restart handed a position 14 minutes into
+   * its 15-minute grace a fresh 15 and sent a 3-of-4 stop streak back to 0.
+   */
+  describe("exit timers survive a restart", () => {
+    it("does not hand a below-range position a fresh grace window", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-08-21T12:00:00Z"));
+      const id = insertOpenPosition({ entrySol: 0.3, minBinId: 100, maxBinId: 200 });
+      exec.setMark(id, { valueSol: 0.29, price: 0.9, activeBinId: 90, inRange: false, belowRange: true });
+      await managePositions(exec);
+      expect(exec.closed).toHaveLength(0); // grace starts at 12:00
+
+      resetManagerStateForTests(); // the restart
+
+      vi.setSystemTime(new Date("2026-08-21T12:14:00Z"));
+      await managePositions(exec);
+      expect(exec.closed).toHaveLength(0); // 14m served, grace is 15m
+
+      vi.setSystemTime(new Date("2026-08-21T12:16:00Z"));
+      await managePositions(exec);
+      expect(exec.closed).toEqual([{ id, reason: "P5_below" }]);
+    });
+
+    it("does not reset a part-served P1 stop streak", async () => {
+      const id = insertOpenPosition({ entrySol: 0.4 });
+      exec.setMark(id, { valueSol: 0.2, price: 0.5, activeBinId: 90, inRange: false, belowRange: true });
+      for (let i = 0; i < 3; i++) await managePositions(exec);
+      expect(exec.closed).toHaveLength(0); // 3 of the 4 sustain polls
+
+      resetManagerStateForTests();
+
+      await managePositions(exec); // the 4th, not a new first
+      expect(exec.closed).toEqual([{ id, reason: "P1_stop" }]);
+    });
+
+    it("clears the persisted timers when the position closes", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-08-21T12:00:00Z"));
+      const id = insertOpenPosition({ entrySol: 0.3, minBinId: 100, maxBinId: 200 });
+      exec.setMark(id, { valueSol: 0.29, price: 0.9, activeBinId: 90, inRange: false, belowRange: true });
+      await managePositions(exec);
+      const running = getDb().prepare("SELECT below_range_since AS b FROM positions WHERE id = ?").get(id) as { b: number | null };
+      expect(running.b).toBe(Math.floor(new Date("2026-08-21T12:00:00Z").getTime() / 1000));
+
+      vi.setSystemTime(new Date("2026-08-21T12:16:00Z"));
+      await managePositions(exec);
+      const closed = getDb().prepare(
+        "SELECT below_range_since AS b, stop_streak AS s FROM positions WHERE id = ?"
+      ).get(id) as { b: number | null; s: number };
+      expect(closed.b).toBeNull(); // a stale timer must not outlive the position
+      expect(closed.s).toBe(0);
+    });
+
+    /**
+     * P0 keeps no column of its own — its 10-minute window is rebuilt from the
+     * marks already on disk. Without that, a restart blinds the drain check
+     * until four fresh polls have accumulated, which is the window a rug fits in.
+     */
+    it("rebuilds the P0 drain window from marks it could not remember", async () => {
+      vi.useFakeTimers();
+      const id = insertOpenPosition({ entrySol: 0.3, minBinId: 100, maxBinId: 200 });
+      const healthy = { valueSol: 0.29, price: 1, activeBinId: 150, inRange: true, tvlUsd: 50_000 };
+      for (const t of ["12:00:00", "12:00:30", "12:01:00", "12:01:30"]) {
+        vi.setSystemTime(new Date(`2026-08-21T${t}Z`));
+        exec.setMark(id, healthy);
+        await managePositions(exec);
+      }
+      expect(exec.closed).toHaveLength(0);
+
+      resetManagerStateForTests();
+
+      // TVL halves: -50% against a $50k median, past safety_tvl_drop_pct = 40.
+      for (const t of ["12:02:00", "12:02:30"]) {
+        vi.setSystemTime(new Date(`2026-08-21T${t}Z`));
+        exec.setMark(id, { ...healthy, tvlUsd: 25_000 });
+        await managePositions(exec);
+      }
+      expect(exec.closed).toEqual([{ id, reason: "P0_safety" }]);
+    });
+  });
+
+  /**
    * 2026-08-20 young-launch research: every simulated quicker-exit rule tested
    * flat to negative on the ledger, so nothing acts — but the closest-to-even
    * trigger (2 min sustained below band midpoint) is logged once per position
