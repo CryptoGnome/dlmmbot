@@ -115,6 +115,8 @@ const midBandLogged = new Set<number>();              // young-exit telemetry lo
 const rugcheckLastCheck = new Map<number, number>();  // P0 rugcheck-flip throttle
 const everInRange = new Set<number>();                // P3 win-vs-missed classification
 const fellDeep = new Set<number>();                   // escape hatch armed (also persisted)
+const peakPnl = new Map<number, number>();            // give-back telemetry: best fee-inclusive PnL (persisted)
+const giveBackLogged = new Set<number>();             // give-back counterfactual logged once (persisted)
 
 /** Positions whose timers have been read back from the DB this process. */
 const hydrated = new Set<number>();
@@ -147,13 +149,17 @@ function hydrateTimers(posId: number): void {
   if (hydrated.has(posId)) return;
   hydrated.add(posId);
   const row = getDb().prepare(
-    "SELECT above_range_since AS a, below_range_since AS b, stop_streak AS s, decay_streak AS d FROM positions WHERE id = ?"
-  ).get(posId) as { a: number | null; b: number | null; s: number | null; d: number | null } | undefined;
+    "SELECT above_range_since AS a, below_range_since AS b, stop_streak AS s, decay_streak AS d," +
+    " peak_pnl_sol AS p, give_back_logged AS g FROM positions WHERE id = ?"
+  ).get(posId) as { a: number | null; b: number | null; s: number | null; d: number | null;
+                    p: number | null; g: number | null } | undefined;
   if (!row) return;
   if (row.a != null) aboveRangeSince.set(posId, row.a);
   if (row.b != null) belowRangeSince.set(posId, row.b);
   if (row.s) stopStreak.set(posId, row.s);
   if (row.d) decayStreak.set(posId, row.d);
+  if (row.p != null) peakPnl.set(posId, row.p);
+  if (row.g) giveBackLogged.add(posId);
 }
 
 /** Column each persisted timer writes through to. */
@@ -197,6 +203,8 @@ export function resetManagerStateForTests(): void {
   rugcheckLastCheck.clear();
   everInRange.clear();
   fellDeep.clear();
+  peakPnl.clear();
+  giveBackLogged.clear();
 }
 
 // Watchdog / breaker state.
@@ -248,6 +256,8 @@ function clearRangeTimers(posId: number): void {
   tvlHistory.delete(posId);
   decayStreak.delete(posId);
   stopStreak.delete(posId);
+  peakPnl.delete(posId);
+  giveBackLogged.delete(posId);
   hydrated.delete(posId);
   getDb().prepare(
     "UPDATE positions SET above_range_since = NULL, below_range_since = NULL, stop_streak = 0, decay_streak = 0 WHERE id = ?"
@@ -758,6 +768,36 @@ export const DEFAULT_MAX_QUOTE_DRIFT_BINS = 3;
  */
 export const TOP_BLAST_TELEMETRY_FRAC = 0.97;
 
+/**
+ * TELEMETRY ONLY — nothing acts on these. A give-back stop: once a position has
+ * been up GIVE_BACK_MIN_PEAK_SOL on a fee-inclusive basis, log the moment it
+ * hands back to GIVE_BACK_KEEP_FRAC of that peak.
+ *
+ * Replayed 2026-08-21 over 120 closed positions with recorded marks (mark vs
+ * mark, so it isolates timing). At keep=0.75 it changed 22 exits for a net
+ * +2.657 SOL: cutting winners early cost -0.360 across 11, avoiding losses
+ * gained +3.017 across 11. Unlike the dip-relative escape hatch rejected the
+ * same day, it survives the checks — worse on only 10 of 22, median +0.0009,
+ * **+0.493 excluding the top four contributors**, +2.13 after a 3% slippage
+ * haircut, and flat across thresholds (75%->95% all land 2.6-2.7) rather than
+ * balanced on a knife edge.
+ *
+ * Two reasons it is logged rather than shipped. The measurement is from the
+ * SERVER bot, not the Railway one this was asked about. And its two largest
+ * contributors are P0 safety exits, where the last mark is near zero and a
+ * mark-based counterfactual flatters itself — whether a real exit was
+ * executable at the trigger is unproven.
+ *
+ * Note what this is NOT. The shape usually described — green, then red, then
+ * back to break-even, then down again — does not exist in the book: of 25
+ * positions that were green and closed red, ZERO returned to break-even after
+ * going red (11 closed at their low; the other 14 recovered to a median of
+ * -0.054 SOL). There is no second chance to take. The value, if any, is in
+ * leaving before the give-back completes.
+ */
+export const GIVE_BACK_MIN_PEAK_SOL = 0.02;
+export const GIVE_BACK_KEEP_FRAC = 0.75;
+
 /** One manager tick over all open positions.
  * Two-pass: mark every position before any close/claim. A sibling exit used to
  * delay peer marks by 50–80s (3/4161 gaps ≥60s, but enough to fail RANGE-SHAPE
@@ -869,6 +909,33 @@ export async function managePositions(exec: Executor): Promise<void> {
         } else {
           midBandSince.delete(pos.id);
         }
+      }
+
+      // --- TELEMETRY ONLY: give-back stop counterfactual ---
+      // Fee-inclusive, matching what the replay measured: mark.valueSol already
+      // carries UNCLAIMED fees (see position_marks), and feesClaimedSol is what
+      // has been banked. Rent is refunded at close, so it is not in this basis.
+      const pnlNow = mark.valueSol + pos.feesClaimedSol - pos.entrySol;
+      const prevPeak = peakPnl.get(pos.id);
+      if (prevPeak === undefined || pnlNow > prevPeak) {
+        peakPnl.set(pos.id, pnlNow);
+        getDb().prepare("UPDATE positions SET peak_pnl_sol = ? WHERE id = ?").run(pnlNow, pos.id);
+      }
+      const peak = peakPnl.get(pos.id)!;
+      if (!giveBackLogged.has(pos.id) && peak >= GIVE_BACK_MIN_PEAK_SOL && pnlNow <= peak * GIVE_BACK_KEEP_FRAC) {
+        giveBackLogged.add(pos.id);
+        getDb().prepare("UPDATE positions SET give_back_logged = 1 WHERE id = ?").run(pos.id);
+        recordDecision(pos.tokenMint, pos.poolAddress, "skipped", "give_back_candidate", null, {
+          posId: pos.id, symbol: pos.symbol, peakPnlSol: peak, pnlNowSol: pnlNow,
+          keepFrac: GIVE_BACK_KEEP_FRAC, minPeakSol: GIVE_BACK_MIN_PEAK_SOL,
+          feesClaimedSol: pos.feesClaimedSol, valueSol: mark.valueSol, entrySol: pos.entrySol,
+          holdMin: (now() - pos.entryTs) / 60, sleeve, mark,
+        });
+        console.log(
+          `[manager] pos#${pos.id} ${pos.symbol}: gave back to ${(peak > 0 ? (pnlNow / peak) * 100 : 0).toFixed(0)}% ` +
+          `of a +${peak.toFixed(4)} SOL peak (now ${pnlNow >= 0 ? "+" : ""}${pnlNow.toFixed(4)}) ` +
+          `— give-back candidate logged (telemetry only, nothing closed)`
+        );
       }
 
       // --- OPERATOR CLOSE: dashboard "Close now" on this position ---
