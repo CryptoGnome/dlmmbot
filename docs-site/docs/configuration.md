@@ -20,6 +20,7 @@ Every knob the bot obeys lives in one TOML file. Key facts before the tables:
 |---|---|---|
 | `interval_s` | `60` | Seconds between scanner sweeps |
 | `pages` | `3` | Meteora datapi pages per sweep (100 pools/page) |
+| `datapi_concurrency` | `4` | Max datapi requests in flight. Sweep pages and majors whitelist lookups are independent round-trips that used to run one at a time, so a sweep paid the **sum** of their latency. Page 1 is still fetched alone — its page count sizes the rest |
 | `copycat_ignore_h` | `24` | Losers of symbol dedupe ignored this long (hours) |
 | `sibling_tvl_tie_pct` | `25` | Among a token's gate-passing pools, the **deepest** wins; fee/TVL breaks ties only within this % of the deepest pool's TVL. Replaces "highest fee/TVL", which structurally picked the thinnest sibling — thin pools earn less and their TVL swings 40–50% on ordinary LP moves, which P0 `tvl_drain` reads as a rug |
 | `retain_skipped_days` | `30` | Prune `skipped` decision rows older than this (hourly). `entered`/`exited` rows — the audit trail — are **never** pruned. Nothing pruned these before; a Railway volume hit 83% inside a day |

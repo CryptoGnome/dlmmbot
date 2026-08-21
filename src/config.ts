@@ -31,6 +31,12 @@ export interface Config {
   scanner: {
     interval_s: number; pages: number; copycat_ignore_h: number;
     /**
+     * Max datapi requests in flight at once. Sweep pages and the majors
+     * whitelist lookups are independent round-trips that used to run serially.
+     * Optional: defaults in code for installs whose config predates the key.
+     */
+    datapi_concurrency?: number;
+    /**
      * Among a token's gate-passing pools of the same bin step, the deepest wins;
      * fee/TVL breaks ties only within this % of the deepest pool's TVL. Optional:
      * defaults in code for installs whose config predates the key.
