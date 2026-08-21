@@ -744,27 +744,35 @@ export const DEFAULT_MAX_QUOTE_DRIFT_BINS = 3;
  * TELEMETRY ONLY — nothing acts on this. How close to the planner's swing high
  * an entry has to be before it is flagged as a top-blast.
  *
- * Measured 2026-08-21 over 88 closed positions matched to their own entry
+ * Measured 2026-08-21 over 85 closed positions matched to their own entry
  * decision, bucketing by entry price / swingHigh:
  *
  *   >=0.97  n=5   win 40%  mean +0.0002 SOL
  *   .90-.97 n=7   win 71%  mean +0.0031
- *   .70-.90 n=31  win 58%  mean +0.0138
- *   <0.70   n=45  win 69%  mean +0.0219
+ *   .70-.90 n=29  win 55%  mean +0.0140
+ *   <0.70   n=44  win 70%  mean +0.0218
  *
- * Mean PnL is monotone in how far BELOW the swing high we entered, and the
- * mechanism is not mysterious: the escape hatch is 19/19 wins and +1.463 SOL
- * against a whole-book net of +1.437 — more than the entire edge — and it
- * triggers on recovery into the top 25% of the range, measured from a range
- * top that is planted at the entry price. Enter at the high and the one rule
- * that makes this bot money moves out of reach. CatGPT is the worked example:
- * 13 bins of range-top placement, and the bounce that paid the other bot
- * landed 19 bins short of ours.
+ * The gradient is real but FRAGILE, and the mechanism first proposed for it
+ * ("entering high puts the up-exits out of reach") is wrong. Re-checked the
+ * same day:
  *
- * §2.3 already penalises this, but as 15% of a soft score — nothing blocks it.
- * The top bucket is 5 rows, which is not enough to gate live money on, so this
- * only logs the counterfactual (same pattern as P1_fee_offset_deferred and
- * young_exit_candidate) and forward data decides whether it becomes a gate.
+ *  - Dropping positions with <3 recorded marks collapses the two large
+ *    buckets to +0.0203 vs +0.0202. The gradient is carried by a cluster of
+ *    near-instant closes in the middle bucket, not by entry height.
+ *  - Of the 12 entries at >=0.90, SEVEN exited P3_above (price cleared the
+ *    range top and held it) and two more P2_rotation. Only one ever armed the
+ *    escape hatch — and it escaped and won. Entering high did not put the up
+ *    exits out of reach on this book.
+ *  - Those 12 entries earned +0.023 SOL in total, and the five at >=0.97
+ *    earned +0.0009. A gate would have nothing to save.
+ *
+ * What actually went wrong on CatGPT was timing: Railway planned off a quote
+ * printed 56 s earlier and executed 13 bins higher. The re-quote guard above
+ * addresses that; a height rule would not have.
+ *
+ * So this stays telemetry (same pattern as P1_fee_offset_deferred and
+ * young_exit_candidate) and the sample keeps building. §2.3 continues to
+ * penalise height as 15% of the soft score.
  */
 export const TOP_BLAST_TELEMETRY_FRAC = 0.97;
 
