@@ -97,6 +97,13 @@ export interface Config {
     tranche_enabled: boolean; tranche_score_min: number; tranche_size_pct: number;
     /** Target depth for second tranche (clamped by P0 safety margin like primary). */
     tranche_max_down_pct: number;
+    /**
+     * How far (in bins) the pool may have moved between the scan that scored
+     * this candidate and the moment we plan the range. Beyond it the quote —
+     * and the score built on it — is stale, and we skip rather than chase.
+     * Optional: defaults in code for installs whose config predates the key.
+     */
+    max_quote_drift_bins?: number;
   };
   manage: {
     poll_s: number;

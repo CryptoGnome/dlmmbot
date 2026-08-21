@@ -117,6 +117,14 @@ max_down_pct = 50                # 2026-08-10: was 65, against a -60% P0 exit. T
                                  # of the position in bins P0 guaranteed would never trade.
 min_down_pct = 40
 max_position_accounts = 2
+# Re-quote the pool immediately before planning the range, and skip if it has
+# moved more than this many bins since the scan that scored the candidate.
+# CatGPT 2026-08-21: the range was planned off a quote ~1 min old, landing its
+# top 13 bins above the other bot's on the same pool. Every upside exit is
+# measured from the range top, so P3 sustain and the escape-hatch recovery band
+# both went out of reach on a price path that paid the other bot twice.
+# 0 disables the guard (old behaviour: plan off the scan quote, however old).
+max_quote_drift_bins = 3
 # Bin-array rent (~0.075 SOL each) is non-refundable when arrays are new.
 # Soft budget = one array (shrink target). Hard = two arrays only if score ≥ min.
 # Entry also quotes on-chain uninitialized arrays; if actual ≤ tier budget, allow.
