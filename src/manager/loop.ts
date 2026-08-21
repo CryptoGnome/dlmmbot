@@ -730,6 +730,34 @@ export const DEFAULT_MARK_CONCURRENCY = 4;
  */
 export const DEFAULT_MAX_QUOTE_DRIFT_BINS = 3;
 
+/**
+ * TELEMETRY ONLY — nothing acts on this. How close to the planner's swing high
+ * an entry has to be before it is flagged as a top-blast.
+ *
+ * Measured 2026-08-21 over 88 closed positions matched to their own entry
+ * decision, bucketing by entry price / swingHigh:
+ *
+ *   >=0.97  n=5   win 40%  mean +0.0002 SOL
+ *   .90-.97 n=7   win 71%  mean +0.0031
+ *   .70-.90 n=31  win 58%  mean +0.0138
+ *   <0.70   n=45  win 69%  mean +0.0219
+ *
+ * Mean PnL is monotone in how far BELOW the swing high we entered, and the
+ * mechanism is not mysterious: the escape hatch is 19/19 wins and +1.463 SOL
+ * against a whole-book net of +1.437 — more than the entire edge — and it
+ * triggers on recovery into the top 25% of the range, measured from a range
+ * top that is planted at the entry price. Enter at the high and the one rule
+ * that makes this bot money moves out of reach. CatGPT is the worked example:
+ * 13 bins of range-top placement, and the bounce that paid the other bot
+ * landed 19 bins short of ours.
+ *
+ * §2.3 already penalises this, but as 15% of a soft score — nothing blocks it.
+ * The top bucket is 5 rows, which is not enough to gate live money on, so this
+ * only logs the counterfactual (same pattern as P1_fee_offset_deferred and
+ * young_exit_candidate) and forward data decides whether it becomes a gate.
+ */
+export const TOP_BLAST_TELEMETRY_FRAC = 0.97;
+
 /** One manager tick over all open positions.
  * Two-pass: mark every position before any close/claim. A sibling exit used to
  * delay peer marks by 50–80s (3/4161 gaps ≥60s, but enough to fail RANGE-SHAPE
@@ -1703,11 +1731,31 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     // Live-experiment cohort tags (2026-08-07): fee-gate path, mcap band, and
     // bonus composition — evaluated against outcomes after ~5 closes each.
     const feePath = cand.pool.feeTvl24hPct >= g.fee_tvl_24h_min_pct ? "24h" : "recent_hot";
+    // Where this entry sat against the swing high the planner used. Derivable
+    // from range.fibAnchor + entry_price, but only by parsing nested JSON and
+    // joining to positions — recorded flat so the question can be asked with a
+    // one-line query while the sample builds.
+    const swingHigh = range.fibAnchor?.swingHigh;
+    const ofSwingHigh = swingHigh && swingHigh > 0 ? entryPrice / swingHigh : null;
     recordDecision(cand.tokenMint, cand.pool.address, "entered", null, score, {
       size, range, vet: vet.facts, pool: cand.pool, kelly, isAlpha, flow,
       sleeve: isMicro ? "micro" : "meme",
+      entryOfSwingHigh: ofSwingHigh,
       experiment: { feePath, isMicro, baseScore, trendingBonus, flowBonus, flowPenalty },
     });
+    // TELEMETRY ONLY: what a top-blast gate would have refused. One row per
+    // entry that crosses the line; nothing is skipped.
+    if (ofSwingHigh !== null && ofSwingHigh >= TOP_BLAST_TELEMETRY_FRAC) {
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "top_blast_candidate", score, {
+        posId: pos.id, symbol: cand.symbol, entryPrice, swingHigh, ofSwingHigh,
+        threshold: TOP_BLAST_TELEMETRY_FRAC, sleeve: isMicro ? "micro" : "meme",
+        rangeTopBin: range.maxBinId, depthPct: range.bottomPricePct,
+      });
+      console.log(
+        `[enter] ${cand.symbol} pos#${pos.id}: entered at ${(ofSwingHigh * 100).toFixed(1)}% of the swing high ` +
+        `— top-blast candidate logged (telemetry only, nothing skipped)`
+      );
+    }
     await alert("entry",
       `${cand.symbol} pos#${pos.id}: entered ${size.toFixed(2)} SOL @ ${entryPrice.toPrecision(4)} (score ${score.toFixed(0)}/base ${baseScore.toFixed(0)}${isAlpha ? ", alpha" : ""}${isMicro ? ", micro" : ""}${feePath === "recent_hot" ? ", recent-hot" : ""}, range depth ${range.bottomPricePct.toFixed(0)}%)${flowNote}\n` +
       `chart: https://gmgn.ai/sol/token/${cand.tokenMint}`);
