@@ -4,7 +4,7 @@ import { resolveBuildLabel } from "../buildLabel.js";
 import { config, configToml, currentMode, isLive, onConfigChange, syncFarmerModeFromDisk } from "../config.js";
 import { reconcileLive } from "./reconcile.js";
 import { alert, type AlertKind } from "../alerts.js";
-import { blacklist, getDb, now, pruneHistory, recordConfigSnapshot, recordCreatorRug, recordDecision, REALIZED_PNL_SQL, logError, installProcessErrorHooks } from "../db/db.js";
+import { blacklist, describeError, getDb, now, pruneHistory, recordConfigSnapshot, recordCreatorRug, recordDecision, REALIZED_PNL_SQL, logError, installProcessErrorHooks } from "../db/db.js";
 import { RESIDUAL_SWEEP_MIN_SOL } from "../executor/executor.js";
 import type { Executor } from "../executor/executor.js";
 import { LiveExecutor } from "../executor/live.js";
@@ -1615,7 +1615,10 @@ export async function runLoop(): Promise<void> {
       try {
         rec = await reconcileLive(live.connection, live.wallet.publicKey);
       } catch (e) {
-        const msg = (e as Error).message.split("\n")[0];
+        // describeError, not `.message`: the boot-path RPC failure this retry
+        // exists for arrives as a bare `fetch failed` with the real reason
+        // (ENOTFOUND / ECONNREFUSED / TLS) hidden on `.cause`.
+        const msg = describeError(e);
         logError({
           source: "farmer",
           code: "reconcile",

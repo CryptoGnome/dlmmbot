@@ -1,5 +1,5 @@
 import { Connection, PublicKey } from "@solana/web3.js";
-import { env } from "../config.js";
+import { makeConnection } from "../rpc.js";
 
 // Fresh on-chain token checks — never cached, run at entry time.
 // Uses jsonParsed RPC so we don't hand-roll SPL layouts.
@@ -18,7 +18,7 @@ export interface OnchainTokenFacts {
 
 let conn: Connection | null = null;
 export function connection(): Connection {
-  if (!conn) conn = new Connection(env().rpcUrl, "confirmed");
+  if (!conn) conn = makeConnection({ commitment: "confirmed" });
   return conn;
 }
 

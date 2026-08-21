@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { getDb, isBlacklisted, REALIZED_PNL_SQL, STRANDED_GRACE_S, logError, now, pruneHistory, recordConfigSnapshot, recordCreatorRug, recordDecision, upsertTokenMeta } from "./db.js";
+import { describeError, getDb, isBlacklisted, REALIZED_PNL_SQL, STRANDED_GRACE_S, logError, now, pruneHistory, recordConfigSnapshot, recordCreatorRug, recordDecision, upsertTokenMeta } from "./db.js";
 import { useMemoryDb, resetTestDb, insertClosedPosition } from "../test/db.js";
 
 function pnlFor(id: number): number | null {
@@ -209,6 +209,27 @@ describe("logError", () => {
     expect(b).toBe(0);
     const n = (getDb().prepare("SELECT COUNT(*) AS n FROM error_log").get() as { n: number }).n;
     expect(n).toBe(1);
+  });
+
+  it("describeError unwraps the cause chain undici hides behind 'fetch failed'", () => {
+    const cause = Object.assign(new Error("getaddrinfo ENOTFOUND rpc.example.com"), { code: "ENOTFOUND" });
+    const err = new TypeError("fetch failed", { cause });
+    // Without the chain this reads "fetch failed" and names no fault at all.
+    // The code is not repeated when the message already spells it out.
+    expect(describeError(err)).toBe("fetch failed <- getaddrinfo ENOTFOUND rpc.example.com");
+    // ...but it is appended when the message alone would be uninformative.
+    const terse = new TypeError("fetch failed", { cause: Object.assign(new Error("Client network socket disconnected"), { code: "ECONNRESET" }) });
+    expect(describeError(terse)).toBe("fetch failed <- Client network socket disconnected (ECONNRESET)");
+    expect(describeError("plain string")).toBe("plain string");
+  });
+
+  it("stores the unwrapped cause when the caller has no message of its own", () => {
+    const err = new TypeError("fetch failed", { cause: Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }) });
+    logError({ source: "test", code: "reconcile", message: "", err, dedupeSec: 0 });
+    const row = getDb().prepare(
+      "SELECT message FROM error_log ORDER BY id DESC LIMIT 1",
+    ).get() as { message: string };
+    expect(row.message).toContain("ECONNREFUSED");
   });
 
   it("recordCreatorRug increments rug_count and blacklists the creator permanently", () => {
