@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   txErrorDetail,
   rangeGapTooLarge,
-  trackedButMissingOnChain,
   shouldRebuildOpenOnSlippage,
   wealthDeltaLamports,
   OPEN_SLIPPAGE_REBUILDS,
@@ -45,12 +44,6 @@ describe("live open/mark guards", () => {
   it("refuses range gap > 150 bins", () => {
     expect(rangeGapTooLarge(1000, 1200)).toBe(true);
     expect(rangeGapTooLarge(1000, 1100)).toBe(false);
-  });
-
-  it("throws path for tracked-but-empty chain (never fabricate −open_cost)", () => {
-    expect(trackedButMissingOnChain(2, 0)).toBe(true);
-    expect(trackedButMissingOnChain(2, 1)).toBe(false);
-    expect(trackedButMissingOnChain(0, 0)).toBe(false);
   });
 
   it("rebuilds on slippage for early attempts only", () => {

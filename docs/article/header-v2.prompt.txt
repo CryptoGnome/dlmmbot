@@ -1,0 +1,3 @@
+Prompt: Keep this exact composition, palette, camera angle and empty left third, but make the ladder a dense ramp of about twenty-five thin glowing bins packed closely together instead of seven chunky blocks, each bin a slim slab only slightly taller than the one above so the descent reads as a smooth continuous ramp growing steadily heavier and more saturated toward the bottom, and push the overall brightness up so the neon-green price line and the electric-blue emissive edges pop hard against the near-black void, crisper and more luminous, no text, no logos
+Model: google/gemini-3-pro-image-preview
+API: chat

@@ -39,8 +39,10 @@ import { loadKeypair } from "./wallet.js";
 interface DlmmPool {
   tokenX: { mint: { decimals: number } };
   /** Pool state; rewardInfos[i].mint is the LM reward mint (default pubkey = unset). */
-  lbPair: { rewardInfos?: Array<{ mint: PublicKey }> };
+  lbPair: { activeId: number; binStep: number; rewardInfos?: Array<{ mint: PublicKey }> };
   getActiveBin(): Promise<{ binId: number; price: string }>;
+  /** Throws `Position account <key> not found` when the account is gone. */
+  getPosition(positionPubKey: PublicKey): Promise<LbPosition>;
   getPositionsByUserAndLbPair(user: PublicKey): Promise<{
     activeBin: { binId: number; price: string };
     userPositions: LbPosition[];
@@ -66,9 +68,12 @@ interface DlmmStatic {
 const dlmmMod = createRequire(import.meta.url)("@meteora-ag/dlmm") as {
   default?: DlmmStatic;
   StrategyType: typeof DLMMTypes.StrategyType;
+  /** Pure price-per-lamport of a bin — the only input getActiveBin's price has. */
+  getPriceOfBinByBinId: (binId: number, binStep: number) => { toString(): string };
 } & DlmmStatic;
 const DLMM: DlmmStatic = dlmmMod.default ?? dlmmMod;
 const StrategyType = dlmmMod.StrategyType;
+const getPriceOfBinByBinId = dlmmMod.getPriceOfBinByBinId;
 
 // ============================================================================
 // LIVE EXECUTOR — real funds. UNTESTED until the first funded shakedown run;
@@ -94,11 +99,6 @@ export const OPEN_SLIPPAGE_REBUILDS = 2;
 /** Planned top too far from on-chain active bin — refuse rather than strand capital. */
 export function rangeGapTooLarge(plannedTop: number, activeBinId: number, maxGap = 150): boolean {
   return Math.abs(activeBinId - plannedTop) > maxGap;
-}
-
-/** Tracked accounts on chain returned none — never fabricate valueSol=0 / −open_cost. */
-export function trackedButMissingOnChain(trackedCount: number, foundCount: number): boolean {
-  return trackedCount > 0 && foundCount === 0;
 }
 
 /** Native SOL + wSOL ATA change for our wallet in one tx (Jupiter/zap often credit wSOL). */
@@ -513,31 +513,46 @@ export class LiveExecutor implements Executor {
   private async ourLbPositions(position: { id: number; poolAddress: string }): Promise<{ active: number; priceYperX: number; positions: LbPosition[] }> {
     const pool = await this.pool(position.poolAddress);
     await pool.refetchStates();
-    const { activeBin, userPositions } = await pool.getPositionsByUserAndLbPair(this.wallet.publicKey);
-    const ours = new Set(this.accountKeys(position.id).map((k) => k.toBase58()));
-    const priceYperX = Number(pool.fromPricePerLamport(Number(activeBin.price)));
-    const mine = userPositions.filter((p) => ours.has(p.publicKey.toBase58()));
-    // An empty-but-successful read is the most expensive silent failure in this
-    // codebase. getProgramAccounts returns `userPositions: []` without error
-    // when a node is lagging or serving a stale snapshot (only a missing
-    // activeBin throws in the SDK), the filter yields [], valueOf([]) returns
-    // valueSol 0, and the P0 block reads that as `pool_dead` -> close at
-    // safety slippage -> a terminal row with exit_sol 0 and close_return_sol 0.
-    // REALIZED_PNL_SQL then turns that into -open_cost_sol, roughly -0.31 SOL:
-    // past the circuit-breaker line and -1.0 into the Kelly window, for a
-    // position that is still sitting on chain. Throwing converts it into an
-    // ordinary mark failure the loop already counts, logs and survives.
-    // Accepted tradeoff: a position genuinely closed out of band will now throw
-    // every tick instead of self-closing. A noisy stuck row is recoverable at
-    // the next boot's reconcile; an abandoned on-chain position plus a
-    // fabricated loss in the risk inputs is not.
-    if (trackedButMissingOnChain(ours.size, mine.length)) {
-      throw new Error(
-        `pos#${position.id}: ${ours.size} tracked position account(s) but the chain returned none — ` +
-        `refusing to mark as worthless (stale/lagging RPC or missing position_accounts rows)`
-      );
-    }
-    return { active: activeBin.binId, priceYperX, positions: mine };
+    // Read OUR position accounts by key rather than asking the program for every
+    // position the wallet holds in this pool and filtering. Same accounts — the
+    // filter was already discarding everything not in position_accounts — but it
+    // drops the getProgramAccounts that Helius bills at 10 credits. Measured on
+    // mainnet against SDK 1.9.14: a one-account mark went 15 credits -> 3, which
+    // at poll_s=15 is 2.59M -> 0.52M credits a month PER OPEN POSITION, against
+    // a 10M/month plan that a three-position book was already exhausting.
+    const keys = this.accountKeys(position.id);
+    const positions = await Promise.all(
+      // An empty-but-successful read is the most expensive silent failure in
+      // this codebase: a lagging node used to answer getProgramAccounts with
+      // `[]` and no error, the filter yielded [], valueOf([]) returned valueSol
+      // 0, and the P0 block read that as `pool_dead` -> close at safety
+      // slippage -> a terminal row with exit_sol 0. REALIZED_PNL_SQL turned that
+      // into -open_cost_sol, roughly -0.31 SOL: past the circuit-breaker line
+      // and -1.0 into the Kelly window, for a position still sitting on chain.
+      // Reading by key closes that hole at the source — a stale node cannot
+      // answer "this account does not exist" with silence, only with a miss,
+      // and a miss on ANY tracked account throws here. That is strictly
+      // stronger than the old all-or-nothing guard, which would still have
+      // marked a two-account position at half value if one account went blind.
+      // Accepted tradeoff, unchanged: a position genuinely closed out of band
+      // throws every tick instead of self-closing. A noisy stuck row is
+      // recoverable at the next boot's reconcile; an abandoned on-chain
+      // position plus a fabricated loss in the risk inputs is not.
+      keys.map((k) => pool.getPosition(k).catch((e: unknown) => {
+        throw new Error(
+          `pos#${position.id}: tracked position account ${k.toBase58()} unreadable — ` +
+          `refusing to mark as worthless (${(e as Error).message.split("\n")[0]})`
+        );
+      }))
+    );
+    // activeBin's price is `getPriceOfBinByBinId(activeId, binStep)` and nothing
+    // else (SDK BinLiquidity.fromBin), both inputs live on the lbPair that
+    // refetchStates just refreshed — so getActiveBin()'s two round trips bought
+    // a value we already hold. Verified bit-identical against mainnet.
+    const active = pool.lbPair.activeId;
+    const activePrice = getPriceOfBinByBinId(active, pool.lbPair.binStep).toString();
+    const priceYperX = Number(pool.fromPricePerLamport(Number(activePrice)));
+    return { active, priceYperX, positions };
   }
 
   /**

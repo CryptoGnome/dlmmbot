@@ -1,0 +1,3 @@
+Prompt: Keep this exact pixel-art style, palette, character design, desk, coffee mug, purple nebula and empty left third, but shift the whole scene slightly left so the round orange meteor mascot is fully inside the frame with a little dark space to its right, and redraw the chart on the monitor so the blue bins form a clear descending staircase below the green price line that gets taller and denser toward the bottom-left, a bid-ask ramp that is heaviest at its lowest bins, with the green line sitting above the top of the ramp, same crisp hard-edged pixels, no text, no letters, no logos
+Model: google/gemini-3-pro-image-preview
+API: chat

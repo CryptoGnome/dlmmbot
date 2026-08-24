@@ -122,7 +122,7 @@ market". `deploy/heartbeat-check.cjs` closes that gap from outside the process.
 The manager writes a `meta.heartbeat` row at the end of every tick (ts, pid,
 build, mode, open positions, probe failures). The checker reads it read-only and
 alerts to the same Telegram chat when it is older than 5 minutes — 20 ticks at
-`poll_s = 15`. It alerts on the falling edge and then at most hourly, so a long
+`poll_s = 20`. It alerts on the falling edge and then at most hourly, so a long
 outage is a handful of messages rather than one every two minutes.
 
 Install (replace `/path/to/dlmmbot` with your clone's absolute path):
