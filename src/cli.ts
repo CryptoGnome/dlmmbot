@@ -225,8 +225,65 @@ async function main(): Promise<void> {
       for (const r of rows) console.log(`${r.kind.padEnd(8)} ${r.key}  ${r.permanent ? "PERMANENT" : `until ${r.expires_at}`}  ${r.reason}`);
       break;
     }
+    case "repair-close": {
+      // `npm run repair-close -- <id…> [--apply]`. Dry-run unless --apply.
+      //
+      // Repairs rows written by the swap-signature bug (see ops/repairClose.ts):
+      // the close's own return stays untouched — it honestly records what the
+      // close could measure — and the recovered SOL goes to recovered_sol, the
+      // column REALIZED_PNL_SQL already adds without expiry, which is exactly
+      // what "SOL that came back after the close was booked" means.
+      const args = process.argv.slice(3);
+      const apply = args.includes("--apply");
+      const ids = args.filter((a) => !a.startsWith("--")).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+      if (!ids.length) { console.error("usage: npm run repair-close -- <id> [more ids…] [--apply]"); process.exit(1); }
+      const { findUnbookedExitLegs } = await import("./ops/repairClose.js");
+      const { makeConnection } = await import("./rpc.js");
+      const { loadKeypair } = await import("./executor/wallet.js");
+      const { env } = await import("./config.js");
+      const conn = makeConnection({ commitment: "confirmed" });
+      const wallet = loadKeypair(env().walletPrivateKey, env().walletKeypairPath).publicKey;
+      const db = getDb();
+      for (const id of ids) {
+        const row = db.prepare(
+          `SELECT id, symbol, token_mint, exit_ts, close_return_sol, recovered_sol, open_cost_sol,
+                  entry_sol, (${REALIZED_PNL_SQL}) AS pnl
+             FROM positions WHERE id = ?`
+        ).get(id) as {
+          id: number; symbol: string; token_mint: string; exit_ts: number | null;
+          close_return_sol: number | null; recovered_sol: number | null;
+          open_cost_sol: number | null; entry_sol: number; pnl: number | null;
+        } | undefined;
+        if (!row) { console.error(`pos#${id}: no such position`); continue; }
+        if (row.exit_ts == null) { console.error(`pos#${id}: still open — nothing to repair`); continue; }
+        const ev = db.prepare(
+          "SELECT detail_json FROM events WHERE position_id = ? AND type IN ('withdraw','safety_exit') ORDER BY ts DESC LIMIT 1"
+        ).get(id) as { detail_json: string } | undefined;
+        const known = new Set<string>(
+          ev ? ((JSON.parse(ev.detail_json) as { sigs?: string[] }).sigs ?? []) : []
+        );
+        const legs = await findUnbookedExitLegs(conn, wallet, row.token_mint, row.exit_ts, known);
+        const add = legs.reduce((n, l) => n + l.solDelta, 0);
+        console.log(`
+pos#${row.id} ${row.symbol}  close_return=${(row.close_return_sol ?? 0).toFixed(6)} ` +
+          `recovered=${(row.recovered_sol ?? 0).toFixed(6)}  realized=${row.pnl == null ? "?" : row.pnl.toFixed(6)}`);
+        console.log(`  close booked ${known.size} signature(s)`);
+        if (!legs.length) { console.log("  no unbooked sale of this mint near the close — nothing to repair"); continue; }
+        for (const l of legs) {
+          console.log(`  + ${l.signature}  ${new Date(l.blockTime * 1000).toISOString()}  ` +
+            `SOL ${l.solDelta >= 0 ? "+" : ""}${l.solDelta.toFixed(6)}  token ${l.tokenDelta}`);
+        }
+        const newRecovered = (row.recovered_sol ?? 0) + add;
+        console.log(`  => recovered_sol ${(row.recovered_sol ?? 0).toFixed(6)} -> ${newRecovered.toFixed(6)} ` +
+          `(realized ${row.pnl == null ? "?" : row.pnl.toFixed(6)} -> ${row.pnl == null ? "?" : (row.pnl + add).toFixed(6)})`);
+        if (!apply) { console.log("  (dry run — pass --apply to write)"); continue; }
+        db.prepare("UPDATE positions SET recovered_sol = ? WHERE id = ?").run(newRecovered, id);
+        console.log("  WRITTEN");
+      }
+      break;
+    }
     default:
-      console.log("usage: npm run <scan|vet -- <mint>|run|status|halt|pause|release [-- <sol> [note]]|blacklist [-- clear <key>…]>");
+      console.log("usage: npm run <scan|vet -- <mint>|run|status|halt|pause|release [-- <sol> [note]]|blacklist [-- clear <key>…]|repair-close -- <id…> [--apply]>");
   }
 }
 

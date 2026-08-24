@@ -21,6 +21,7 @@
     "blacklist": "tsx src/cli.ts blacklist",
     "release": "tsx src/cli.ts release",
     "force-close": "tsx src/cli.ts force-close",
+    "repair-close": "tsx src/cli.ts repair-close",
     "heartbeat-check": "node deploy/heartbeat-check.cjs",
     "dash": "node deploy/dashboard-server.mjs",
     "dash:build": "npm --prefix dashboard ci && npm --prefix dashboard run build",
