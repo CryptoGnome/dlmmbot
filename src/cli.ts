@@ -259,9 +259,12 @@ async function main(): Promise<void> {
         const ev = db.prepare(
           "SELECT detail_json FROM events WHERE position_id = ? AND type IN ('withdraw','safety_exit') ORDER BY ts DESC LIMIT 1"
         ).get(id) as { detail_json: string } | undefined;
-        const known = new Set<string>(
-          ev ? ((JSON.parse(ev.detail_json) as { sigs?: string[] }).sigs ?? []) : []
-        );
+        // Booked = what the close recorded, PLUS anything a previous repair
+        // already credited. Without the second half this is not idempotent:
+        // the recovered signature never enters the close's own `sigs`, so a
+        // second run would find the same swap again and credit it twice.
+        const detail = ev ? (JSON.parse(ev.detail_json) as { sigs?: string[]; repairedSigs?: string[] }) : {};
+        const known = new Set<string>([...(detail.sigs ?? []), ...(detail.repairedSigs ?? [])]);
         const legs = await findUnbookedExitLegs(conn, wallet, row.token_mint, row.exit_ts, known);
         const add = legs.reduce((n, l) => n + l.solDelta, 0);
         console.log(`
@@ -277,8 +280,21 @@ pos#${row.id} ${row.symbol}  close_return=${(row.close_return_sol ?? 0).toFixed(
         console.log(`  => recovered_sol ${(row.recovered_sol ?? 0).toFixed(6)} -> ${newRecovered.toFixed(6)} ` +
           `(realized ${row.pnl == null ? "?" : row.pnl.toFixed(6)} -> ${row.pnl == null ? "?" : (row.pnl + add).toFixed(6)})`);
         if (!apply) { console.log("  (dry run — pass --apply to write)"); continue; }
-        db.prepare("UPDATE positions SET recovered_sol = ? WHERE id = ?").run(newRecovered, id);
-        console.log("  WRITTEN");
+        // Credit and receipt in one transaction: a crash between them would
+        // leave the row repaired but re-repairable, i.e. double-creditable.
+        // `sigs` is left exactly as the close wrote it — that is the historical
+        // record of what the close could see — and the recovery is recorded
+        // alongside it.
+        db.transaction(() => {
+          db.prepare("UPDATE positions SET recovered_sol = ? WHERE id = ?").run(newRecovered, id);
+          if (ev) {
+            detail.repairedSigs = [...(detail.repairedSigs ?? []), ...legs.map((l) => l.signature)];
+            db.prepare(
+              "UPDATE events SET detail_json = ? WHERE position_id = ? AND type IN ('withdraw','safety_exit')"
+            ).run(JSON.stringify(detail), id);
+          }
+        })();
+        console.log(`  WRITTEN (receipt: ${legs.length} signature(s) recorded as repaired — re-running is a no-op)`);
       }
       break;
     }
