@@ -3,7 +3,7 @@
  * Single-process Railway entry: farmer + dashboard.
  * Persists DB / config / .env on the attached volume when present.
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -135,6 +135,28 @@ function run(label, args) {
     process.exit(code ?? 1);
   });
   kids.push(child);
+}
+
+// One-shot ledger repair, before the bot opens the DB for trading.
+//
+// Railway gives no shell, so a row that needs correcting on this volume has no
+// other way in. Set REPAIR_CLOSES to a comma-separated list of position ids and
+// redeploy; the repair runs to completion first, then the bot starts as usual.
+// Leaving the variable set is harmless — repair-close records a receipt per
+// signature, so every run after the first is a no-op (that is why this can sit
+// on the boot path at all).
+const repairIds = (process.env.REPAIR_CLOSES ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+if (repairIds.length) {
+  console.log(`[railway] REPAIR_CLOSES=${repairIds.join(",")} — repairing before start`);
+  const code = spawnSync(
+    process.execPath,
+    [resolve(root, "node_modules/tsx/dist/cli.mjs"), resolve(root, "src/cli.ts"),
+     "repair-close", ...repairIds, "--apply"],
+    { cwd: root, env: process.env, stdio: "inherit" },
+  ).status;
+  // Never block trading on the repair: a bot that will not boot is worse than a
+  // row that is still wrong, and the repair is safe to retry on the next deploy.
+  console.log(`[railway] repair-close exited ${code}${code === 0 ? "" : " — continuing to start anyway"}`);
 }
 
 run("dash", [resolve(root, "deploy/dashboard-server.mjs")]);
