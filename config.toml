@@ -158,7 +158,13 @@ tranche_size_pct = 50
 tranche_max_down_pct = 70
 
 [manage]                   # STRATEGY.md §4
-poll_s = 15
+# Every open position costs one RPC read-set per poll — after the keyed-mark
+# change that is 3 Helius credits, ~0.52M/month per position at 15s. 20s buys
+# back a quarter of that. It also stretches every knob counted in POLLS rather
+# than seconds by a third: stop_loss_sustain_polls (60s -> 80s), rotation_polls
+# (meme 45s -> 60s, majors 30min -> 40min), follow.cold_polls_end (45s -> 60s).
+# interval_s stays an exact multiple (60 = 3 x 20), so scans still snap to a tick.
+poll_s = 20
 # How many pools may be marked at once per tick. Marking was strictly serial, so
 # a tick paid the SUM of every position's RPC latency and mean mark gaps ran
 # past poll_s. Same calls, same rate-limit budget — they just stop queueing.
@@ -427,7 +433,7 @@ above_range_missed_sustain_min = 480
 # Was 0.05 — PUMP printed fee 0.02–0.05%/d with $5k–12k vol and rotated every ~15–45m.
 rotation_fee_daily_min_pct = 0.02
 rotation_vol_30m_min_usd = 1500
-# Sustained decay before rotate (uses manage.poll_s). At poll_s=15, 120 ≈ 30 min.
+# Sustained decay before rotate (uses manage.poll_s). At poll_s=20, 120 ≈ 40 min.
 # Meme stays at manage.rotation_polls=3. Majors also requires BOTH fee+vol dead (loop.ts).
 rotation_polls = 120
 

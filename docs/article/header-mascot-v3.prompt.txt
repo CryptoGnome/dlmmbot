@@ -1,0 +1,3 @@
+Prompt: Keep this exact image unchanged in every way, same pixel-art style, character, desk, mug, monitor, blue bin ramp, nebula and empty left third, but redraw only the green price line on the monitor so that after its dip it curves back and ticks sharply upward at the right end, finishing higher than where it started with a small green up-arrow at its tip, so the chart reads as a drop followed by a strong recovery, same crisp hard-edged pixels, no text, no letters, no logos
+Model: google/gemini-3-pro-image-preview
+API: chat

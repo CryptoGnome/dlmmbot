@@ -10,7 +10,7 @@ Philosophy (from the Tux/Gmet playbook): **capital preservation first**. One-sid
 
 ## 1. Scanning — building the candidate list
 
-Runs every `[60s]`. The scan fires from inside the manage tick, so it can only start on a `poll_s` boundary. Because `interval_s` is an exact multiple of `poll_s` (60 = 4x15), the old `elapsed > interval` test sat exactly ON the 4th boundary and a millisecond of timer jitter decided it: measured over 637 sweeps on 2026-08-21, 288 fired on the 4th tick and **348 waited a whole extra poll**, two clean spikes at 60s and 75s with nothing between, averaging **7.8s of extra staleness per scan**. The test now carries half a poll of tolerance so it snaps to the nearest tick; it cannot fire early, since the previous boundary sits a full poll below the target.
+Runs every `[60s]`. The scan fires from inside the manage tick, so it can only start on a `poll_s` boundary. Because `interval_s` is an exact multiple of `poll_s` (60 = 3x20), the old `elapsed > interval` test sat exactly ON the 4th boundary and a millisecond of timer jitter decided it: measured over 637 sweeps on 2026-08-21, 288 fired on the 4th tick and **348 waited a whole extra poll**, two clean spikes at 60s and 75s with nothing between, averaging **7.8s of extra staleness per scan**. The test now carries half a poll of tolerance so it snaps to the nearest tick; it cannot fire early, since the previous boundary sits a full poll below the target.
 
 1. **Pool sweep** — `GET dlmm.datapi.meteora.ag/pools`
    `filter_by: is_blacklisted=false && tvl > [5000]`, `sort_by: fee_tvl_ratio_30m:desc`, first `[3]` pages.

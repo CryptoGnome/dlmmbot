@@ -705,7 +705,7 @@ function loadOpenPositions(): Position[] {
  * Is the next scan due? Measured on the server, 2026-08-21, over 637 sweeps.
  *
  * The scan fires from inside the manage tick, so it can only ever start on a
- * poll boundary — and `interval_s` is an exact multiple of `poll_s` (60 = 4 x
+ * poll boundary — and `interval_s` is an exact multiple of `poll_s` (60 = 3 x
  * 15), which put the old `elapsed > interval` test exactly ON the 4th
  * boundary. Whether it passed came down to a millisecond of timer jitter, and
  * losing meant waiting a whole extra poll. The gap histogram was two clean

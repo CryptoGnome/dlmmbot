@@ -464,7 +464,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           },
           {
             title: "Close one position",
-            text: "Red Close button on each position card, for when you want out of one trade without stopping the bot. Confirm dialog naming the position, its size and unrealised PnL — it sells on chain and can't be undone. The click only queues it — the farmer does the actual close on its next tick (~15s) and reports the PnL like any other exit, booked as \"manual\" so it doesn't skew the strategy's exit stats. The card shows \"Closing…\" until it lands.",
+            text: "Red Close button on each position card, for when you want out of one trade without stopping the bot. Confirm dialog naming the position, its size and unrealised PnL — it sells on chain and can't be undone. The click only queues it — the farmer does the actual close on its next tick (~20s) and reports the PnL like any other exit, booked as \"manual\" so it doesn't skew the strategy's exit stats. The card shows \"Closing…\" until it lands.",
             icon: "alert",
             tone: "warn",
           },
