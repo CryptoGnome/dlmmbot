@@ -39,6 +39,44 @@ describe("runSlippageLadder", () => {
     expect(reread).toHaveBeenCalledTimes(1);
   });
 
+  // pos#104 PUMP, 2026-08-24. The ladder proved the swap landed ("wallet now
+  // 0") and then returned null — the caller's "no swap happened" value — so the
+  // 0.695 SOL the swap really produced never reached the close's wealth delta.
+  // The ledger booked 0.070 against a 0.750 deposit, -88.8%, and the phantom
+  // loss tripped the daily circuit breaker. If the tier carried a signature out
+  // on its confirm error, the ladder must hand it back.
+  it("returns the landed signature when the wallet proves the thrown tier sold", async () => {
+    const swap = vi.fn(async (_amt: bigint, bps: number) => {
+      throw Object.assign(new Error(`not confirmed in 30s @${bps}`), { signature: "LUPZhnAac9" });
+    });
+    const reread = vi.fn(async () => 0n);
+    const r = await runSlippageLadder(MINT, 1000n, 50, swap, reread);
+    expect(r?.signature).toBe("LUPZhnAac9");    // NOT null — the SOL is real
+    expect(swap).toHaveBeenCalledTimes(1);      // still does not double-sell
+  });
+
+  // The between-tier re-read only runs when a tier remains. The final tier had
+  // no such check, so the same loss reappeared on the last rung of the ladder.
+  it("recovers the last tier's signature too, where no iteration remains", async () => {
+    const swap = vi.fn(async (_amt: bigint, bps: number) => {
+      throw Object.assign(new Error(`not confirmed @${bps}`), { signature: `sig-${bps}` });
+    });
+    let calls = 0;
+    // Non-zero between tiers so the ladder runs all three, then empty at the end.
+    const reread = vi.fn(async () => (++calls <= 2 ? 1000n : 0n));
+    const r = await runSlippageLadder(MINT, 1000n, 50, swap, reread);
+    expect(r?.signature).toBe("sig-1500");
+    expect(swap).toHaveBeenCalledTimes(3);
+  });
+
+  // Never invent a signature: a tier that failed without one must still throw
+  // rather than report a swap that may not exist.
+  it("still throws when the last tier left no signature to recover", async () => {
+    const swap = vi.fn(async (_amt: bigint, bps: number) => { throw new Error(`dead @${bps}`); });
+    const reread = vi.fn(async () => 1000n);
+    await expect(runSlippageLadder(MINT, 1000n, 50, swap, reread)).rejects.toThrow("dead @1500");
+  });
+
   it("re-quotes only what the wallet still holds when a tier partially landed", async () => {
     let calls = 0;
     const swap = vi.fn(async (amt: bigint, bps: number) => {

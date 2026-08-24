@@ -138,8 +138,25 @@ export async function swapToSol(
   const tx = VersionedTransaction.deserialize(Buffer.from(swapTransaction, "base64"));
   tx.sign([wallet]);
   const signature = await connection.sendRawTransaction(tx.serialize(), { maxRetries: 3 });
-  await connection.confirmTransaction(signature, "confirmed");
+  // A confirm that times out is NOT proof the swap failed — the tx is already
+  // broadcast and can still land. Throwing the bare error loses the one thing
+  // that makes it recoverable: the signature. On a below-range close this swap
+  // IS the exit value, so a lost signature books the whole token side as a
+  // total loss (pos#104 PUMP, 2026-08-24: 0.695 SOL landed on chain, ledger
+  // recorded 0.070, breaker tripped on the difference). Carry the signature out
+  // on the error the same way the executor's send() carries `maybeSig`.
+  try {
+    await connection.confirmTransaction(signature, "confirmed");
+  } catch (e) {
+    throw Object.assign(e as Error, { signature });
+  }
   return { outLamports: Number(quote.outAmount), signature };
+}
+
+/** Signature carried out of a swap whose confirm timed out (see swapToSol). */
+export function signatureFromSwapError(e: unknown): string | null {
+  const sig = (e as { signature?: unknown } | null)?.signature;
+  return typeof sig === "string" && sig.length > 0 ? sig : null;
 }
 
 /** Swap `lamports` of SOL to `outputMint`. Returns raw token out (from quote) + signature. */
@@ -353,8 +370,21 @@ export async function runSlippageLadder(
         if (bal <= 0n) {
           // The previous tier sold everything even though it threw. Do not
           // treat this as a failure — and do not send another swap.
-          console.log(`[live] swap @${tiers[i - 1]}bps landed after all (wallet now 0) — not escalating`);
-          return null;
+          //
+          // Returning null here was the bug: `null` is the caller's "no swap
+          // happened" value, so the landed signature never reached the close's
+          // wealth delta and the token side booked as a total loss — while this
+          // very line logged that it had landed. Hand back the signature the
+          // failed tier carried out (swapToSol attaches it to the confirm
+          // error); only fall back to null when we genuinely never got one.
+          const landedSig = signatureFromSwapError(lastErr);
+          console.log(
+            `[live] swap @${tiers[i - 1]}bps landed after all (wallet now 0) — not escalating` +
+            (landedSig ? ` (recovered ${landedSig})` : " (NO signature recovered — close return will under-count)")
+          );
+          // outLamports is unused by every caller (the close measures the real
+          // delta from the signature); 0 keeps the shape without inventing one.
+          return landedSig ? { outLamports: 0, signature: landedSig } : null;
         }
         if (bal < amount) {
           console.log(`[live] swap tier ${bps}bps: wallet holds ${bal} < requested ${amount} — selling what is there`);
@@ -367,6 +397,18 @@ export async function runSlippageLadder(
     } catch (e) {
       lastErr = e;
       console.error(`[live] swap @${bps}bps failed: ${(e as Error).message.split("\n")[0]}`);
+    }
+  }
+  // Same recovery as the between-tier check above, but for the LAST tier: the
+  // loop has no iteration left in which to re-read the balance, so a final tier
+  // that threw on confirm yet landed would still be reported as "no swap".
+  // Prove it by the wallet, not by the confirm.
+  if (rereadBalance) {
+    const bal = await rereadBalance().catch(() => null);
+    const landedSig = signatureFromSwapError(lastErr);
+    if (bal !== null && bal <= 0n && landedSig) {
+      console.log(`[live] swap @${tiers[tiers.length - 1]}bps landed after all (wallet now 0) — recovered ${landedSig}`);
+      return { outLamports: 0, signature: landedSig };
     }
   }
   throw lastErr;
