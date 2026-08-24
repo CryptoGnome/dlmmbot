@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { runSlippageLadder, slippageTiers } from "./jupiter.js";
+import { runSlippageLadder, slippageTiers, confirmBySignatureStatus } from "./jupiter.js";
 import { SOL_MINT } from "../config.js";
 
 const MINT = "So1111111111111111111111111111111111111111x"; // any non-SOL mint
@@ -122,5 +122,54 @@ describe("runSlippageLadder", () => {
     expect(await runSlippageLadder(SOL_MINT, 1000n, 50, swap)).toBeNull();
     expect(await runSlippageLadder(MINT, 0n, 50, swap)).toBeNull();
     expect(swap).not.toHaveBeenCalled();
+  });
+});
+
+describe("confirmBySignatureStatus", () => {
+  const conn = (statuses: Array<unknown>) => {
+    let i = 0;
+    return {
+      getSignatureStatuses: vi.fn(async () => ({ value: [statuses[Math.min(i++, statuses.length - 1)]] })),
+    } as unknown as Parameters<typeof confirmBySignatureStatus>[0];
+  };
+
+  it("resolves once the status reports confirmed", async () => {
+    await expect(
+      confirmBySignatureStatus(conn([null, { confirmationStatus: "confirmed" }]), "sig", 5_000, 1)
+    ).resolves.toBeUndefined();
+  });
+
+  it("accepts finalized as confirmed", async () => {
+    await expect(
+      confirmBySignatureStatus(conn([{ confirmationStatus: "finalized" }]), "sig", 5_000, 1)
+    ).resolves.toBeUndefined();
+  });
+
+  it("throws when the tx landed with an on-chain error", async () => {
+    await expect(
+      confirmBySignatureStatus(conn([{ err: { InstructionError: [0, "X"] } }]), "sig", 5_000, 1)
+    ).rejects.toThrow("on-chain error");
+  });
+
+  // The timeout message must still name the signature: the recovery path in
+  // runSlippageLadder is what turns this into a booked swap rather than a
+  // phantom total loss.
+  it("times out with the signature in the message", async () => {
+    await expect(
+      confirmBySignatureStatus(conn([null]), "LUPZhnAac9", 10, 1)
+    ).rejects.toThrow("LUPZhnAac9");
+  });
+
+  // An RPC that throws is not a confirmation — but it is not a failure either.
+  it("keeps polling through a throwing RPC rather than declaring failure", async () => {
+    let n = 0;
+    const flaky = {
+      getSignatureStatuses: vi.fn(async () => {
+        if (++n < 3) throw new Error("429");
+        return { value: [{ confirmationStatus: "confirmed" }] };
+      }),
+    } as unknown as Parameters<typeof confirmBySignatureStatus>[0];
+    await expect(confirmBySignatureStatus(flaky, "sig", 5_000, 1)).resolves.toBeUndefined();
+    expect(n).toBe(3);
   });
 });

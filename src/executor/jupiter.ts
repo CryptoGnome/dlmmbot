@@ -146,11 +146,48 @@ export async function swapToSol(
   // recorded 0.070, breaker tripped on the difference). Carry the signature out
   // on the error the same way the executor's send() carries `maybeSig`.
   try {
-    await connection.confirmTransaction(signature, "confirmed");
+    await confirmBySignatureStatus(connection, signature);
   } catch (e) {
     throw Object.assign(e as Error, { signature });
   }
   return { outLamports: Number(quote.outAmount), signature };
+}
+
+/**
+ * Confirm by polling getSignatureStatuses instead of the WebSocket.
+ *
+ * web3.js implements confirmTransaction with an `onSignature` subscription, so
+ * it is only as available as the RPC's WEBSOCKET. When the Helius account went
+ * over quota on 2026-08-24 the ws endpoint answered 429 once a second for
+ * hours, which meant every swap confirm was GUARANTEED to time out at 30s even
+ * though the transactions were landing normally over HTTP. That is what
+ * manufactured the "not confirmed in 30.00 seconds" errors behind pos#104's
+ * -0.719 SOL phantom loss.
+ *
+ * Polling costs one credit per attempt against a swap path that runs a few
+ * times a day — nothing next to being unable to confirm an exit at all — and it
+ * degrades with the same HTTP endpoint everything else already depends on
+ * rather than a second transport with its own quota.
+ */
+export async function confirmBySignatureStatus(
+  connection: Connection,
+  signature: string,
+  timeoutMs = 45_000,
+  pollMs = 1_500,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const st = (await connection.getSignatureStatuses([signature]).catch(() => null))?.value?.[0];
+    if (st?.err) throw new Error(`tx landed with on-chain error: ${JSON.stringify(st.err)}`);
+    if (st?.confirmationStatus === "confirmed" || st?.confirmationStatus === "finalized") return;
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `Transaction was not confirmed in ${(timeoutMs / 1000).toFixed(2)} seconds. ` +
+        `It is unknown if it succeeded or failed. Check signature ${signature}`
+      );
+    }
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
 }
 
 /** Signature carried out of a swap whose confirm timed out (see swapToSol). */
@@ -171,7 +208,11 @@ export async function swapFromSol(
   const built = await buildSwapFromSolTx(connection, wallet, outputMint, lamports, slippageBps);
   if (!built) return null;
   const signature = await connection.sendRawTransaction(built.tx.serialize(), { maxRetries: 3 });
-  await connection.confirmTransaction(signature, "confirmed");
+  try {
+    await confirmBySignatureStatus(connection, signature);
+  } catch (e) {
+    throw Object.assign(e as Error, { signature });
+  }
   return { outAmountRaw: built.minOutRaw, signature };
 }
 
