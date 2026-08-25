@@ -1,6 +1,6 @@
 import {
   Connection, Keypair, PublicKey, Transaction,
-  sendAndConfirmTransaction, SendTransactionError,
+  SendTransactionError,
 } from "@solana/web3.js";
 import type { ParsedTransactionWithMeta } from "@solana/web3.js";
 import { createCloseAccountInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
@@ -263,8 +263,10 @@ export class LiveExecutor implements Executor {
     const s = priorityFeeSettings();
     const base = await recentFeeMicroLamports(this.connection, writableAccountsOf(tx), s);
     if (!hasComputeUnitLimit(tx)) {
-      // Simulation needs a blockhash and fee payer; sendAndConfirmTransaction
-      // would otherwise set them itself on the first attempt.
+      // Simulation needs a blockhash and fee payer; sendTransaction would
+      // otherwise set them itself on the first attempt. Whatever we put here is
+      // overwritten at send time with a fresh blockhash, so it only has to be
+      // valid enough to simulate against.
       if (!tx.recentBlockhash) {
         tx.recentBlockhash = (await this.connection.getLatestBlockhash("confirmed")).blockhash;
       }
@@ -313,6 +315,25 @@ export class LiveExecutor implements Executor {
     return "unknown";
   }
 
+  /**
+   * Broadcast and confirm, without ever touching the RPC's websocket.
+   *
+   * sendAndConfirmTransaction confirms through an `onSignature` SUBSCRIPTION, so
+   * it is only as available as the ws endpoint. When Helius went over quota on
+   * 2026-08-24 that endpoint answered 429 once a second for hours and every
+   * confirm was guaranteed to time out at 30s while the transactions landed
+   * perfectly well over HTTP — manufacturing "expired" errors for txs that had
+   * already succeeded. signatureFate() is the confirmation we actually want and
+   * it was already here: it polls getSignatureStatuses, and it distinguishes
+   * "expired" from "unknown" via isBlockhashValid, which a bare confirm cannot.
+   * So the broadcast is split from the confirm and the confirm is fate.
+   *
+   * sendTransaction still assigns a FRESH blockhash per attempt, signs, and runs
+   * preflight — so a program failure still surfaces as SendTransactionError with
+   * logs, and a retry still produces a different signature. The double-execute
+   * hazard the old catch guarded is unchanged and guarded the same way: nothing
+   * is resent until the previous attempt's fate is known.
+   */
   private async send(tx: Transaction, extraSigners: Keypair[] = []): Promise<string> {
     const baseFee = await this.applyComputeBudget(tx);
     const retries = config().exec.tx_retries;
@@ -321,10 +342,11 @@ export class LiveExecutor implements Executor {
       // Escalate before re-sending: the retry path exists for "broadcast but
       // never confirmed", which is precisely what an underpriced fee produces.
       if (i > 0) this.reprice(tx, baseFee, i);
+      let sig: string;
       try {
-        return await sendAndConfirmTransaction(this.connection, tx, [this.wallet, ...extraSigners], {
-          commitment: "confirmed",
+        sig = await this.connection.sendTransaction(tx, [this.wallet, ...extraSigners], {
           skipPreflight: false,
+          preflightCommitment: "confirmed",
         });
       } catch (e) {
         lastErr = e as Error;
@@ -337,13 +359,11 @@ export class LiveExecutor implements Executor {
             || /Simulation failed|custom program error|AnchorError/i.test(detail.summary);
           if (prog) throw Object.assign(new Error(detail.summary), { logs: detail.logs, code: detail.code });
         }
-        // Non-program failure after signing (confirm timeout, network error):
-        // the tx may have reached the RPC and can land for another ~60-90s.
-        // sendAndConfirmTransaction re-fetches a blockhash on the next attempt,
-        // producing a DIFFERENT signature — so a blind retry can double-execute
-        // (double-sell on closes, "account already in use" + an orphaned funded
-        // position on opens) and the landed attempt's signature would never
-        // reach walletDelta. Resolve the first attempt's fate before resending.
+        // Signed but the broadcast errored: it may still have reached the
+        // cluster and can land for another ~60-90s. A blind retry would
+        // double-execute (double-sell on closes, "account already in use" plus
+        // an orphaned funded position on opens) and the landed attempt's
+        // signature would never reach walletDelta. Resolve its fate first.
         const attemptSig = tx.signature ? bs58.encode(tx.signature) : null;
         const attemptBlockhash = tx.recentBlockhash;
         if (attemptSig && attemptBlockhash) {
@@ -363,7 +383,25 @@ export class LiveExecutor implements Executor {
           }
           // "expired": provably never landed — safe to re-sign and resend.
         }
+        continue;
       }
+      // Broadcast accepted. Same fate resolution, by polling — the only
+      // difference from the branch above is that here we know the signature
+      // rather than reconstructing it from the signed bytes.
+      const fate = await this.signatureFate(sig, tx.recentBlockhash ?? "");
+      if (fate === "landed") return sig;
+      if (fate === "failed") {
+        throw new Error(`tx landed with on-chain error: ${sig}`);
+      }
+      if (fate === "unknown") {
+        throw Object.assign(
+          new Error(`tx fate unknown (RPC blind) — not resending to avoid a double: ${sig}`),
+          { maybeSig: sig },
+        );
+      }
+      // "expired": provably never landed — safe to re-sign and resend.
+      lastErr = new Error(`tx expired without landing: ${sig}`);
+      console.warn(`[live] tx attempt ${i + 1}/${retries + 1} expired without landing — re-signing`);
     }
     throw lastErr ?? new Error("tx failed");
   }
