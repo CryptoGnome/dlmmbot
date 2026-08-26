@@ -18,7 +18,12 @@ export function manageForSleeve(sleeve: Sleeve) {
     below_range_grace_min: mj.below_range_grace_min,
     claim_min_sol: mj.claim_min_sol,
     profit_lock_enabled: mj.profit_lock_enabled,
+    // 999 = never arms, for the same reason the loop also gates on
+    // majors.escape_hatch_enabled: majors hold through dips.
     escape_hatch_depth_pct: mj.escape_hatch_enabled ? mj.escape_hatch_depth_pct : 999,
     escape_hatch_recovery_pct: mj.escape_hatch_recovery_pct,
+    escape_hatch_absolute: mj.escape_hatch_absolute,
+    escape_hatch_drawdown_pct: mj.escape_hatch_enabled ? mj.escape_hatch_drawdown_pct : 999,
+    escape_hatch_recovery_drawdown_pct: mj.escape_hatch_recovery_drawdown_pct,
   };
 }

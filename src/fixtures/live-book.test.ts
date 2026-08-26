@@ -37,6 +37,8 @@ describe("live-book golden fixtures", () => {
       c.manage.above_range_missed_sustain_min = 45;
       c.manage.escape_hatch_depth_pct = 60;
       c.manage.escape_hatch_recovery_pct = 25;
+      c.manage.escape_hatch_drawdown_pct = 26.4;
+      c.manage.escape_hatch_recovery_drawdown_pct = 12;
       c.manage.house_money_rule = false;
       c.follow.enabled = false;
     });

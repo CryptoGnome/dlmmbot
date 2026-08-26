@@ -1,3 +1,4 @@
+import { escapeDrawdownPct, ESCAPE_ARM_DRAWDOWN_PCT, ESCAPE_RECOVER_DRAWDOWN_PCT } from "../config.js";
 import type { Config } from "../config.js";
 import type { Replay, SimMark, SimReason, Trace } from "./types.js";
 
@@ -31,6 +32,10 @@ interface Params {
   belowGraceMin: number;
   escapeDepthPct: number;
   escapeRecoveryPct: number;
+  /** Absolute form (`escape_hatch_absolute`) — see manager/loop.ts. */
+  escapeAbsolute: boolean;
+  escapeDrawdownPct: number;
+  escapeRecoveryDrawdownPct: number;
   priceCrashPct: number;
   profitLockEnabled: boolean;
   profitLockAtFrac: number;
@@ -53,6 +58,11 @@ export function paramsFor(cfg: Config, sleeve: Trace["sleeve"]): Params {
     escapeDepthPct: majors && !mj.escape_hatch_enabled ? 999
       : majors ? mj.escape_hatch_depth_pct : m.escape_hatch_depth_pct,
     escapeRecoveryPct: majors ? mj.escape_hatch_recovery_pct : m.escape_hatch_recovery_pct,
+    escapeAbsolute: (majors ? mj.escape_hatch_absolute : m.escape_hatch_absolute) === true,
+    escapeDrawdownPct: majors && !mj.escape_hatch_enabled ? 999
+      : (majors ? mj.escape_hatch_drawdown_pct : m.escape_hatch_drawdown_pct) ?? ESCAPE_ARM_DRAWDOWN_PCT,
+    escapeRecoveryDrawdownPct: (majors ? mj.escape_hatch_recovery_drawdown_pct : m.escape_hatch_recovery_drawdown_pct)
+      ?? ESCAPE_RECOVER_DRAWDOWN_PCT,
     priceCrashPct: m.safety_price_crash_pct,
     profitLockEnabled: majors ? mj.profit_lock_enabled : m.profit_lock_enabled,
     profitLockAtFrac: m.profit_lock_at_frac,
@@ -140,9 +150,12 @@ export function replay(trace: Trace, cfg: Config): Replay {
     }
     belowSince = null;
 
-    // Escape hatch: arm once price falls through `depth_pct` of the range,
-    // fire when it recovers to the top `recovery_pct`.
-    if (width > 0 && m.binId != null) {
+    // Escape hatch, both formulations — mirrors manager/loop.ts (v0.24.0).
+    if (p.escapeAbsolute) {
+      const drawPct = escapeDrawdownPct(trace.entryPrice, m.price);
+      if (drawPct >= p.escapeDrawdownPct) armed = true;
+      else if (armed && drawPct <= p.escapeRecoveryDrawdownPct) return fire(i, "escape");
+    } else if (width > 0 && m.binId != null) {
       const frac = (trace.maxBinId - m.binId) / width;
       if (frac >= p.escapeDepthPct / 100) armed = true;
       else if (armed && frac <= p.escapeRecoveryPct / 100) return fire(i, "escape");

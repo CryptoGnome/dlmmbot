@@ -4,7 +4,7 @@ import { FakeExecutor } from "../test/fakeExecutor.js";
 import { installConfig, restoreConfig } from "../test/config.js";
 import { useMemoryDb, resetTestDb, insertOpenPosition } from "../test/db.js";
 import { getDb } from "../db/db.js";
-import { config } from "../config.js";
+import { config, ESCAPE_ARM_DRAWDOWN_PCT, ESCAPE_RECOVER_DRAWDOWN_PCT } from "../config.js";
 import type { ExitReason, Position } from "../types.js";
 
 describe("pollSleepMs", () => {
@@ -75,6 +75,8 @@ describe("managePositions contracts", () => {
       c.manage.above_range_missed_sustain_min = 45;
       c.manage.escape_hatch_depth_pct = 60;
       c.manage.escape_hatch_recovery_pct = 25;
+      c.manage.escape_hatch_drawdown_pct = 26.4;
+      c.manage.escape_hatch_recovery_drawdown_pct = 12;
       c.manage.house_money_rule = false;
       c.follow.enabled = false;
     });
@@ -575,7 +577,7 @@ describe("managePositions contracts", () => {
 
     it("a recovery between polls resets the streak", async () => {
       // Escape hatch off: bin 50 → bin 150 would otherwise read as deep-dip-recovered.
-      installConfig((c) => { c.manage.stop_loss_sustain_polls = 3; c.manage.escape_hatch_depth_pct = 99; c.manage.escape_hatch_recovery_pct = 0; });
+      installConfig((c) => { c.manage.stop_loss_sustain_polls = 3; c.manage.escape_hatch_drawdown_pct = 99; c.manage.escape_hatch_recovery_drawdown_pct = 0; });
       const id = insertOpenPosition({ entrySol: 0.4, minBinId: 100, maxBinId: 200 });
       belowRangeUnderStop(id); await managePositions(exec);
       belowRangeUnderStop(id); await managePositions(exec); // streak 2
@@ -631,6 +633,64 @@ describe("managePositions contracts", () => {
     await managePositions(exec);
     expect(exec.closed).toEqual([{ id, reason: "escape" }]);
     expect(getDb().prepare("SELECT 1 FROM blacklist WHERE key = ?").get("mint1")).toBeUndefined();
+  });
+
+  // v0.24.0 moved the hatch from a fraction of RANGE DEPTH to an absolute
+  // drawdown from entry price. These two tests are the reason that was safe.
+  describe("escape hatch arming is priced, not shaped", () => {
+    it("defaults reproduce the old fraction-of-range rule at min_down_pct = 40", () => {
+      // Old rule armed once price had fallen through 60% of the range's BINS.
+      // Bins are geometric, so on a range whose bottom sits at 0.60x entry that
+      // is exactly price = 0.60 ** 0.60. If either default drifts from this,
+      // shipping the rework silently retunes a live exit — so pin it.
+      const bottomRatio = 1 - 40 / 100;
+      expect(ESCAPE_ARM_DRAWDOWN_PCT).toBeCloseTo((1 - bottomRatio ** 0.60) * 100, 1);
+      expect(ESCAPE_RECOVER_DRAWDOWN_PCT).toBeCloseTo((1 - bottomRatio ** 0.25) * 100, 1);
+    });
+
+    it("stays OFF by default: the narrow range still arms on a shallow dip", async () => {
+      // The property this commit must not break. With the switch off the depth
+      // rule is live, so a -20% dip arms the 25-bin range (63% of its depth)
+      // and leaves the 100-bin one alone — the coupling the absolute form
+      // removes, and the reason it is not a no-op on the real book.
+      const wide = insertOpenPosition({ entrySol: 0.4, minBinId: 100, maxBinId: 200 });
+      const narrow = insertOpenPosition({ entrySol: 0.4, minBinId: 175, maxBinId: 200, pool: "pool2" });
+      const armed = (id: number) =>
+        (getDb().prepare("SELECT fell_deep AS f FROM positions WHERE id = ?").get(id) as { f: number }).f;
+      exec.setMark(wide, { valueSol: 0.40, price: 0.80, activeBinId: 156, inRange: true });
+      exec.setMark(narrow, { valueSol: 0.40, price: 0.80, activeBinId: 184, inRange: true });
+      await managePositions(exec);
+      expect([armed(wide), armed(narrow)]).toEqual([0, 1]);
+      // …and the disagreement is on the record, which is what decides this.
+      const d = getDb().prepare(
+        "SELECT COUNT(*) AS n FROM decisions WHERE failed_gate = 'escape_absolute_deferred'"
+      ).get() as { n: number };
+      expect(d.n).toBeGreaterThan(0);
+    });
+
+    it("the same dip arms a wide and a narrow range identically", async () => {
+      // The defect: one config, two arming prices. A -20% dip used to arm a
+      // 30%-deep range (60% of its depth) while leaving a 40%-deep one alone,
+      // so width silently retuned the exit. Now neither arms until -26.4%.
+      installConfig((c) => { c.manage.escape_hatch_absolute = true; });
+      const wide = insertOpenPosition({ entrySol: 0.4, minBinId: 100, maxBinId: 200 });
+      const narrow = insertOpenPosition({ entrySol: 0.4, minBinId: 175, maxBinId: 200, pool: "pool2" });
+      const armed = (id: number) =>
+        (getDb().prepare("SELECT fell_deep AS f FROM positions WHERE id = ?").get(id) as { f: number }).f;
+
+      // Bins are set to where -20% / -30% actually falls in each range, so the
+      // narrow position really is past 60% of its own depth at -20% — the case
+      // the old rule armed on. activeBinId no longer feeds the hatch at all.
+      exec.setMark(wide, { valueSol: 0.40, price: 0.80, activeBinId: 156, inRange: true });   // 44% of depth
+      exec.setMark(narrow, { valueSol: 0.40, price: 0.80, activeBinId: 184, inRange: true }); // 63% of depth
+      await managePositions(exec);
+      expect([armed(wide), armed(narrow)]).toEqual([0, 0]);   // -20%: neither arms
+
+      exec.setMark(wide, { valueSol: 0.40, price: 0.70, activeBinId: 130, inRange: true });
+      exec.setMark(narrow, { valueSol: 0.40, price: 0.70, activeBinId: 176, inRange: true });
+      await managePositions(exec);
+      expect([armed(wide), armed(narrow)]).toEqual([1, 1]);   // -30%: both arm
+    });
   });
 
   it("profit lock withdraws at configured threshold", async () => {

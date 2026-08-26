@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { resolveBuildLabel } from "../buildLabel.js";
-import { config, configToml, currentMode, isLive, onConfigChange, syncFarmerModeFromDisk } from "../config.js";
+import { config, configToml, currentMode, isLive, onConfigChange, syncFarmerModeFromDisk,
+  escapeDrawdownPct, ESCAPE_ARM_DRAWDOWN_PCT, ESCAPE_RECOVER_DRAWDOWN_PCT } from "../config.js";
 import { mapGrouped } from "../concurrent.js";
 import { reconcileLive } from "./reconcile.js";
 import { alert, type AlertKind } from "../alerts.js";
@@ -110,6 +111,7 @@ const tvlHistory = new Map<number, Array<{ ts: number; tvl: number; price: numbe
 const decayStreak = new Map<number, number>();        // P2 consecutive decay polls
 const stopStreak = new Map<number, number>();         // P1 consecutive under-stop polls while below range
 const feeOffsetLogged = new Set<number>();            // P1 fee-offset counterfactual logged once per position
+const escapeShapeLogged = new Set<number>();          // escape-hatch shape disagreement logged once per position
 const midBandSince = new Map<number, number>();       // young-exit telemetry: sustained below band midpoint
 const midBandLogged = new Set<number>();              // young-exit telemetry logged once per position
 const rugcheckLastCheck = new Map<number, number>();  // P0 rugcheck-flip throttle
@@ -198,6 +200,7 @@ export function resetManagerStateForTests(): void {
   decayStreak.clear();
   stopStreak.clear();
   feeOffsetLogged.clear();
+  escapeShapeLogged.clear();
   midBandSince.clear();
   midBandLogged.clear();
   rugcheckLastCheck.clear();
@@ -263,6 +266,7 @@ function clearRangeTimers(posId: number): void {
     "UPDATE positions SET above_range_since = NULL, below_range_since = NULL, stop_streak = 0, decay_streak = 0 WHERE id = ?"
   ).run(posId);
   feeOffsetLogged.delete(posId);
+  escapeShapeLogged.delete(posId);
   midBandSince.delete(posId);
   midBandLogged.delete(posId);
   rugcheckLastCheck.delete(posId);
@@ -1177,15 +1181,47 @@ export async function managePositions(exec: Executor): Promise<void> {
 
       // --- ESCAPE HATCH (meme only by default) ---
       if (pos.followChainId == null && (sleeve !== "majors" || config().majors.escape_hatch_enabled)) {
+        // Two formulations of the same hatch, live-compared (v0.24.0).
+        //
+        // LIVE (default): a fraction of RANGE DEPTH. Its defect is real — the
+        // arming *price* moves with the range width (-26.4% on a 40% range,
+        // -19.3% on a 30% one, -8.8% on a rent-shrunk 14% one), which is why
+        // the hatch is off on follow legs and why RANGE-WIDTH-DECISION.md makes
+        // fixing it the prerequisite for testing a narrower range.
+        //
+        // `escape_hatch_absolute` switches to drawdown from entry price, which
+        // removes that coupling. It ships OFF because it is NOT the no-op that
+        // document assumed. Replayed over the 96 closed positions where the
+        // depth rule reproduces the real exit, it changes 14: four are
+        // measurable and carried by a single row (+0.127 Normie; -0.033 and
+        // worse on 3 of 4 without it), and ten are real escapes whose marks
+        // END at the escape — no data can say what holding would have done
+        // (post-exit bars cover 3 and disagree: +14%, -22%, +34%). No single
+        // threshold pair fixes this: the book's range depths run 11-50%, so a
+        // sweep bottoms out at 26 of 177 changed. Both answers are logged; a
+        // week of live disagreements decides, not this replay.
         const depth = pos.maxBinId - pos.minBinId;
         const frac = depth > 0 ? (pos.maxBinId - mark.activeBinId) / depth : 0;
-        if (frac >= pm.escape_hatch_depth_pct / 100) {
+        const drawPct = escapeDrawdownPct(pos.entryPrice, mark.price);
+        const absolute = pm.escape_hatch_absolute === true;
+        const armDraw = pm.escape_hatch_drawdown_pct ?? ESCAPE_ARM_DRAWDOWN_PCT;
+        const armsNow = absolute ? drawPct >= armDraw : frac >= pm.escape_hatch_depth_pct / 100;
+        const wouldArm = absolute ? frac >= pm.escape_hatch_depth_pct / 100 : drawPct >= armDraw;
+        if (wouldArm !== armsNow && !escapeShapeLogged.has(pos.id)) {
+          escapeShapeLogged.add(pos.id);
+          recordDecision(pos.tokenMint, pos.poolAddress, "skipped", "escape_absolute_deferred", null,
+            { frac, drawPct, armsNow, wouldArm, absolute, mark, sleeve });
+          console.log(`[manager] pos#${pos.id} ${pos.symbol}: hatch formulations disagree — ${(frac * 100).toFixed(0)}% of range depth vs -${drawPct.toFixed(1)}% from entry; escape_hatch_absolute would ${wouldArm ? "arm" : "not arm"} (logged)`);
+        }
+        if (armsNow) {
           if (!fellDeep.has(pos.id)) {
             fellDeep.add(pos.id);
             getDb().prepare("UPDATE positions SET fell_deep = 1 WHERE id = ?").run(pos.id);
-            console.log(`[manager] pos#${pos.id} ${pos.symbol}: fell through ${(frac * 100).toFixed(0)}% of range — escape hatch armed`);
+            console.log(`[manager] pos#${pos.id} ${pos.symbol}: -${drawPct.toFixed(1)}% from entry (${(frac * 100).toFixed(0)}% of range) — escape hatch armed`);
           }
-        } else if (frac <= pm.escape_hatch_recovery_pct / 100) {
+        } else if (absolute
+          ? drawPct <= (pm.escape_hatch_recovery_drawdown_pct ?? ESCAPE_RECOVER_DRAWDOWN_PCT)
+          : frac <= pm.escape_hatch_recovery_pct / 100) {
           const armed = fellDeep.has(pos.id) ||
             (getDb().prepare("SELECT fell_deep AS f FROM positions WHERE id = ?").get(pos.id) as { f: number } | undefined)?.f === 1;
           if (armed) {
@@ -1201,7 +1237,7 @@ export async function managePositions(exec: Executor): Promise<void> {
             if (rebalanced) {
               getDb().prepare("UPDATE positions SET fell_deep = 0 WHERE id = ?").run(pos.id);
               await alert("close", `${pos.symbol} pos#${pos.id}: escape hatch rebalance — range reset in place`);
-              recordDecision(pos.tokenMint, pos.poolAddress, "exited", "escape_rebalance", null, { frac, mark, sleeve });
+              recordDecision(pos.tokenMint, pos.poolAddress, "exited", "escape_rebalance", null, { frac, drawPct, absolute, mark, sleeve });
               continue;
             }
             // Partial rebalance often leaves tokens/wSOL in the wallet and an empty
@@ -1218,7 +1254,7 @@ export async function managePositions(exec: Executor): Promise<void> {
               "escape hatch: deep dip recovered to range top — close and reset");
             bankProfit(pos, exitSol, "escape hatch");
             // Bench the token briefly. The hatch fired because price just fell
-            // through 60% of our range — the token is demonstrably breaching
+            // through most of our range — the token is demonstrably breaching
             // ranges — yet "close and reset" re-bought it on the next tick.
             // TROOPET 2026-08-19 (Railway): escape +0.026 at 20:07:04, re-entry
             // at 20:08:25 47% lower, P0 stop −0.051 six minutes later. Across
@@ -1227,7 +1263,7 @@ export async function managePositions(exec: Executor): Promise<void> {
             // only thing that separates "reset" from "chase".
             const coolMin = config().manage.escape_reentry_cooldown_min ?? 15;
             if (coolMin > 0) blacklist(pos.tokenMint, "token", "escape cooldown", coolMin / 60);
-            recordDecision(pos.tokenMint, pos.poolAddress, "exited", "escape_hatch", null, { frac, mark, sleeve, coolMin });
+            recordDecision(pos.tokenMint, pos.poolAddress, "exited", "escape_hatch", null, { frac, drawPct, absolute, mark, sleeve, coolMin });
             continue;
           }
         }
