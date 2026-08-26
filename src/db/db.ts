@@ -243,8 +243,33 @@ CREATE INDEX IF NOT EXISTS idx_error_log_ts ON error_log(ts DESC);
 
 let db: Database.Database | null = null;
 
+/**
+ * Bytes the WAL is truncated back to after a checkpoint.
+ *
+ * Without this, `journal_size_limit` defaults to -1: SQLite rewinds and REUSES
+ * the WAL rather than shrinking it, so the file is a permanent high-water mark
+ * of the largest burst it ever absorbed. Measured on the server 2026-08-26 —
+ * `farmer.db` 199 MB, `farmer.db-wal` **2263 MB**, stable (0 KB growth over
+ * 45s), one process attached, no unfinalized iterators. Not a leak: a burst
+ * (a 5000-row-at-a-time prune loop, or a marks batch) grew it once and nothing
+ * ever gave the space back.
+ *
+ * 2.3 GB against the server's 60 GB free is untidy. Against Railway's **0.5 GB
+ * volume** — the volume that has already hit ENOSPC once, which is why
+ * `db_max_mb` defaults to 200 — the same burst would be fatal, and nothing in
+ * the ceiling logic would see it coming: `dbFileBytes()` reads `page_count`,
+ * which counts the main database only and is blind to the WAL entirely.
+ *
+ * 64 MB leaves room for the largest transaction here (the prune loop's 5000-row
+ * DELETE batches) while capping the idle footprint. The limit applies only when
+ * a checkpoint completes — it does not force one — so `wal_autocheckpoint`
+ * (1000 pages / 4 MB) remains what drives the checkpointing.
+ */
+export const WAL_SIZE_LIMIT_BYTES = 64 * 1024 * 1024;
+
 function migrate(database: Database.Database): void {
   database.pragma("journal_mode = WAL");
+  database.pragma(`journal_size_limit = ${WAL_SIZE_LIMIT_BYTES}`);
   database.exec(SCHEMA);
   // Idempotent migrations for columns added after the initial schema.
   try {
