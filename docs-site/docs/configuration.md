@@ -184,8 +184,8 @@ Thresholds:
 | `min_reentry_sol` | `0.2` | Separate viability floor for re-entries (reused accounts are cheaper); also capped by the scaled floor |
 | `kelly_enabled` | `true` | Mirror of `mode=="kelly"` (compat for older profiles) |
 | `kelly_fraction` | `0.25` | Quarter-Kelly (half-Kelly assumes a *proven* edge) |
-| `kelly_lookback` | `50` | Closed positions in the rolling estimate |
-| `kelly_min_samples` | `50` | Below this, cold start applies |
+| `kelly_lookback` | `100` | Closed positions in the rolling estimate |
+| `kelly_min_samples` | `25` | Below this, cold start applies |
 | `kelly_cold_start_frac` | `0.03` | Cold start: flat 3% of wallet per position |
 | `kelly_max_position_frac` | `0.10` | Hard cap: no position exceeds 10% of wallet (Kelly and Fixed) |
 | `kelly_block_negative` | `false` | Off: negative edge clamps to the min-size floor instead of a permanent stop |

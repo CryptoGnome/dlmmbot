@@ -435,6 +435,12 @@ export const WIKI_SECTIONS: WikiSection[] = [
       {
         type: "callout",
         tone: "fg",
+        title: "Why the window is 100 closes, not 50",
+        text: "The estimator reads the last 100 closes and switches on at 25. It used to read 50 and switch on at 50 — with both numbers equal the window could only just fill, so it whipsawed. Replaying f* over 158 live closes, the old setting spent 32% of its life in cold start, 43% pinned at the cap, and 8% shut off completely at zero. Two of the twelve best trades entered during a shut-off and got the minimum size instead. Worth knowing what this rule does and does not do: sizing up and down with the book has never beaten a flat fraction on this ledger — at any window length tested — because trade outcomes here don't run in streaks, so cutting size after losses just means being small when the next winner shows up. The window change removes the worst of that; it does not make the rule predictive. Fixed sizing remains a supported alternative under Sizing mode.",
+      },
+      {
+        type: "callout",
+        tone: "fg",
         title: "The minimum size scales with your wallet",
         text: "The floor is max(0.05 SOL, min(Minimum size, 1% of equity)) — 0.05 on a 1 SOL wallet, 0.10 at 10 SOL, 0.30 once past 30 SOL. A flat floor is used in four places at once (the Kelly base, the entry cutoff, the override on the 10%-of-wallet cap, and the slot divisor), so a small wallet used to either never enter — the flat reserve ate the whole bankroll — or enter at 15% of equity with the risk cap bypassed, and no bankroll under 20 SOL could take a 60-70 score. Small positions are protected instead by capping bin rent at 25% of the position, so they only enter pools whose bin arrays are already paid for. Set Minimum size (% of wallet) to 0 for a flat floor.",
       },

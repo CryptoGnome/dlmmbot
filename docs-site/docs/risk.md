@@ -24,8 +24,8 @@ The bankroll is whatever the dedicated burner wallet holds. Before anything depl
 
 Position size is a fraction of the wallet, learned from **your own rolling closed-trade ledger** — not from anyone's backtest:
 
-1. **Cold start** — until 50 closed positions exist, every position is a flat **3% of wallet**.
-2. **Estimate f\*** — from the 50 most recent closes: `f* = p − (1−p)/b`, where `p` = win rate and `b` = average win / average loss (as return fractions). The estimator uses **measured wallet-delta PnL**, not notional marks.
+1. **Cold start** — until 25 closed positions exist, every position is a flat **3% of wallet**.
+2. **Estimate f\*** — from the 100 most recent closes: `f* = p − (1−p)/b`, where `p` = win rate and `b` = average win / average loss (as return fractions). The estimator uses **measured wallet-delta PnL**, not notional marks.
 3. **Apply a fraction of it** — the bot bets `kelly_fraction × f*`. Shipped default is **0.25 (quarter-Kelly)**: half-Kelly is calibrated for a *known* edge, and a young book hasn't demonstrated one. Fractional Kelly keeps most of the growth with far smaller drawdowns and buffers estimation error — betting past full Kelly turns long-run growth negative.
 4. **Score tilt** — the scan score multiplies the result: 0.5× (score 60–70), 1.0× (70–85), 1.5× (85+).
 5. **Clamps** — hard cap **10% of wallet** per position no matter how good f\* looks; plus a viability floor that **scales with your bankroll** (below it, fees can't beat tx + rent overhead; re-entries get a separate, lower floor).
