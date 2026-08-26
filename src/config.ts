@@ -160,7 +160,24 @@ export interface Config {
     claim_min_sol: number; claim_min_txcost_mult: number; claim_interval_h: number;
     grace_claim_min_sol: number;
     fee_destination: "bank" | "compound" | "hybrid"; compound_score_min: number;
+    /**
+     * Escape hatch, in ABSOLUTE drawdown % from entry price (v0.24.0). These
+     * replace `escape_hatch_depth_pct` / `escape_hatch_recovery_pct`, which
+     * were fractions of RANGE DEPTH and so moved the arming *price* whenever
+     * the range width changed: at a 40% range the hatch armed at -26.4%, at a
+     * 30% range at -19.3%, at 20% shallower still. That coupling is why the
+     * hatch is disabled on follow legs (§ follow) and why RANGE-WIDTH-DECISION.md
+     * lists it as the blocking prerequisite for testing a narrower range.
+     * Defaults are calibrated to be a no-op at the current 40% width.
+     * Optional: defaults in code for installs whose config predates the key.
+     */
     escape_hatch_depth_pct: number; escape_hatch_recovery_pct: number;
+    /**
+     * Switch the hatch to the absolute form. OFF: it is not a no-op — see the
+     * comment in manager/loop.ts. Optional: defaults in code.
+     */
+    escape_hatch_absolute?: boolean;
+    escape_hatch_drawdown_pct?: number; escape_hatch_recovery_drawdown_pct?: number;
     /** Minutes the token is benched after an escape close (default 15); 0 disables. Optional: predates some volumes. */
     escape_reentry_cooldown_min?: number;
     profit_lock_enabled: boolean; profit_lock_at_frac: number;
@@ -228,6 +245,8 @@ export interface Config {
     max_slots: number; deploy_cap_pct: number; meme_reserve_slots: number;
     stop_loss_frac: number;
     escape_hatch_enabled: boolean; escape_hatch_depth_pct: number; escape_hatch_recovery_pct: number;
+    escape_hatch_absolute?: boolean;
+    escape_hatch_drawdown_pct?: number; escape_hatch_recovery_drawdown_pct?: number;
     below_range_grace_min: number;
     claim_min_sol: number; fee_compound: boolean; profit_lock_enabled: boolean;
     max_age_h: number; above_range_sustain_min: number; above_range_missed_sustain_min: number;
@@ -322,6 +341,28 @@ const REQUIRED_SECTIONS = [
   "entry", "manage", "sizing", "follow", "majors", "rotation", "exec", "gmgn",
   "watchdog", "apis",
 ] as const;
+
+/**
+ * Escape-hatch thresholds for the ABSOLUTE form (`escape_hatch_absolute`).
+ *
+ * Calibrated to reproduce the fraction-of-range-depth rule at `min_down_pct =
+ * 40`. Bins are geometric, so falling through a fraction `f` of a range whose
+ * bottom sits at ratio `r` of entry leaves price at `r ** f`:
+ *   arm      1 - 0.60 ** 0.60 = 26.4%   (was depth_pct = 60)
+ *   recover  1 - 0.60 ** 0.25 = 12.0%   (was recovery_pct = 25)
+ * `maxBinId` is the active bin at entry, so entry price IS the depth rule's
+ * reference point — only the unit changes, not what it is measured from.
+ * The calibration holds only at 40%: the book's actual depths run 11-50%, so
+ * this is NOT a no-op. See loop.ts and RANGE-WIDTH-DECISION.md.
+ */
+export const ESCAPE_ARM_DRAWDOWN_PCT = 26.4;
+export const ESCAPE_RECOVER_DRAWDOWN_PCT = 12.0;
+
+/** Drawdown from entry price as a positive %, 0 at or above entry. */
+export function escapeDrawdownPct(entryPrice: number, price: number): number {
+  if (!(entryPrice > 0) || !(price > 0)) return 0;
+  return (1 - price / entryPrice) * 100;
+}
 
 /** Recursively fill keys missing from `target` with the template's values. */
 function fillMissing(target: Record<string, unknown>, template: Record<string, unknown>): void {

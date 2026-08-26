@@ -40,6 +40,8 @@ describe("sim", () => {
       c.manage.above_range_missed_sustain_min = 45;
       c.manage.escape_hatch_depth_pct = 60;
       c.manage.escape_hatch_recovery_pct = 25;
+      c.manage.escape_hatch_drawdown_pct = 26.4;
+      c.manage.escape_hatch_recovery_drawdown_pct = 12;
       c.manage.safety_price_crash_pct = -60;
       c.manage.profit_lock_enabled = false;
       c.manage.max_age_h = 24;
@@ -69,8 +71,8 @@ describe("sim", () => {
     });
 
     it("escape hatch must arm on the way down before it can fire", async () => {
-      const deep = mark({ ts: 1015, binId: 120, depthFrac: 0.2 });    // 80% down the range
-      const top = mark({ ts: 1030, binId: 190, depthFrac: 0.9 });     // back in the top 10%
+      const deep = mark({ ts: 1015, price: 0.70, binId: 120, depthFrac: 0.2 });  // 80% down the range
+      const top = mark({ ts: 1030, price: 0.95, binId: 190, depthFrac: 0.9 });   // back in the top 10%
       expect(replay(trace({ marks: [mark({ ts: 1000 }), deep, top] }), config()).reason).toBe("escape");
       // Same recovery mark without the fall first: nothing armed, so nothing fires.
       expect(replay(trace({ marks: [mark({ ts: 1000 }), top] }), config()).reason).toBe("held");

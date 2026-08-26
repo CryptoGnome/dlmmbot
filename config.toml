@@ -252,11 +252,29 @@ claim_interval_h = 4
 grace_claim_min_sol = 0.005
 fee_destination = "bank"         # bank | compound | hybrid
 compound_score_min = 70
+# Escape hatch, as a fraction of RANGE DEPTH (live default).
 escape_hatch_depth_pct = 60
 escape_hatch_recovery_pct = 25
+# The same hatch expressed as ABSOLUTE % drawdown from entry price, off by
+# default. The depth form's arming *price* moves with the range width (-26.4%
+# on a 40% range, -19.3% on a 30% one, -8.8% on a rent-shrunk 14% one), which
+# is why the hatch is off on follow legs and why RANGE-WIDTH-DECISION.md makes
+# fixing it the prerequisite for testing a narrower range.
+#
+# It is OFF because it is not the no-op that document assumed. The thresholds
+# below reproduce the depth rule at min_down_pct = 40 (1 - 0.60**0.60 = 26.4%,
+# 1 - 0.60**0.25 = 12.0%), but the book's real depths run 11-50%, so replaying
+# the 96 closed positions the depth rule reproduces faithfully changes 14 of
+# them — and 10 of those are escapes whose marks end at the escape, where no
+# data can say what holding would have done. The bot logs an
+# `escape_absolute_deferred` decision every time the two disagree; a week of
+# those decides. Do not flip this on the strength of the replay alone.
+escape_hatch_absolute = false
+escape_hatch_drawdown_pct = 26.4
+escape_hatch_recovery_drawdown_pct = 12.0
 # After an escape close the token is benched this long before the scanner may
-# re-enter it. The escape fires BECAUSE the token just fell through 60% of our
-# range; "close and reset" used to re-buy it on the next tick (3 of 6 observed
+# re-enter it. The escape fires BECAUSE the token just fell 26%+ below our
+# entry; "close and reset" used to re-buy it on the next tick (3 of 6 observed
 # re-entries were same-minute; net -0.10 SOL across both bots). 15 vs 30 measured
 # on all 20 escapes: identical outcomes, so the shorter bench. 0 disables.
 escape_reentry_cooldown_min = 15
@@ -421,6 +439,9 @@ stop_loss_frac = 0.60              # wider than meme 0.75 — spot holds invento
 escape_hatch_enabled = false       # meme escape logic; majors hold through dips
 escape_hatch_depth_pct = 60
 escape_hatch_recovery_pct = 25
+escape_hatch_absolute = false      # all four dormant while the hatch is disabled
+escape_hatch_drawdown_pct = 26.4
+escape_hatch_recovery_drawdown_pct = 12.0
 below_range_grace_min = 120        # 2h grace below range (vs meme 15m)
 claim_min_sol = 0.02
 fee_compound = false               # bank only — no reinvest into position

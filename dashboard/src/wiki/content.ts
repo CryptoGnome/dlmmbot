@@ -776,7 +776,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           ["Fixed sizing", "Exact SOL or % of deployable per sleeve — Settings → Book & size."],
           ["Active bin", "Where the pool’s price is right now."],
           ["Swap", "Jupiter converts the token side back into SOL when we exit."],
-          ["Escape hatch", "Deep dip, then recovery → close and free the slot (reset), not a slow bleed. The token is benched 15 min (escape_reentry_cooldown_min) so the reset doesn’t re-buy it on the next tick."],
+          ["Escape hatch", "Deep dip, then recovery → close and free the slot (reset), not a slow bleed. The token is benched 15 min (escape_reentry_cooldown_min) so the reset doesn’t re-buy it on the next tick. “Deep” is measured as a fraction of the range’s depth, so the trigger price moves with how wide the range is: −26% on a 40%-deep range, −19% on a 30%-deep one. An absolute-drawdown version is wired up but switched off — it changes 14 of 96 replayable closes and 10 of those cannot be judged from recorded data, so the bot just logs where the two disagree."],
           ["Profit lock", "Bank a slice of a big winner while the rest keeps earning."],
           ["Usage fee", "1% on live wins → GNME buy+burn. See dlmmbot.com/setup/fees."],
           ["Profile", "Pack of Bot settings — official / local / GitHub community. See Wiki → Settings profiles."],

@@ -106,10 +106,39 @@ the rule for lifting that, not for working around it.
 
 **Prerequisite:** express escape-hatch arming as an absolute drawdown from entry
 price, calibrated so that at today's −40% width it arms at the same −26.4% it
-does now (i.e. a no-op on the current config), then hold it fixed across both
-arms. Ship that alone, confirm it changes no exits for a week, and only then
-start the width test. `escape_hatch_recovery_pct = 25` carries the same units and
-is owed the same audit before starting.
+does now, then hold it fixed across both arms. `escape_hatch_recovery_pct = 25`
+carries the same units and is owed the same audit before starting.
+
+> **Addendum, 2026-08-25 — the prerequisite is built, and it is NOT a no-op.**
+> The paragraph above assumed the conversion could be shipped invisibly. It
+> cannot, and the reason is worth recording because it also constrains the
+> experiment.
+>
+> The depth rule's thresholds scale with each position's *own* range, and the
+> book's real depths are bimodal — **11–20%** (low-bin-step pools) and **40–50%**
+> — not clustered at 40% as the planned-depth figure suggested. So one absolute
+> pair cannot reproduce a rule that was never one rule. Replaying all 177 closed
+> positions with marks, a sweep of (arm, recover) over 20–36% × 7–22% bottoms
+> out at **26 changed**; the calibrated pair (26.4, 12.0) gives 27.
+>
+> Restricted to the 96 positions where the depth rule actually reproduces the
+> real exit (the sim's fidelity discipline — it excludes majors, whose hatch is
+> disabled in production, and follow legs), it changes **14**:
+> - **4 measurable**, net +0.094 SOL — but carried entirely by one row (Normie
+>   +0.127). Without it: **−0.033 SOL, worse on 3 of 4, median −0.005.**
+> - **10 unmeasurable**: real escapes whose marks *end* at the escape, so
+>   "held" re-reads the same mark and the counterfactual is unknowable.
+>   `post_exit_prices` covers 3 and they disagree (+14%, −22%, +34%).
+>
+> By the standard this repo already applied when it rejected the dip-relative
+> hatch ("it is four rows", "worse on 18 of 28"), that is not shippable. So it
+> ships **instrumented-off** as `escape_hatch_absolute = false`, logging an
+> `escape_absolute_deferred` decision whenever the two formulations disagree.
+>
+> **What this changes for the width test:** the stopping rule below cannot start
+> until the absolute form is ON, and turning it on is now its own decision with
+> its own evidence bar, gated on the live disagreement log rather than on a
+> replay. Integrity check (c) is unchanged and becomes its regression test.
 
 ## The design
 
@@ -265,4 +294,6 @@ the run should stop regardless of which arm is ahead.
 
 ## Status
 
-**2026-08-25 — not started. Blocked on the escape-hatch prerequisite.**
+**2026-08-25 — not started.** Blocked on the escape-hatch prerequisite, which is
+now built but **off** (`escape_hatch_absolute`), pending live disagreement data —
+see the addendum above. No width knob has been touched.

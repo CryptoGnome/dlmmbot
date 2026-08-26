@@ -161,6 +161,9 @@ Thresholds:
 | `compound_score_min` | `70` | Min pool score for compounding (if ever enabled) |
 | `escape_hatch_depth_pct` | `60` | Escape hatch: dip through this % of range depth… |
 | `escape_hatch_recovery_pct` | `25` | …then recovery into the top % of range → close & reset |
+| `escape_hatch_absolute` | `false` | Use absolute drawdown from entry instead of a fraction of range depth. Off — not a no-op, see STRATEGY.md |
+| `escape_hatch_drawdown_pct` | `26.4` | Absolute form: arm once price is this % below entry |
+| `escape_hatch_recovery_drawdown_pct` | `12.0` | Absolute form: …then recovery to within this % of entry → close & reset |
 | `escape_reentry_cooldown_min` | `15` | Bench the token this long after an escape close before re-entering it (0 = off) |
 | `profit_lock_enabled` | `true` | Bank a slice of strong runners |
 | `profit_lock_at_frac` | `1.30` | Fires at mark ≥ entry × 1.30 while in range |
