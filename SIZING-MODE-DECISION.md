@@ -429,8 +429,9 @@ Three implementation choices worth defending:
   so the analysis must recompute the flat size against the trailing mean Kelly
   size at read time, and the inputs make that possible without a restart.
 
-**Start the 14-day clock when this reaches production.** Read it with the
-median of `|flatSol − kellySol| / kellySol` over core entries; the bar is 15%.
+**Read Gate 3 only over rows carrying a `posId`.** The first cut of this logged at the sizing point rather than after the entry, and that line is reached for every candidate on every tick — including ones rejected immediately after by `already_positioned`. In production it wrote ~1 row per minute per open position instead of one per entry (6 rows in 6 minutes against a book that had not entered for 80). Left alone it would have had the Gate 3 median dominated by repeated evaluations of a single candidate. Fixed the same day by capturing the pre-clamp pair at the sizing point and emitting it beside the `entered` decision; `posId` is present only on correct rows, so the bad ones need no cleanup — filter them out.
+
+**Start the 14-day clock from the first `posId`-bearing row.** Read it with the median of `|flatSol − kellySol| / kellySol` over core entries; the bar is 15%.
 
 ## Status
 
