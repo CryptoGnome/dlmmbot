@@ -1090,7 +1090,12 @@ export async function managePositions(exec: Executor): Promise<void> {
         const inGrace = mark.belowRange;
         const streak = (stopStreak.get(pos.id) ?? 0) + 1;
         setTimer(stopStreak, pos.id, streak);
-        const needed = inGrace ? (m.stop_loss_sustain_polls ?? 4) : 1;
+        // In range the stop has had NO wick tolerance: one poll under the line
+        // exits. Below range it demands `stop_loss_sustain_polls`. Both bots
+        // stopped out of positions a single 15s sample apart on 2026-08-26.
+        const needed = inGrace
+          ? (m.stop_loss_sustain_polls ?? 4)
+          : (m.stop_loss_sustain_polls_in_range ?? 1);
         if (streak < needed) {
           if (streak === 1) console.log(`[manager] pos#${pos.id} ${pos.symbol}: under stop (${(stopFrac * 100 - 100).toFixed(1)}%) below range — sustaining ${needed} polls before P1`);
         } else {

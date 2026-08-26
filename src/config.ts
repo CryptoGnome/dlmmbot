@@ -146,6 +146,12 @@ export interface Config {
     /** While BELOW range, P1 must be under the stop for this many consecutive polls before firing (wick tolerance). In range it fires immediately. Optional: default in code. */
     stop_loss_sustain_polls?: number;
     /**
+     * Consecutive polls under the stop before P1 fires while price is IN range.
+     * 1 = today's behaviour: a single bad poll exits, with no wick tolerance,
+     * while below-range needs `stop_loss_sustain_polls`. Optional: defaults in code.
+     */
+    stop_loss_sustain_polls_in_range?: number;
+    /**
      * Count fees ALREADY CLAIMED (realized SOL, in the wallet) in the value P1
      * measures. Off = P1 measures unrealized MTM only, as before. Optional:
      * default false in code. See STRATEGY.md §4 P1 (2026-08-18).

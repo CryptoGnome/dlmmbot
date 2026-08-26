@@ -25,6 +25,7 @@ import type { Replay, SimMark, SimReason, Trace } from "./types.js";
 interface Params {
   stopLossFrac: number;
   stopSustainPolls: number;
+  stopSustainPollsInRange: number;
   countClaimedFees: boolean;
   maxAgeH: number;
   aboveSustainMin: number;
@@ -50,6 +51,7 @@ export function paramsFor(cfg: Config, sleeve: Trace["sleeve"]): Params {
   return {
     stopLossFrac: majors ? mj.stop_loss_frac : m.stop_loss_frac,
     stopSustainPolls: m.stop_loss_sustain_polls ?? 4,
+    stopSustainPollsInRange: m.stop_loss_sustain_polls_in_range ?? 1,
     countClaimedFees: m.stop_loss_count_claimed_fees === true,
     maxAgeH: majors ? mj.max_age_h : m.max_age_h,
     aboveSustainMin: majors ? mj.above_range_sustain_min : m.above_range_sustain_min,
@@ -126,7 +128,7 @@ export function replay(trace: Trace, cfg: Config): Replay {
     const stopFrac = p.countClaimedFees ? feeInclFrac : valueFrac;
     if (stopFrac < p.stopLossFrac) {
       stopStreak++;
-      const needed = m.belowRange ? p.stopSustainPolls : 1;
+      const needed = m.belowRange ? p.stopSustainPolls : p.stopSustainPollsInRange;
       if (stopStreak >= needed) return fire(i, "P1_stop");
     } else {
       stopStreak = 0;
