@@ -295,7 +295,7 @@ Tables:
 
 - **Meme BidAsk → Spot/Curve** — [RANGE-SHAPE-DECISION.md](RANGE-SHAPE-DECISION.md) programme closed; edge is escape hatch, tax is P1. Majors spot is a **separate strategy**, not a meme shape flip.
 - **SOL-USDC / stable pairs** — out of scope permanently
-- Weaken P1 stop, house-money rule, loosen follow `min_vol_30m_usd`, more concurrent slots, narrower meme ranges without escape-hatch rework
+- Weaken P1 stop, house-money rule, loosen follow `min_vol_30m_usd`, more concurrent slots, narrower meme ranges without escape-hatch rework ([RANGE-WIDTH-DECISION.md](RANGE-WIDTH-DECISION.md) is the pre-registered rule for doing it properly)
 - Pool creation tooling — different game, worse EV
 
 ### Deferred (future build, if ever)
