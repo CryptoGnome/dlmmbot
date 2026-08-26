@@ -14,7 +14,7 @@ import { executeProfitBurn, profitBurnSpendSol, accrueProfitBurn, readProfitBurn
 import { PaperExecutor } from "../executor/paper.js";
 import { rollupDaily } from "../pnl/rollup.js";
 import { fetchSummary } from "../vetting/rugcheck.js";
-import { planRange, planTrancheRange } from "../ranges/planner.js";
+import { planRange, planTrancheRange, depthReachable } from "../ranges/planner.js";
 import { applyBinRentGate } from "../ranges/binRent.js";
 import { fetchPool } from "../scanner/meteora.js";
 import { fetchCandlesDeep } from "../scanner/candles.js";
@@ -1772,6 +1772,19 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
         }
         entryPrice = fresh.price;
       }
+    }
+
+    // A fine-step pool cannot hold a range as deep as min_down_pct: planRange
+    // would silently truncate to the bin-account ceiling and we would enter with
+    // a fraction of the intended range. Checked before the candle fetch so a
+    // pool we cannot trade properly costs us nothing.
+    const reach = depthReachable(config().entry.min_down_pct, cand.pool.binStep, config().entry.max_position_accounts);
+    if (!reach.ok) {
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "range_too_shallow", score, {
+        binStep: cand.pool.binStep, minDownPct: config().entry.min_down_pct, ...reach,
+      });
+      console.log(`[enter] ${cand.symbol}: skip — step ${cand.pool.binStep} needs ${reach.binsNeeded} bins for -${config().entry.min_down_pct}%, cap is ${reach.maxBins}`);
+      continue;
     }
 
     const candles = await fetchCandlesDeep(cand.pool.address, "5m").catch(() => []);
