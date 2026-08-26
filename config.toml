@@ -215,6 +215,14 @@ stop_loss_frac = 0.75            # position SOL value vs entry
 # grace timer exists precisely to ride out wicks; P1 was defeating it. In range
 # the stop is still immediate (a real drawdown, not a wick). 4 polls = 60s.
 stop_loss_sustain_polls = 4
+# ...and this many while price is still IN range. 1 = no wick tolerance at all:
+# a single poll under stop_loss_frac exits. Made configurable 2026-08-26 to test
+# whether that asymmetry was costing us; it is NOT. Swept 1..4 over 138 replayed
+# meme positions: every value is a no-op, because every P1 stop on the book fired
+# BELOW range, where stop_loss_sustain_polls already applies. All 8 stops that
+# recorded the field show inGrace=true and sustainedPolls=4. Leave it at 1 unless
+# a future cohort actually exercises the in-range branch.
+stop_loss_sustain_polls_in_range = 1
 # 2026-08-18: whether P1 counts fees already CLAIMED (realized SOL sitting in
 # the wallet) in the value it compares to entry. Off (default) = P1 measures
 # unrealized mark-to-market only. Audit of the 7 P1 stops with marks: 6 fired

@@ -108,6 +108,34 @@ export function fibLevel(high: number, low: number, level: number): number {
 }
 
 /**
+ * Can a range `downPct` deep even be built on this pool?
+ *
+ * Bins are geometric, so a fine-step pool needs far more of them to span the
+ * same price move: -40% is 52 bins at step 100, but 256 at step 20 and 512 at
+ * step 10, against a ceiling of BINS_PER_POSITION * max_position_accounts
+ * (138 today). `planRange` silently truncates to that ceiling, which is how
+ * ANSEM/PUMP/MET/ORE positions ended up 11-15% deep while `min_down_pct` said
+ * 40 — a third of the intended range, with no signal that anything was wrong.
+ *
+ * `fitPlanToRentBudget` already refuses to shrink past the depth floor; this
+ * closes the same hole on the bin-count side, before we pay for candles.
+ */
+export function depthReachable(
+  downPct: number,
+  binStep: number,
+  maxPositionAccounts: number,
+): { binsNeeded: number; maxBins: number; ok: boolean } {
+  const maxBins = BINS_PER_POSITION * maxPositionAccounts;
+  if (!(downPct > 0) || downPct >= 100 || !(binStep > 0)) {
+    return { binsNeeded: 0, maxBins, ok: true };
+  }
+  const binsNeeded = Math.ceil(
+    Math.log(1 / (1 - downPct / 100)) / Math.log(1 + binStep / 10_000),
+  );
+  return { binsNeeded, maxBins, ok: binsNeeded <= maxBins };
+}
+
+/**
  * Plan the entry range: top = active bin (current price), bottom = the
  * SHALLOWER of fib(entry.fib_bottom) and -max_down_pct, floored at
  * -min_down_pct so the range is never a thin sliver.

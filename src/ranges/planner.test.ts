@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { priceToBinId, binIdToPrice, binArraysSpanned, planRange, planFollowRange, planTrancheRange, fitPlanToRentBudget } from "./planner.js";
+import { priceToBinId, binIdToPrice, binArraysSpanned, planRange, planFollowRange, planTrancheRange, fitPlanToRentBudget, depthReachable } from "./planner.js";
 import { installConfig, restoreConfig } from "../test/config.js";
 
 describe("planner bin math", () => {
@@ -146,5 +146,38 @@ describe("planner bin math", () => {
       estBinRentSol: 0.75, shape: "bidask" as const,
     };
     expect(fitPlanToRentBudget(plan, 0.075, price, binStep, decimalsX, 40)).toBeNull();
+  });
+});
+
+describe("depthReachable — a fine-step pool cannot hold a deep range", () => {
+  // 2026-08-26: ANSEM/PUMP/MET/ORE positions came out 11-15% deep against a
+  // min_down_pct of 40, because planRange truncates to the bin-account ceiling
+  // without saying so. 29 such positions returned ~flat while the meme book
+  // (step >= 50, where 40% fits) returned +1.50%/SOL.
+  it("passes the steps the meme book actually trades", () => {
+    for (const step of [50, 80, 100, 125, 160, 200, 250, 400]) {
+      const r = depthReachable(40, step, 2);
+      expect(r.ok, `step ${step} should fit`).toBe(true);
+      expect(r.binsNeeded).toBeLessThanOrEqual(r.maxBins);
+    }
+  });
+
+  it("rejects the fine-step pools that silently truncate", () => {
+    expect(depthReachable(40, 20, 2)).toMatchObject({ binsNeeded: 256, maxBins: 138, ok: false });
+    expect(depthReachable(40, 10, 2)).toMatchObject({ binsNeeded: 512, maxBins: 138, ok: false });
+  });
+
+  it("step 100 needs 52 bins for -40% — the arithmetic the gate rests on", () => {
+    expect(depthReachable(40, 100, 2).binsNeeded).toBe(52);
+  });
+
+  it("more position accounts buy more depth", () => {
+    expect(depthReachable(40, 20, 2).ok).toBe(false);
+    expect(depthReachable(40, 20, 4).ok).toBe(true);   // 276 bins
+  });
+
+  it("never blocks on nonsense input rather than failing closed on a live bot", () => {
+    for (const bad of [0, -5, 100, 150]) expect(depthReachable(bad, 100, 2).ok).toBe(true);
+    expect(depthReachable(40, 0, 2).ok).toBe(true);
   });
 });
