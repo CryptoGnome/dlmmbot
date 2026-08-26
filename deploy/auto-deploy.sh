@@ -106,7 +106,12 @@ restart_app() {
 }
 
 while true; do
-  if ! git fetch origin "$BRANCH" --quiet 2>/dev/null; then
+  # --tags matters: without it the checkout only ever learns about branch refs,
+  # so `git describe` stays pinned to whatever tag it happened to have at clone
+  # time. The dashboard build pill and the Changes tab read that describe, so a
+  # tagless fetch quietly reports the wrong release forever (observed on the
+  # staging box: v0.22.0-15-g6550803 while main was two releases further on).
+  if ! git fetch origin "$BRANCH" --tags --quiet 2>/dev/null; then
     note_skip "fetch failed (offline?) — will retry"
     sleep "$POLL_SECONDS"; continue
   fi
