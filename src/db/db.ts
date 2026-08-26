@@ -614,6 +614,16 @@ export const TELEMETRY_GATES = [
   "young_exit_candidate",
   "top_blast_candidate",
   "give_back_candidate",
+  // 2026-08-26: both of these shipped as instrumented-off experiments WITHOUT
+  // being added here, and the omission is silent — the experiment looks healthy,
+  // the rows just stop existing. Measured on the server that day: the file sat
+  // at 198.7/200 MB, so the size trim was running constantly and the oldest
+  // surviving skipped row was 4.6 days old against `retain_skipped_days = 30`.
+  // `sizing_flat_deferred` wrote 6 rows and had 0 left within the hour.
+  // ANY new *_deferred / *_candidate gate MUST be added here in the same commit
+  // that starts writing it.
+  "escape_absolute_deferred",
+  "sizing_flat_deferred",
 ] as const;
 
 /** SQL fragment: true for a row that is NOT counterfactual telemetry. */

@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { describeError, getDb, isBlacklisted, REALIZED_PNL_SQL, STRANDED_GRACE_S, TELEMETRY_GATES, logError, now, pruneHistory, recordConfigSnapshot, recordCreatorRug, recordDecision, upsertTokenMeta } from "./db.js";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { useMemoryDb, resetTestDb, insertClosedPosition } from "../test/db.js";
 
 function pnlFor(id: number): number | null {
@@ -305,6 +308,32 @@ describe("pruneHistory", () => {
    * 986 of 1068 surviving skipped rows were `fee_tvl_24h` rejections and the
    * retained window was EIGHT MINUTES — all four experiments had zero rows.
    */
+  // The test above proves everything IN the list is protected. It cannot catch
+  // the failure that actually happened twice: shipping a new telemetry gate and
+  // forgetting to ADD it. escape_absolute_deferred and sizing_flat_deferred both
+  // went live unprotected, and the symptom is silent — the experiment looks fine
+  // and its rows just stop existing. This walks the source instead.
+  it("every telemetry gate the code writes is on the protected list", () => {
+    const root = fileURLToPath(new URL("..", import.meta.url));
+    const files: string[] = [];
+    const walk = (d: string) => {
+      for (const e of readdirSync(d, { withFileTypes: true })) {
+        const f = join(d, e.name);
+        if (e.isDirectory()) walk(f);
+        else if (e.name.endsWith(".ts") && !e.name.endsWith(".test.ts")) files.push(f);
+      }
+    };
+    walk(root);
+    const written = new Set<string>();
+    for (const f of files) {
+      const src = readFileSync(f, "utf8");
+      for (const m of src.matchAll(/"([a-z0-9_]+_(?:deferred|candidate))"/g)) if (m[1]) written.add(m[1]);
+    }
+    expect(written.size).toBeGreaterThan(0); // the scan itself must not silently find nothing
+    const unprotected = [...written].filter((g) => !(TELEMETRY_GATES as readonly string[]).includes(g));
+    expect(unprotected).toEqual([]);
+  });
+
   it("never prunes counterfactual telemetry, by age or by ceiling", () => {
     const db = getDb();
     const t = now();
