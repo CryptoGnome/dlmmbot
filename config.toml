@@ -334,9 +334,25 @@ fixed_follow_pct = 2
 # --- Kelly criterion sizing (learns from our own closed-position ledger) ---
 kelly_fraction = 0.25          # 2026-08-09: quarter-Kelly. Half-Kelly is calibrated for a KNOWN
                                # edge; this book has not demonstrated one.
-kelly_lookback = 50            # closed positions in the rolling estimate
-kelly_min_samples = 50         # estimator uses REALIZED_PNL_SQL (wallet delta), not notional marks.
+kelly_lookback = 100           # closed positions in the rolling estimate
+kelly_min_samples = 25         # estimator uses REALIZED_PNL_SQL (wallet delta), not notional marks.
                                # 2026-08-13: n crossed 50; cold-start no longer applies.
+                               # 2026-08-26: was 50/50. Equal lookback and min_samples made the
+                               # window whipsaw — replaying f* over 158 live closes, the 50/50
+                               # setting spent 32% of its life in cold-start, 43% pinned at the
+                               # cap and 8% shut off entirely (appliedFraction 0). Two of the
+                               # twelve best trades entered during a shut-off: EYE +38.4% and
+                               # 4680 +14.3%, both sized at the min_position floor. At 100/25 the
+                               # negative-edge episodes disappear and mean f* rises .0358 -> .0435.
+                               # Caveat: the replay holds the wallet constant and ignores
+                               # compounding and slot contention, so it scores "did the rule put
+                               # more money on the better trades", not book value. See also the
+                               # note on kelly_fraction — dynamic sizing still loses to a flat
+                               # fraction at EVERY lookback tested (50/50 by 18%, 100/25 by 6%;
+                               # permutation test: the real size-to-trade pairing beats only 17.6%
+                               # of random shuffles). Switching to sizing.mode = "fixed" is the
+                               # change the data actually argues for; it needs a pre-registered
+                               # test before it goes near a live wallet, not one backtest.
 kelly_cold_start_frac = 0.03   # 3% of wallet per position until enough samples
 kelly_max_position_frac = 0.10 # hard cap: no position exceeds 10% of wallet
 kelly_block_negative = false   # 2026-08-08: the brake is a one-way door — blocked entries

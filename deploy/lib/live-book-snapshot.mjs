@@ -682,12 +682,17 @@ export function buildLiveBookSnapshot(root) {
         : null,
     };
 
+    // The window is a config knob, not a constant: `kelly_lookback` moved to
+    // 100 on 2026-08-26 and a hardcoded 50 here would have quietly shown a
+    // different estimate than the one the bot sizes with. Mirrors limits.ts
+    // kellyStats() — but note it does NOT apply that function's majors
+    // exclusion, so this readout still runs slightly ahead of the real f*.
     const kellyRows = db.prepare(
       `SELECT (${REALIZED_PNL}) / entry_sol AS ret
        FROM positions
        WHERE mode = ? AND exit_ts IS NOT NULL AND entry_sol > 0 AND follow_chain_id IS NULL
-       ORDER BY exit_ts DESC LIMIT 50`
-    ).all(bookMode);
+       ORDER BY exit_ts DESC LIMIT ?`
+    ).all(bookMode, Math.max(1, Math.round(tomlNum(toml, "kelly_lookback") ?? 50)));
 
     function kellyFrom(rows) {
       const n = rows.length;
