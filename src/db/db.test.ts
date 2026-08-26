@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { describeError, getDb, isBlacklisted, REALIZED_PNL_SQL, STRANDED_GRACE_S, TELEMETRY_GATES, logError, now, pruneHistory, recordConfigSnapshot, recordCreatorRug, recordDecision, upsertTokenMeta } from "./db.js";
+import { describeError, getDb, isBlacklisted, REALIZED_PNL_SQL, STRANDED_GRACE_S, TELEMETRY_GATES, WAL_SIZE_LIMIT_BYTES, logError, now, pruneHistory, recordConfigSnapshot, recordCreatorRug, recordDecision, upsertTokenMeta } from "./db.js";
 import { readdirSync, readFileSync } from "node:fs";
+import { useTempDb } from "../test/db.js";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { useMemoryDb, resetTestDb, insertClosedPosition } from "../test/db.js";
@@ -434,5 +435,25 @@ describe("recordConfigSnapshot", () => {
       "stop_loss_frac = 0.75", "stop_loss_frac = 0.65", "stop_loss_frac = 0.75",
     ]);
     expect(all.every((r) => r.ts > 0)).toBe(true);
+  });
+});
+
+// The WAL is invisible to the db_max_mb ceiling: dbFileBytes() reads page_count,
+// which counts the main database only. On the server 2026-08-26 that meant a
+// 199 MB db sitting next to a 2263 MB WAL with nothing watching it.
+describe("WAL size limit", () => {
+  afterEach(() => resetTestDb());
+
+  it("caps the WAL so it truncates after checkpoint instead of only ever growing", () => {
+    useTempDb(); // :memory: never uses WAL, so this needs a real file
+    const db = getDb();
+    expect(db.pragma("journal_mode", { simple: true })).toBe("wal");
+    expect(db.pragma("journal_size_limit", { simple: true })).toBe(WAL_SIZE_LIMIT_BYTES);
+  });
+
+  it("leaves room for the prune loop's largest batch", () => {
+    // pruneHistory deletes 5000 decisions at a time; the limit must not be
+    // smaller than a batch or the WAL thrashes against its own ceiling.
+    expect(WAL_SIZE_LIMIT_BYTES).toBeGreaterThan(5000 * 2048);
   });
 });
