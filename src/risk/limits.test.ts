@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   regimeFactor, clusterBrakeTripped, circuitBreakerTripped, kellyStats, positionSize, computeBankroll,
   fixedSleeveSize, kellySleeveBase, sizingMode, minPositionSol, minReentrySol, reserveSol,
+  flatCounterfactualSol,
 } from "./limits.js";
 import { installConfig, restoreConfig } from "../test/config.js";
 import { useMemoryDb, resetTestDb, insertClosedPosition } from "../test/db.js";
@@ -518,5 +519,81 @@ describe("fixed sizing mode", () => {
   it("majors uses fixed sleeve size over majors.size_sol", () => {
     const br = computeBankroll(20);
     expect(majorsPositionSize(br.deployableSol, br.walletSol)).toBeCloseTo(2);
+  });
+});
+
+// SIZING-MODE-DECISION.md Gate 3. `flatCounterfactualSol` duplicates
+// `positionSize`'s clamp on purpose — sizing is too risk-critical to refactor
+// for a telemetry function — so these tests exist to catch the drift that
+// duplication invites.
+describe("flatCounterfactualSol — Gate 3 telemetry", () => {
+  beforeEach(() => {
+    useMemoryDb();
+    installConfig((c) => {
+      c.sizing.mode = "kelly";
+      c.sizing.kelly_enabled = true;
+      c.sizing.kelly_min_samples = 5;
+      c.sizing.kelly_cold_start_frac = 0.05;
+      c.sizing.kelly_max_position_frac = 0.5;
+      c.sizing.kelly_block_negative = false;
+      c.sizing.min_position_sol = 0.15;
+      c.sizing.min_position_pct = 0;
+      c.sizing.max_positions = 5;
+      c.sizing.score_mult_low = 0.5;
+      c.sizing.score_mult_mid = 1;
+      c.sizing.score_mult_high = 1.5;
+      c.sizing.reserve_sol = 0;
+      c.sizing.reserve_pct = 0;
+      c.sizing.kelly_core_unit = "kelly";
+      c.sizing.kelly_core_mult = 1;
+    });
+  });
+  afterEach(() => {
+    resetTestDb();
+    restoreConfig();
+  });
+
+  // The pin the duplication comment promises: give the pct rule a base equal to
+  // the Kelly base, and the two must agree to the lamport. If someone edits one
+  // clamp and not the other, this is what fails.
+  it("matches positionSize exactly when the two bases are equal", () => {
+    const b = computeBankroll(10);
+    installConfig((c) => {
+      c.sizing.kelly_cold_start_frac = 0.05;          // kelly base = 10 * 0.05 = 0.5
+      c.sizing.kelly_core_pct = (0.5 / b.deployableSol) * 100; // pct base = 0.5 too
+    });
+    for (const score of [65, 75, 90]) {
+      expect(flatCounterfactualSol(b, score)).toBeCloseTo(positionSize(b, score), 9);
+    }
+  });
+
+  it("is a pct of DEPLOYABLE, and so cannot exceed it — the property Kelly lacks", () => {
+    const b = computeBankroll(10);
+    installConfig((c) => { c.sizing.kelly_core_pct = 100; c.sizing.kelly_max_position_frac = 1; });
+    // base = 100% of deployable, then the 1.5x score tilt on top: still clamped.
+    expect(flatCounterfactualSol(b, 90)).toBeLessThanOrEqual(b.deployableSol);
+  });
+
+  it("does not move with the Kelly estimate — the whole point of the arm", () => {
+    const b = computeBankroll(10);
+    installConfig((c) => { c.sizing.kelly_core_pct = 5; });
+    const before = flatCounterfactualSol(b, 75);
+    // Bury the book in losses so f* collapses; the flat arm must not notice.
+    for (let i = 0; i < 20; i++) insertClosedPosition({ entrySol: 1, exitSol: 0.5 });
+    expect(kellyStats().appliedFraction).toBeLessThan(0.05);
+    expect(flatCounterfactualSol(b, 75)).toBeCloseTo(before, 12);
+  });
+
+  it("returns 0 below the floor rather than silently bumping to it", () => {
+    const b = computeBankroll(10);
+    installConfig((c) => { c.sizing.kelly_core_pct = 0.01; }); // ~0.001 SOL, under the 0.15 floor
+    expect(flatCounterfactualSol(b, 75)).toBe(0);
+  });
+
+  it("returns 0 for a sub-60 score, matching positionSize's admission gate", () => {
+    const b = computeBankroll(10);
+    installConfig((c) => { c.sizing.kelly_core_pct = 5; });
+    expect(flatCounterfactualSol(b, 59)).toBe(0);
+    expect(positionSize(b, 59)).toBe(0);
   });
 });

@@ -292,9 +292,151 @@ best outcome is closing this document unrun.**
   is no offline version of Gate 4.
 - **Do not read a favourable first week as a result.** See the power section.
 
+## Results
+
+### Gate 1 — PASSED, 2026-08-26
+
+Server live book, meme/core only. 199 live closes → **152 eligible** (dropped 40
+majors, 1 micro, 6 with no recorded `feeTvl24hPct`; 0 follow, 0 missing score).
+OLS of `REALIZED_PNL_SQL / cost` on `log2(entry_sol)`, controlling for entry score
+and fee/TVL tercile.
+
+```
+slope, pp of return per DOUBLING of size
+  classical    +0.015pp   95% CI [-1.837, +1.866]   t=+0.02
+  HC1 robust   +0.015pp   95% CI [-1.813, +1.842]   t=+0.02
+
+controls: score +0.0724pp/pt   ftBucket-mid +1.138pp   ftBucket-high -0.487pp
+```
+
+Model-free cross-check, capital-weighted return by size quartile:
+
+| quartile | n | size range | cap-wtd return | win |
+|---|---|---|---|---|
+| Q1 | 38 | 0.22–0.34 SOL | +1.28% | 53% |
+| Q2 | 38 | 0.34–0.72 SOL | +1.49% | 55% |
+| Q3 | 38 | 0.72–0.98 SOL | **−0.53%** | 55% |
+| Q4 | 38 | 0.98–1.33 SOL | **+2.36%** | 66% |
+
+**Verdict: pass**, on the stricter of the two pre-registered conditions — the
+point estimate is inside ±0.5pp, and the interval also spans zero. Proceed to
+Gate 2.
+
+**Three caveats that must travel with this result:**
+
+1. **The interval is enormous.** [−1.81, +1.84] cannot rule out a −1.8pp effect.
+   This is "no effect detected", not "independence established". The pass
+   condition was written to be passable on evidence this thin, and it was.
+2. **Only 2.6 doublings of size variation exist** (0.225–1.330 SOL). The
+   regression needs size to vary to estimate a size effect, and Kelly — the thing
+   under test — is what varies it. There is not much lever here.
+3. **Size is endogenous.** Kelly sizes up after good performance, so larger
+   positions cluster after good runs. Score and fee/TVL controls do not capture
+   regime. Q4 being the best quartile is exactly what that confound would
+   produce. The countervailing evidence is the permutation test (17.6%), which
+   says outcomes do not persist — but the quartile table on its own should not be
+   read as "bigger is better".
+
+**The preliminary look recorded in the disclosure section did not survive.** The
+informal +1.34%/SOL (small) vs +1.06% (large) split does not reproduce under
+controls: the slope is +0.015pp, and the quartiles are non-monotone (Q3 negative,
+Q4 best). That informal figure is withdrawn as evidence in either direction. This
+is the outcome the disclosure section existed to make checkable.
+
+### Gate 2 — PASSED, 2026-08-26
+
+Sequential replay of all 210 live entries in entry-time order under the flat
+rule, tracking `deployableSol` from a reconstructed equity path, actual exit
+times, `banked` from the ledger, and daily `sol_usd` from `pnl_daily`. Non-core
+sleeves keep their actual sizes (they are not treated). 168 core entries.
+
+Calibrated so the flat rule's **mean size equals the actual Kelly mean**
+(0.6739 SOL) → `kelly_core_pct = 3.01`.
+
+```
+BLOCKED entirely :    0   (0.0%)
+CLIPPED but kept :    0   (0.0%)
+TOTAL affected   :    0   (0.0%)     gate threshold is 10%
+```
+
+**Verdict: pass.** Zero is a suspicious number, so each constraint was checked
+for headroom rather than trusted:
+
+| constraint | limit | largest flat size | headroom |
+|---|---|---|---|
+| slots | 7 (**max ever open: 5**) | — | never reached |
+| deployable | min **16.50 SOL** | 0.98 SOL | ~17× |
+| pool share | min cap **10.79 SOL** (20% of the smallest $5,178 TVL at $96/SOL) | 0.98 SOL | ~11× |
+| wallet cap | 1.325 SOL (0.05 × 26.5) | 0.98 SOL | 1.4× |
+| min-position floor | 0.265 SOL | **min flat 0.295 SOL** | **+0.030 SOL** |
+
+**The floor is the one that nearly binds.** Six of 168 core entries carry the
+0.5× score tilt, and the smallest flat size clears the floor by three hundredths
+of a SOL. At a smaller bankroll, a lower calibrated `pct`, or a run of low-score
+entries while capital is committed, the flat rule would start *skipping* entries
+Kelly took. That is a live risk in Gate 4, not a hypothetical — watch it.
+
+**Structural note: the `"pct"` form is self-limiting.** `deployable × pct × mult`
+cannot exceed deployable by construction, which is why the deployable constraint
+is unreachable for this arm — where Kelly's `equity × f*` genuinely can exceed it.
+That is a real advantage of `"pct"` over `"sol"` and a second reason to prefer it.
+It also means the flat arm is not perfectly flat: it shrinks as capital gets
+committed. It is flat with respect to the **win-rate estimate**, which is the
+treatment, and that is what the test requires — but do not describe it as
+"constant size" in any write-up.
+
+**Calibration is time-sensitive, and this matters.** The worked example above
+gives `kelly_core_pct = 6.41` from *today's* cap-bound `appliedFraction = 0.05`.
+Matching the *historical mean* Kelly size gives **3.01** — a 2× difference,
+because Kelly's average applied fraction over the book was ~0.023, not 0.05.
+**Calibrating to the wrong one makes the test measure leverage instead of
+timing**, which is precisely the failure the equal-mean requirement exists to
+prevent. Recompute against the trailing mean Kelly size at the moment Gate 4
+starts, and record which basis was used.
+
+### Gate 3 preview (retrospective — NOT the gate)
+
+Over the same replayed entries, `|flat − kelly| / kelly` has **median 50.9%**
+(p25 20.7%, p75 113.6%), far above Gate 3's 15% bar.
+
+**Do not treat this as Gate 3 passing.** It is computed over history dominated by
+the old whipsawing 50/50 window. Gate 3 is a *forward* 14-day measurement under
+the new 100/25 window, where Kelly is steadier and frequently pinned at the cap —
+so the live divergence should be expected to come in **lower**, possibly below the
+bar. The escape hatch of closing this document unrun is still open.
+
+### Gate 3 — instrumentation BUILT and running, 2026-08-26
+
+`flatCounterfactualSol()` in [limits.ts](src/risk/limits.ts) mirrors
+`positionSize`'s Kelly branch with a `pct`-of-deployable base. Every core entry
+now records a `sizing_flat_deferred` decision from
+[loop.ts](src/manager/loop.ts). **`size` is not reassigned — nothing sizes from
+this.**
+
+Three implementation choices worth defending:
+
+- **Logged before the re-entry ladder and pool-share clamp.** Both apply
+  identically to either rule; comparing after them would measure the clamps.
+- **The clamp is duplicated from `positionSize`, not extracted into a shared
+  helper.** Sizing is the most risk-critical path in the repo — a refactor to
+  serve a telemetry function could change what the bot actually bets, while a
+  duplicate that drifts can only mislabel a log line. A unit test pins the two
+  together at equal base, and it was **mutation-tested**: dropping the score tilt
+  from the counterfactual fails that test and only that test.
+- **Raw bankroll inputs are in the payload** (`walletSol`, `deployableSol`,
+  `deployedSol`, `appliedFraction`, `regime`, `samples`, `corePct`). This is the
+  guard against the calibration trap above: `kelly_core_pct` is *not* calibrated,
+  so the analysis must recompute the flat size against the trailing mean Kelly
+  size at read time, and the inputs make that possible without a restart.
+
+**Start the 14-day clock when this reaches production.** Read it with the
+median of `|flatSol − kellySol| / kellySol` over core entries; the bar is 15%.
+
 ## Status
 
-**2026-08-26 — not started. Gate 1 not yet run.** No sizing knob has been touched
+**2026-08-26 — Gates 1 and 2 passed; Gate 3 instrumentation built and shipped
+OFF.** Awaiting 14 days of live `sizing_flat_deferred` data. No sizing knob has
+been touched; `kelly_core_unit` is `"kelly"` on both bots. No sizing knob has been touched
 beyond the `kelly_lookback` / `kelly_min_samples` change of the same date, which
 is a separate, already-shipped decision. `kelly_core_unit` is `"kelly"` on both
 bots.

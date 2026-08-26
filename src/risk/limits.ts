@@ -258,6 +258,45 @@ export function positionSize(
   return size >= floor ? size : 0;
 }
 
+/**
+ * Flat-sizing counterfactual — what `kelly_core_unit = "pct"` would have sized
+ * this entry. **Measurement only**: nothing reads the result, `positionSize` is
+ * untouched, and no caller may size from it. Gate 3 of SIZING-MODE-DECISION.md.
+ *
+ * The clamp below is deliberately DUPLICATED from `positionSize` rather than
+ * extracted into a shared helper. Sizing is the most risk-critical path in the
+ * repo; a refactor to serve a telemetry function could change what the bot
+ * actually bets, while a duplicate that drifts can only mislabel a log line.
+ * If `positionSize`'s clamp changes, change this too — the unit test pins them
+ * together at equal base.
+ *
+ * `"pct"` and not `"sol"` because the hypothesis is "do not let recent outcomes
+ * move the size", not "do not scale with the bankroll". Note the consequence:
+ * a pct-of-deployable base shrinks as capital gets committed, so this arm is
+ * flat with respect to the win-rate ESTIMATE, not constant in SOL.
+ */
+export function flatCounterfactualSol(
+  bankroll: Bankroll,
+  score: number,
+  sleeve: "core" | "micro" = "core",
+): number {
+  const s = config().sizing;
+  if (bankroll.effectiveSlots < 1) return 0;
+  const mult = score >= 85 ? s.score_mult_high : score >= 70 ? s.score_mult_mid : score >= 60 ? s.score_mult_low : 0;
+  if (mult === 0) return 0;
+
+  const base = bankroll.deployableSol * (s[`kelly_${sleeve}_pct`] / 100);
+  const floor = minPositionSol(bankroll.walletSol);
+  const size = Math.min(
+    base * mult,
+    bankroll.walletSol * s.kelly_max_position_frac >= floor
+      ? bankroll.walletSol * s.kelly_max_position_frac
+      : floor,
+    bankroll.deployableSol,
+  );
+  return size >= floor ? size : 0;
+}
+
 export function openPositionCount(): number {
   return (getDb().prepare(
     "SELECT COUNT(*) AS c FROM positions WHERE state IN ('pending','open','closing') AND mode = ?"
