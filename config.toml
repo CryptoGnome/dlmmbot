@@ -363,7 +363,13 @@ kelly_block_negative = false   # 2026-08-08: the brake is a one-way door — blo
 # Kelly per-sleeve (when mode=kelly): unit=kelly scales adaptive base; sol/pct = explicit target
 kelly_core_unit = "kelly"
 kelly_core_sol = 0.5
-kelly_core_pct = 5
+kelly_core_pct = 5             # Also the reference the Gate 3 `sizing_flat_deferred` telemetry
+                               # sizes its counterfactual with (SIZING-MODE-DECISION.md). It is
+                               # NOT calibrated: the flat arm must match the trailing MEAN Kelly
+                               # size or a live test measures leverage instead of timing, and
+                               # that calibration differs ~2x by when it is taken (3.01 vs 6.41
+                               # on the server, 2026-08-26). The decision logs the raw bankroll
+                               # inputs so the analysis can recalibrate without a restart.
 kelly_core_mult = 1.0
 kelly_micro_unit = "kelly"
 kelly_micro_sol = 0.3

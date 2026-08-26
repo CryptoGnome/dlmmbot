@@ -405,12 +405,38 @@ the new 100/25 window, where Kelly is steadier and frequently pinned at the cap 
 so the live divergence should be expected to come in **lower**, possibly below the
 bar. The escape hatch of closing this document unrun is still open.
 
+### Gate 3 — instrumentation BUILT and running, 2026-08-26
+
+`flatCounterfactualSol()` in [limits.ts](src/risk/limits.ts) mirrors
+`positionSize`'s Kelly branch with a `pct`-of-deployable base. Every core entry
+now records a `sizing_flat_deferred` decision from
+[loop.ts](src/manager/loop.ts). **`size` is not reassigned — nothing sizes from
+this.**
+
+Three implementation choices worth defending:
+
+- **Logged before the re-entry ladder and pool-share clamp.** Both apply
+  identically to either rule; comparing after them would measure the clamps.
+- **The clamp is duplicated from `positionSize`, not extracted into a shared
+  helper.** Sizing is the most risk-critical path in the repo — a refactor to
+  serve a telemetry function could change what the bot actually bets, while a
+  duplicate that drifts can only mislabel a log line. A unit test pins the two
+  together at equal base, and it was **mutation-tested**: dropping the score tilt
+  from the counterfactual fails that test and only that test.
+- **Raw bankroll inputs are in the payload** (`walletSol`, `deployableSol`,
+  `deployedSol`, `appliedFraction`, `regime`, `samples`, `corePct`). This is the
+  guard against the calibration trap above: `kelly_core_pct` is *not* calibrated,
+  so the analysis must recompute the flat size against the trailing mean Kelly
+  size at read time, and the inputs make that possible without a restart.
+
+**Start the 14-day clock when this reaches production.** Read it with the
+median of `|flatSol − kellySol| / kellySol` over core entries; the bar is 15%.
+
 ## Status
 
-**2026-08-26 — Gates 1 and 2 passed. Gate 3 (14-day instrumented-off) not yet
-built.** Gate 3 requires a code change: log a `sizing_flat_deferred` decision at
-each entry carrying the flat counterfactual alongside the Kelly size actually
-used. No sizing knob has been touched. No sizing knob has been touched
+**2026-08-26 — Gates 1 and 2 passed; Gate 3 instrumentation built and shipped
+OFF.** Awaiting 14 days of live `sizing_flat_deferred` data. No sizing knob has
+been touched; `kelly_core_unit` is `"kelly"` on both bots. No sizing knob has been touched
 beyond the `kelly_lookback` / `kelly_min_samples` change of the same date, which
 is a separate, already-shipped decision. `kelly_core_unit` is `"kelly"` on both
 bots.

@@ -25,7 +25,7 @@ import { flowFor, startSmartFlow } from "../scanner/smartflow.js";
 import { armFollowChain, hasActiveFollowChain, onFollowLegClosed, tickFollowChains } from "./follow.js";
 import { clearHolderWatch, holderCheck } from "./holderwatch.js";
 import { sol24hChangePct, solUsdPrice } from "../market.js";
-import { circuitBreakerTripped, clusterBrakeTripped, computeBankroll, kellyStats, minPositionSol, minReentrySol, openPositionCount, positionSize, regimeFactor, sizingMode, tokenExposureSol } from "../risk/limits.js";
+import { circuitBreakerTripped, clusterBrakeTripped, computeBankroll, flatCounterfactualSol, kellyStats, minPositionSol, minReentrySol, openPositionCount, positionSize, regimeFactor, sizingMode, tokenExposureSol } from "../risk/limits.js";
 import { applyMicroSize, isMicroMcap, microPoolSharePct, microSleeveExposure } from "../risk/micro.js";
 import { enterMajorsPositions } from "./majorsEntry.js";
 import { manageForSleeve } from "../risk/majorsManage.js";
@@ -1661,6 +1661,35 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
         console.log(`[risk] Kelly estimates negative edge (f*=${kelly.fullKelly?.toFixed(3)}, n=${kelly.samples}) — entries blocked`);
       recordDecision(cand.tokenMint, cand.pool.address, "skipped", gate, score, { bankroll, kelly });
       continue;
+    }
+    // SIZING-MODE-DECISION.md Gate 3 — instrumented-off, same pattern as
+    // P1_fee_offset_deferred and escape_absolute_deferred. Records what a flat
+    // `kelly_core_unit = "pct"` base would have sized next to the Kelly size
+    // actually used. `size` is NOT reassigned; this is telemetry.
+    //
+    // Logged BEFORE the re-entry ladder and pool-share clamp on purpose: both
+    // apply identically to either rule, so comparing after them would measure
+    // the clamps rather than the sizing rule.
+    //
+    // The raw bankroll inputs go in the payload because `kelly_core_pct` is
+    // almost certainly NOT calibrated yet: the flat arm must match the trailing
+    // MEAN Kelly size or the test measures leverage instead of timing, and that
+    // calibration differs ~2x depending on when it is taken. Logging the inputs
+    // lets the analysis recalibrate after the fact without re-running the bot.
+    {
+      const flatSol = flatCounterfactualSol(bankroll, score, isMicro ? "micro" : "core");
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "sizing_flat_deferred", score, {
+        kellySol: size,
+        flatSol,
+        walletSol: bankroll.walletSol,
+        deployableSol: bankroll.deployableSol,
+        deployedSol: bankroll.deployedSol,
+        appliedFraction: kelly.appliedFraction,
+        regime: kelly.regime,
+        samples: kelly.samples,
+        corePct: config().sizing[isMicro ? "kelly_micro_pct" : "kelly_core_pct"],
+        sleeve: isMicro ? "micro" : "core",
+      });
     }
     // Re-entry ladder (§4 P3): each same-token entry within 24h shrinks by
     // reentry_ladder_mult; hard stop after reentry_max_per_24h re-entries.
