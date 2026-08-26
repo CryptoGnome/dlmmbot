@@ -1676,21 +1676,26 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     // MEAN Kelly size or the test measures leverage instead of timing, and that
     // calibration differs ~2x depending on when it is taken. Logging the inputs
     // lets the analysis recalibrate after the fact without re-running the bot.
-    {
-      const flatSol = flatCounterfactualSol(bankroll, score, isMicro ? "micro" : "core");
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "sizing_flat_deferred", score, {
-        kellySol: size,
-        flatSol,
-        walletSol: bankroll.walletSol,
-        deployableSol: bankroll.deployableSol,
-        deployedSol: bankroll.deployedSol,
-        appliedFraction: kelly.appliedFraction,
-        regime: kelly.regime,
-        samples: kelly.samples,
-        corePct: config().sizing[isMicro ? "kelly_micro_pct" : "kelly_core_pct"],
-        sleeve: isMicro ? "micro" : "core",
-      });
-    }
+    //
+    // CAPTURED here, EMITTED after the `entered` decision. This line is reached
+    // for every candidate on every tick — including ones rejected below by
+    // `already_positioned` — so recording here wrote ~1 row per MINUTE per open
+    // position instead of one per entry (measured in production 2026-08-26,
+    // 6 rows in 6 minutes against a book that had not entered for 80). That
+    // floods `decisions` against `db_max_mb` and, worse, would have had the
+    // Gate 3 median dominated by repeat evaluations of one candidate.
+    const gate3Sizing = {
+      kellySol: size,
+      flatSol: flatCounterfactualSol(bankroll, score, isMicro ? "micro" : "core"),
+      walletSol: bankroll.walletSol,
+      deployableSol: bankroll.deployableSol,
+      deployedSol: bankroll.deployedSol,
+      appliedFraction: kelly.appliedFraction,
+      regime: kelly.regime,
+      samples: kelly.samples,
+      corePct: config().sizing[isMicro ? "kelly_micro_pct" : "kelly_core_pct"],
+      sleeve: isMicro ? "micro" : "core",
+    };
     // Re-entry ladder (§4 P3): each same-token entry within 24h shrinks by
     // reentry_ladder_mult; hard stop after reentry_max_per_24h re-entries.
     const m = config().manage;
@@ -1917,6 +1922,14 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       sleeve: isMicro ? "micro" : "meme",
       entryOfSwingHigh: ofSwingHigh,
       experiment: { feePath, isMicro, baseScore, trendingBonus, flowBonus, flowPenalty },
+    });
+    // TELEMETRY ONLY: SIZING-MODE-DECISION.md Gate 3, one row per ENTRY, using
+    // the pre-clamp pair captured before the re-entry ladder and pool-share cap
+    // (both apply identically to either sizing rule). `posId` is what separates
+    // these from the per-tick rows the first cut of this wrote — read Gate 3
+    // over rows that carry one.
+    recordDecision(cand.tokenMint, cand.pool.address, "skipped", "sizing_flat_deferred", score, {
+      ...gate3Sizing, posId: pos.id, symbol: cand.symbol,
     });
     // TELEMETRY ONLY: what a top-blast gate would have refused. One row per
     // entry that crosses the line; nothing is skipped.
