@@ -304,8 +304,9 @@ async function closeAndReport(
   const feesClaimed = row?.fees_claimed_sol ?? pos.feesClaimedSol;
   const feesAtClose = row?.fees_at_close_sol ?? 0;
   // Display prefers the MEASURED claim credit over the pool-mid mark. Book-wide
-  // fees_claimed_sol is 0.1727 against fees_measured_sol 0.1322 — the mark runs
-  // ~23% hot, and 2.3x on claudius pos#9 (0.0535 marked, 0.0234 measured). A hot
+  // fees_claimed_sol is 6.0178 against fees_measured_sol 5.6874 over 67 live
+  // positions — the mark runs ~5% hot on average, but single claims blow out far
+  // wider (2.3x on claudius pos#9: 0.0535 marked, 0.0234 measured). A hot
   // mark printed one line above a measured true-PnL figure is the exact
   // mark-vs-measured confusion that line exists to remove. || not ?? on purpose:
   // 0 means no claim happened, so fall through to the mark (also 0).

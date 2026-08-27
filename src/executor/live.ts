@@ -853,9 +853,10 @@ export class LiveExecutor implements Executor {
     }
 
     // `feesSol` values the token side at pool mid; the swap fills below that,
-    // or fails and strands it (measured ran 32% under marked across the first
-    // four claims). Record both: the mark for continuity, the measured credit
-    // for anything that wants the truth.
+    // or fails and strands it (across 142 comparable live claims, 5.8963 marked
+    // returned 5.6053 measured — ~5% under, 102 of them low; the 32% from the
+    // first four claims was small-sample). Record both: the mark for continuity,
+    // the measured credit for anything that wants the truth.
     const measured = await this.walletDelta(sigs);
     const db = getDb();
     db.prepare(
@@ -867,7 +868,7 @@ export class LiveExecutor implements Executor {
     // measured ?? feesSol, not ?? 0: a null walletDelta means the measurement
     // failed, not that the claim was worth nothing — recording 0 permanently
     // erased that claim's income from realized PnL. The marked value runs hot
-    // vs measured (~23% book-wide) but is far closer to truth than zero.
+    // vs measured (~5% book-wide) but is far closer to truth than zero.
     db.prepare(
       "UPDATE positions SET fees_claimed_sol = fees_claimed_sol + ?, fees_measured_sol = fees_measured_sol + ? WHERE id = ?"
     ).run(feesSol, measured ?? feesSol, position.id);
