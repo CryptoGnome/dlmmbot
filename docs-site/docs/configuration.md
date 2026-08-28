@@ -204,7 +204,7 @@ Thresholds:
 | `reserve_pct` | `10` | Plus this % of bankroll held back for rent/fees |
 | `per_token_max_pct` | `40` | Max % of deployable in one token incl. tranche |
 | `score_mult_low` / `mid` / `high` | `0.5` / `1.0` / `1.5` | Size tilt for score 60–70 / 70–85 / 85+ (Kelly only) |
-| `circuit_daily_loss_pct` | `3` | Circuit breaker: realized 24h loss % of bankroll |
+| `circuit_daily_loss_pct` | `3` | Circuit breaker: realized 24h loss % of bankroll pauses new entries (open positions still managed). `0` disables the breaker |
 | `circuit_pause_h` | `12` | Breaker pause length |
 | `circuit_weekly_triggers_halt` | `2` | Two trips in 7 days → full halt until resumed |
 | `cluster_brake_exits` | `4` | Cluster brake: this many lossy hard exits… |

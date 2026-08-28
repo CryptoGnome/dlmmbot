@@ -402,7 +402,7 @@ per_token_max_pct = 40
 score_mult_low = 0.5             # score 60-70
 score_mult_mid = 1.0             # 70-85
 score_mult_high = 1.5            # 85+
-circuit_daily_loss_pct = 3       # 2026-08-09: was 10. Breaker reads REALIZED_PNL_SQL.
+circuit_daily_loss_pct = 3       # 2026-08-09: was 10. Breaker reads REALIZED_PNL_SQL. 0 disables.
                                  # 2026-08-12 printed -0.159 SOL realized — first day that would
                                  # have mattered at a 3% of ~24 SOL wallet (~0.73 SOL) it still
                                  # did not trip. 3% is still above the observed single-day tail.

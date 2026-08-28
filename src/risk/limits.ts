@@ -312,6 +312,10 @@ export function tokenExposureSol(mint: string): number {
 /** Circuit breaker: realized loss over rolling 24h vs bankroll (§5). */
 export function circuitBreakerTripped(walletSol: number): boolean {
   const s = config().sizing;
+  // 0 (or negative) disables the breaker outright. Without this, 0 meant a
+  // threshold of zero — ANY realized loss paused entries forever, the exact
+  // opposite of what an operator setting 0 is asking for.
+  if (s.circuit_daily_loss_pct <= 0) return false;
   const dayAgo = now() - 86_400;
   // Measured wallet delta, not the notional mark. The mark omits rent, gas and
   // swap slippage, so it read 08-08 as -0.026 SOL on a day the wallet gained
