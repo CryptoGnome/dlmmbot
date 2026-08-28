@@ -654,6 +654,18 @@ export const TELEMETRY_GATES = [
 /** SQL fragment: true for a row that is NOT counterfactual telemetry. */
 const NOT_TELEMETRY_SQL = `COALESCE(failed_gate, '') NOT IN (${TELEMETRY_GATES.map((g) => `'${g}'`).join(", ")})`;
 
+/**
+ * SQL fragment: true for a row that does NOT carry a backfilled outcome.
+ *
+ * `npm run sim:skips` writes one measured price path per skip EPISODE, not per
+ * sweep, so the set this spares grows with distinct rejections rather than with
+ * tick rate. Without it the size ceiling deletes the measurement: on the live
+ * book it had ground the skip window down to ~30 hours against a 30-day age
+ * setting, so a result would be evicted the day after it was fetched — which is
+ * exactly why `bin_step_new` could only be shown to have blocked two mints.
+ */
+const BACKFILLED_SQL = "outcome_backfill_json IS NULL";
+
 export function pruneHistory(opts: {
   skippedDays: number;
   snapshotDays: number;
@@ -666,7 +678,7 @@ export function pruneHistory(opts: {
 
   // Age windows first — the normal steady state on a mature install.
   let decisions = db.prepare(
-    `DELETE FROM decisions WHERE action = 'skipped' AND ${NOT_TELEMETRY_SQL} AND ts < ?`
+    `DELETE FROM decisions WHERE action = 'skipped' AND ${NOT_TELEMETRY_SQL} AND ${BACKFILLED_SQL} AND ts < ?`
   ).run(t - opts.skippedDays * 86_400).changes;
   let snapshots = db.prepare(
     "DELETE FROM pool_snapshots WHERE ts < ?"
@@ -699,7 +711,7 @@ export function pruneHistory(opts: {
         "DELETE FROM pool_snapshots WHERE rowid IN (SELECT rowid FROM pool_snapshots ORDER BY ts ASC LIMIT 5000)"
       ).run().changes;
       const d = db.prepare(
-        `DELETE FROM decisions WHERE rowid IN (SELECT rowid FROM decisions WHERE action = 'skipped' AND ${NOT_TELEMETRY_SQL} ORDER BY ts ASC LIMIT 5000)`
+        `DELETE FROM decisions WHERE rowid IN (SELECT rowid FROM decisions WHERE action = 'skipped' AND ${NOT_TELEMETRY_SQL} AND ${BACKFILLED_SQL} ORDER BY ts ASC LIMIT 5000)`
       ).run().changes;
       snapshots += s;
       decisions += d;

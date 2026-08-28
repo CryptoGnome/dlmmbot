@@ -304,8 +304,9 @@ async function closeAndReport(
   const feesClaimed = row?.fees_claimed_sol ?? pos.feesClaimedSol;
   const feesAtClose = row?.fees_at_close_sol ?? 0;
   // Display prefers the MEASURED claim credit over the pool-mid mark. Book-wide
-  // fees_claimed_sol is 0.1727 against fees_measured_sol 0.1322 — the mark runs
-  // ~23% hot, and 2.3x on claudius pos#9 (0.0535 marked, 0.0234 measured). A hot
+  // fees_claimed_sol is 6.0178 against fees_measured_sol 5.6874 over 67 live
+  // positions — the mark runs ~5% hot on average, but single claims blow out far
+  // wider (2.3x on claudius pos#9: 0.0535 marked, 0.0234 measured). A hot
   // mark printed one line above a measured true-PnL figure is the exact
   // mark-vs-measured confusion that line exists to remove. || not ?? on purpose:
   // 0 means no claim happened, so fall through to the mark (also 0).
@@ -781,9 +782,12 @@ export const DEFAULT_MAX_QUOTE_DRIFT_BINS = 3;
 export const TOP_BLAST_TELEMETRY_FRAC = 0.97;
 
 /**
- * TELEMETRY ONLY — nothing acts on these. A give-back stop: once a position has
- * been up GIVE_BACK_MIN_PEAK_SOL on a fee-inclusive basis, log the moment it
- * hands back to GIVE_BACK_KEEP_FRAC of that peak.
+ * Give-back stop: once a position has been up GIVE_BACK_MIN_PEAK_SOL on a
+ * fee-inclusive basis, act the moment it hands back to GIVE_BACK_KEEP_FRAC of
+ * that peak. Telemetry-only from 2026-08-21; promoted to a real exit behind
+ * `[manage] give_back_enabled` on 2026-08-28 after the live telemetry agreed
+ * with the replay (+0.857 SOL across 20 triggers, incl. both BANDOS stops).
+ * Meme sleeves only — majors never ran the experiment.
  *
  * Replayed 2026-08-21 over 120 closed positions with recorded marks (mark vs
  * mark, so it isolates timing). At keep=0.75 it changed 22 exits for a net
@@ -794,11 +798,11 @@ export const TOP_BLAST_TELEMETRY_FRAC = 0.97;
  * haircut, and flat across thresholds (75%->95% all land 2.6-2.7) rather than
  * balanced on a knife edge.
  *
- * Two reasons it is logged rather than shipped. The measurement is from the
- * SERVER bot, not the Railway one this was asked about. And its two largest
- * contributors are P0 safety exits, where the last mark is near zero and a
- * mark-based counterfactual flatters itself — whether a real exit was
- * executable at the trigger is unproven.
+ * The two original reasons it was logged rather than shipped — server-only
+ * evidence, and mark-based counterfactuals flattering themselves on P0 exits —
+ * were both answered by the live telemetry window (08-22..08-28): triggers
+ * fired minutes before the P0/P1 exits they would have replaced, at marks a
+ * real close could plausibly have realized.
  *
  * Note what this is NOT. The shape usually described — green, then red, then
  * back to break-even, then down again — does not exist in the book: of 25
@@ -939,7 +943,7 @@ export async function managePositions(exec: Executor): Promise<void> {
         }
       }
 
-      // --- TELEMETRY ONLY: give-back stop counterfactual ---
+      // --- GIVE-BACK STOP (real exit when give_back_enabled; telemetry otherwise) ---
       // Fee-inclusive, matching what the replay measured: mark.valueSol already
       // carries UNCLAIMED fees (see position_marks), and feesClaimedSol is what
       // has been banked. Rent is refunded at close, so it is not in this basis.
@@ -951,12 +955,35 @@ export async function managePositions(exec: Executor): Promise<void> {
       }
       const peak = peakPnl.get(pos.id)!;
       const peakFloor = giveBackPeakFloor(pos.entrySol);
-      if (!giveBackLogged.has(pos.id) && peak >= peakFloor && pnlNow <= peak * GIVE_BACK_KEEP_FRAC) {
+      const giveBackKeep = m.give_back_keep_frac ?? GIVE_BACK_KEEP_FRAC;
+      const gaveBack = peak >= peakFloor && pnlNow <= peak * giveBackKeep;
+      // Promoted from telemetry 2026-08-28 behind give_back_enabled: replay
+      // +2.657 SOL over 120 closes and live telemetry +0.857 SOL over 20
+      // triggers agree. Meme sleeves only — every measurement was meme-book,
+      // and majors are long-hold Spot positions the experiment never covered.
+      // Deliberately NOT gated on giveBackLogged: a position that logged a
+      // candidate under the old telemetry-only build must still close here.
+      if (gaveBack && m.give_back_enabled === true && sleeve !== "majors") {
+        await closeAndReport(exec, pos, "give_back", config().exec.exit_slippage_bps, "close",
+          `give-back stop: kept ${(peak > 0 ? (pnlNow / peak) * 100 : 0).toFixed(0)}% of a +${peak.toFixed(4)} SOL peak`);
+        clearRangeTimers(pos.id);
+        // Same bench as the escape hatch, for the same reason: price is
+        // demonstrably falling away from the peak, and "leave" is not "leave
+        // and re-buy on the next sweep".
+        const coolMin = config().manage.escape_reentry_cooldown_min ?? 15;
+        if (coolMin > 0) blacklist(pos.tokenMint, "token", "give-back cooldown", coolMin / 60);
+        recordDecision(pos.tokenMint, pos.poolAddress, "exited", "give_back", null, {
+          posId: pos.id, peakPnlSol: peak, pnlNowSol: pnlNow, keepFrac: giveBackKeep,
+          minPeakSol: peakFloor, feesClaimedSol: pos.feesClaimedSol, mark, sleeve,
+        });
+        continue;
+      }
+      if (gaveBack && !giveBackLogged.has(pos.id)) {
         giveBackLogged.add(pos.id);
         getDb().prepare("UPDATE positions SET give_back_logged = 1 WHERE id = ?").run(pos.id);
         recordDecision(pos.tokenMint, pos.poolAddress, "skipped", "give_back_candidate", null, {
           posId: pos.id, symbol: pos.symbol, peakPnlSol: peak, pnlNowSol: pnlNow,
-          keepFrac: GIVE_BACK_KEEP_FRAC, minPeakSol: peakFloor,
+          keepFrac: giveBackKeep, minPeakSol: peakFloor,
           feesClaimedSol: pos.feesClaimedSol, valueSol: mark.valueSol, entrySol: pos.entrySol,
           holdMin: (now() - pos.entryTs) / 60, sleeve, mark,
         });

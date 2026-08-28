@@ -853,9 +853,10 @@ export class LiveExecutor implements Executor {
     }
 
     // `feesSol` values the token side at pool mid; the swap fills below that,
-    // or fails and strands it (measured ran 32% under marked across the first
-    // four claims). Record both: the mark for continuity, the measured credit
-    // for anything that wants the truth.
+    // or fails and strands it (across 142 comparable live claims, 5.8963 marked
+    // returned 5.6053 measured — ~5% under, 102 of them low; the 32% from the
+    // first four claims was small-sample). Record both: the mark for continuity,
+    // the measured credit for anything that wants the truth.
     const measured = await this.walletDelta(sigs);
     const db = getDb();
     db.prepare(
@@ -867,7 +868,7 @@ export class LiveExecutor implements Executor {
     // measured ?? feesSol, not ?? 0: a null walletDelta means the measurement
     // failed, not that the claim was worth nothing — recording 0 permanently
     // erased that claim's income from realized PnL. The marked value runs hot
-    // vs measured (~23% book-wide) but is far closer to truth than zero.
+    // vs measured (~5% book-wide) but is far closer to truth than zero.
     db.prepare(
       "UPDATE positions SET fees_claimed_sol = fees_claimed_sol + ?, fees_measured_sol = fees_measured_sol + ? WHERE id = ?"
     ).run(feesSol, measured ?? feesSol, position.id);
@@ -1065,9 +1066,28 @@ export class LiveExecutor implements Executor {
     const balPostRemove = walletXKnown ? walletX : null;
     const removeSigCount = sigs.length;
     let swapSig: string | null = null;
+    // Same-instant quote next to the fill, observation only. exit_sol is a
+    // PRE-close mark, so marked-vs-received blends market drift during the
+    // close with the swap's own cost — measured 2026-08-27 the blend reads
+    // +9.3% and says nothing about either. Fired concurrently so the close is
+    // never delayed: the quote resolves at ~swap submission time, and a quote
+    // failure is just a null in the audit trail.
+    let quotePromise: Promise<number | null> = Promise.resolve(null);
     if (toSell > 0n) {
+      quotePromise = quoteToSolLamports(position.tokenMint, toSell);
       const swap = await this.tokenToSol(position.tokenMint, toSell, slippageBps);
       if (swap) { sigs.push(swap.signature); swapSig = swap.signature; }
+    }
+    const preSwapQuoteLamports = await quotePromise.catch(() => null);
+    const preSwapQuoteSol = preSwapQuoteLamports === null ? null : preSwapQuoteLamports / 1e9;
+    // The swap leg's own wallet credit, so swap cost is computable without
+    // untangling rent refunds and fee claims from closeReturnSol.
+    const swapCreditSol = swapSig ? await this.walletDelta([swapSig]) : null;
+    if (preSwapQuoteSol !== null && preSwapQuoteSol > 0 && swapCreditSol !== null) {
+      console.log(
+        `[live] pos#${position.id} ${position.symbol} exit swap: quoted ${preSwapQuoteSol.toFixed(5)} SOL, ` +
+        `received ${swapCreditSol.toFixed(5)} SOL (${((swapCreditSol / preSwapQuoteSol - 1) * 100).toFixed(1)}%)`
+      );
     }
     const balPostSwap = await balAt("post-swap", swapSig ?? sigs[sigs.length - 1] ?? null);
     // Audit line on EVERY close, not just strands: the clean ones are the
@@ -1094,7 +1114,7 @@ export class LiveExecutor implements Executor {
 
     const stateByReason: Record<ExitReason, string> = {
       P0_safety: "closed_safety", P1_stop: "closed_stop", P2_rotation: "closed_rotation",
-      P3_above: "closed_win", P5_below: "closed_below", escape: "closed_escape", manual: "closed_manual",
+      P3_above: "closed_win", P5_below: "closed_below", give_back: "closed_giveback", escape: "closed_escape", manual: "closed_manual",
     };
     // Actual wallet credit for this close (exit value + rent refunds - tx fees).
     const closeReturnSol = sigs.length ? await this.walletDelta(sigs) : 0;
@@ -1203,6 +1223,9 @@ export class LiveExecutor implements Executor {
         // Chain legs, so attribution reconciles without a wallet scan
         // (RANGE-SHAPE-DECISION.md item 3).
         legs: { feesSolMarked: before.feesSol, feeXRaw: before.feeXRaw.toString(), xToSwapRaw: xToSwap.toString() },
+        // Same-instant Jupiter quote vs the swap leg's own wallet credit —
+        // swap cost isolated from the market drift baked into markedExitSol.
+        exitSwap: { preSwapQuoteSol, swapCreditSol, soldRaw: toSell.toString() },
         // Per-bin composition at exit. Paired with the 'open' event's bins this
         // gives y_deposited(d) and (y(d), x(d)) per bin — both sides of
         // L(d) = y_deposited(d) - (y(d) + x(d) * p_exit).

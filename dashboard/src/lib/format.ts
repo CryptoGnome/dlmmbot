@@ -44,6 +44,7 @@ export function exitLabel(reason: string | null | undefined): string {
     P2_rotation: "Rotation",
     P3_above: "Above range",
     P5_below: "Below range",
+    give_back: "Give-back stop",
     escape: "Escape hatch",
     manual: "Manual close",
   };

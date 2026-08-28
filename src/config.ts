@@ -157,6 +157,16 @@ export interface Config {
      * default false in code. See STRATEGY.md §4 P1 (2026-08-18).
      */
     stop_loss_count_claimed_fees?: boolean;
+    /**
+     * Give-back stop (STRATEGY.md §10a): once a position has been up past the
+     * peak floor on a fee-inclusive basis, close when PnL hands back to
+     * give_back_keep_frac of that peak. Meme sleeves only — the evidence base
+     * (replay +2.657 SOL / 120 positions, live telemetry +0.857 SOL / 20
+     * triggers) is all meme-book; majors never ran the experiment. Optional:
+     * default false / 0.75 in code.
+     */
+    give_back_enabled?: boolean;
+    give_back_keep_frac?: number;
     rotation_fee_daily_min_pct: number; rotation_polls: number;
     rotation_vol_30m_min_usd: number; max_age_h: number;
     above_range_pct: number; above_range_sustain_min: number;

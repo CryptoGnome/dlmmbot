@@ -102,6 +102,25 @@ It is **resumable and honest about gaps**. Every position attempted gets a row, 
 
 Then read it back with the audit below.
 
+### `npm run sim:skips -- [options]`
+
+Fetches the **price path after each scanner rejection**, so a gate can be judged on what it actually blocked instead of on intuition. `decisions.outcome_backfill_json` was declared in the first schema with the comment "filled later: what the token did after" and then never written — this fills it.
+
+```bash
+npm run sim:skips                              # fill everything pending
+npm run sim:skips -- --gate bin_step_new       # investigate one gate
+```
+
+`--db <path>`, `--window <min>` (default 90, max 90 — one API call is 100 minute bars), `--limit <n>` (default 200), `--pace <ms>` (default 2500), `--gate <name>`, `--refetch`.
+
+**It fetches per episode, not per sweep.** A rejected pool is re-logged every sweep — one gate accounts for 93% of all skip rows — so rows are grouped into episodes of (mint, pool, gate) per 6 hours and anchored on the first sweep of each. A token blocked for six straight hours costs one API call, and the sweep count is kept alongside the path so a 330-sweep blockade still reads differently from a 2-sweep one. A blockade longer than the bucket is deliberately split, so a 21-hour rejection is sampled several times rather than described by its first minute.
+
+**Backfilled rows survive pruning.** Skip rows are evicted by `pruneHistory`, and on a busy book the size ceiling had been trimming them at ~30 hours against a 30-day age setting — a measurement would be deleted the day after it was fetched. Rows carrying a result are now spared. The set only grows with distinct rejections, not with tick rate.
+
+**It stores the path, not a verdict.** Peak, trough, close, and how many bars traded below the skip price — not "would have hit P0". Thresholds move; measurements should not have to be re-fetched when they do.
+
+Each episode ends in one of: `ok`, `too_recent`, `no_bars`, `no_anchor` (the first bar is more than 10 minutes after the skip, so its open is a different market than the one we rejected), or `error`.
+
 ### `npm run heartbeat-check`
 
 Runs the out-of-process liveness checker once by hand (normally it lives in cron). Exit codes: `0` healthy, `1` heartbeat stale/missing (alert sent), `2` the checker itself couldn't read the DB — which deliberately does **not** alert, so a broken checker can't page you about itself.
