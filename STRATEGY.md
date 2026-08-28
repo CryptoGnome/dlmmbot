@@ -159,7 +159,7 @@ Two distinct cases, because they mean opposite things:
 
 **Re-entry after a P3 close — anti-chasing rules:**
 - The token goes back through the **full §2 pipeline as a fresh candidate**, including the §2.3 timing filter — so re-entry only happens after a retrace signal, never into a vertical pump.
-- Ladder decay: each successive re-entry on the same token within `[24h]` sizes at `[0.75×]` the previous, max `[2]` re-entries — late legs of a pump carry more downside than early ones.
+- Ladder decay: each successive re-entry on the same token within `[24h]` sizes at `[0.75×]` the previous, max `[2]` re-entries — late legs of a pump carry more downside than early ones. **Measured 2026-08-28, the cutoff is right but the shrink may not be:** 2nd entries are the best cohort on the live book (n=59, **66%** win rate, +0.79 SOL vs 51% / +0.72 across 117 firsts), 3rd entries are net negative (n=45, 40%, −0.31, tail-driven), and the ten backfilled `reentry_limit` refusals fell after being blocked (median close ≈ −13%) despite scores of 85–100. So the ladder shrinks the strongest trades. **Instrumented, OFF:** every re-entry now logs a `reentry_ladder_deferred` decision carrying the unshrunk size next to the ladder size actually used — same pattern as `sizing_flat_deferred`; sizing is unchanged until that telemetry decides.
 - Rate limits: ≤ `[2]` rebalances per position per `[6h]`; skip entirely if projected rent + tx cost > `[25%]` of fees earned so far.
 - **House-money rule** `[off on live]` — was banking notional profit with no release path; deployable only ever fell. Disabled 2026-08-09.
 

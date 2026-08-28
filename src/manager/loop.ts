@@ -1733,7 +1733,22 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       recordDecision(cand.tokenMint, cand.pool.address, "skipped", "reentry_limit", score, { priorEntries24h });
       continue;
     }
+    const preLadderSize = size;
     size *= Math.pow(m.reentry_ladder_mult, priorEntries24h);
+    // Instrumented-off (2026-08-28), same pattern as sizing_flat_deferred: the
+    // ladder shrinks every re-entry to 0.75^n of base, but 2nd entries are the
+    // best cohort on the book (n=59, 66% win rate vs 51% for firsts) — so the
+    // shrink systematically under-sizes the strongest trades. Log the unshrunk
+    // counterfactual next to the size actually used; `size` is NOT reassigned.
+    // Logged BEFORE regime/micro/floors on purpose — those apply identically
+    // to either size, so comparing after them would measure the clamps.
+    if (priorEntries24h > 0) {
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "reentry_ladder_deferred", score, {
+        priorEntries24h, ladderMult: m.reentry_ladder_mult,
+        sizeWithLadder: size, sizeFullCounterfactual: preLadderSize,
+        sleeve: isMicro ? "micro" : "core",
+      });
+    }
     size *= regime; // regime filter halves sizing in a SOL downdraft
     if (isMicro && sizingMode() === "kelly") size = applyMicroSize(size);
     // Viability floor, applied once, here — AFTER the ladder and regime have

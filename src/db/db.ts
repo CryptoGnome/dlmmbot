@@ -639,6 +639,7 @@ export const TELEMETRY_GATES = [
   "young_exit_candidate",
   "top_blast_candidate",
   "give_back_candidate",
+  "reentry_ladder_deferred",
   // 2026-08-26: both of these shipped as instrumented-off experiments WITHOUT
   // being added here, and the omission is silent — the experiment looks healthy,
   // the rows just stop existing. Measured on the server that day: the file sat
