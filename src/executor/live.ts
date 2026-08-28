@@ -1066,9 +1066,28 @@ export class LiveExecutor implements Executor {
     const balPostRemove = walletXKnown ? walletX : null;
     const removeSigCount = sigs.length;
     let swapSig: string | null = null;
+    // Same-instant quote next to the fill, observation only. exit_sol is a
+    // PRE-close mark, so marked-vs-received blends market drift during the
+    // close with the swap's own cost — measured 2026-08-27 the blend reads
+    // +9.3% and says nothing about either. Fired concurrently so the close is
+    // never delayed: the quote resolves at ~swap submission time, and a quote
+    // failure is just a null in the audit trail.
+    let quotePromise: Promise<number | null> = Promise.resolve(null);
     if (toSell > 0n) {
+      quotePromise = quoteToSolLamports(position.tokenMint, toSell);
       const swap = await this.tokenToSol(position.tokenMint, toSell, slippageBps);
       if (swap) { sigs.push(swap.signature); swapSig = swap.signature; }
+    }
+    const preSwapQuoteLamports = await quotePromise.catch(() => null);
+    const preSwapQuoteSol = preSwapQuoteLamports === null ? null : preSwapQuoteLamports / 1e9;
+    // The swap leg's own wallet credit, so swap cost is computable without
+    // untangling rent refunds and fee claims from closeReturnSol.
+    const swapCreditSol = swapSig ? await this.walletDelta([swapSig]) : null;
+    if (preSwapQuoteSol !== null && preSwapQuoteSol > 0 && swapCreditSol !== null) {
+      console.log(
+        `[live] pos#${position.id} ${position.symbol} exit swap: quoted ${preSwapQuoteSol.toFixed(5)} SOL, ` +
+        `received ${swapCreditSol.toFixed(5)} SOL (${((swapCreditSol / preSwapQuoteSol - 1) * 100).toFixed(1)}%)`
+      );
     }
     const balPostSwap = await balAt("post-swap", swapSig ?? sigs[sigs.length - 1] ?? null);
     // Audit line on EVERY close, not just strands: the clean ones are the
@@ -1204,6 +1223,9 @@ export class LiveExecutor implements Executor {
         // Chain legs, so attribution reconciles without a wallet scan
         // (RANGE-SHAPE-DECISION.md item 3).
         legs: { feesSolMarked: before.feesSol, feeXRaw: before.feeXRaw.toString(), xToSwapRaw: xToSwap.toString() },
+        // Same-instant Jupiter quote vs the swap leg's own wallet credit —
+        // swap cost isolated from the market drift baked into markedExitSol.
+        exitSwap: { preSwapQuoteSol, swapCreditSol, soldRaw: toSell.toString() },
         // Per-bin composition at exit. Paired with the 'open' event's bins this
         // gives y_deposited(d) and (y(d), x(d)) per bin — both sides of
         // L(d) = y_deposited(d) - (y(d) + x(d) * p_exit).
