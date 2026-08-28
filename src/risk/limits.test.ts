@@ -145,6 +145,19 @@ describe("circuitBreakerTripped", () => {
     expect(circuitBreakerTripped(30)).toBe(false);
   });
 
+  it("0 disables the breaker instead of tripping on any loss", () => {
+    installConfig((c) => { c.sizing.circuit_daily_loss_pct = 0; });
+    insertClosedPosition({
+      entrySol: 1,
+      exitSol: 0,
+      openCostSol: 1,
+      closeReturnSol: 0,
+      feesMeasuredSol: 0,
+      exitTs: now() - 60,
+    });
+    expect(circuitBreakerTripped(10)).toBe(false);
+  });
+
   it("ignores losses from the other mode (shared promotion-flow DB)", () => {
     // Test process runs paper; a live loss must not trip the paper breaker.
     insertClosedPosition({
