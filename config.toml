@@ -232,6 +232,15 @@ stop_loss_sustain_polls_in_range = 1
 # off for a week and read the log before turning it on.
 stop_loss_count_claimed_fees = false
 loss_reentry_cooldown_h = 24
+# Give-back stop (STRATEGY.md §10a). Once a position has been UP past the peak
+# floor (min(0.02 SOL, 5% of entry), fee-inclusive), close the moment PnL hands
+# back to give_back_keep_frac of that peak — leave before the give-back
+# completes. Meme sleeves only; majors never ran the experiment. Promoted from
+# telemetry 2026-08-28: replay +2.657 SOL over 120 closes (robust 0.75-0.95),
+# live telemetry +0.857 SOL over 20 triggers (11 up / 9 down; the costs are
+# escape recoveries it pre-empts, the saves are P0/P1 continuations).
+give_back_enabled = true
+give_back_keep_frac = 0.75
 # P2 rotation
 rotation_fee_daily_min_pct = 5
 rotation_polls = 3

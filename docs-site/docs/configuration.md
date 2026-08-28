@@ -141,6 +141,8 @@ Thresholds:
 | `stop_loss_sustain_polls` | `4` | While **below range**, P1 must be under the stop for this many consecutive polls (~60s) before firing — wick tolerance. In range the stop is immediate. A violent collapse is still caught instantly by P0 `price_crash` |
 | `stop_loss_count_claimed_fees` | `false` | Count fees **already claimed** (realized SOL in the wallet) in the value P1 compares to entry. Off = MTM only. Either way the bot logs a `P1_fee_offset_deferred` decision whenever the two settings would disagree, so leave it off for a week and read the Funnel before turning it on. A real crash fires identically under both |
 | `loss_reentry_cooldown_h` | `24` | Cooldown after a loss exit |
+| `give_back_enabled` | `true` | Give-back stop, meme sleeves only: once a position has been up past min(0.02 SOL, 5% of entry) fee-inclusive, close when PnL hands back to `give_back_keep_frac` of that peak. Exits as `give_back`; the token is benched 15 min like an escape. Promoted from a month of telemetry (replay +2.657 SOL / 120 closes; live triggers +0.857 SOL / 20) |
+| `give_back_keep_frac` | `0.75` | Fraction of the peak PnL the position must keep; below it the give-back stop fires. Replay was flat across 0.75–0.95 |
 | `rotation_fee_daily_min_pct` | `5` | P2: fee-rate floor, %/day |
 | `rotation_polls` | `3` | P2: consecutive polls under the floor before rotating |
 | `rotation_vol_30m_min_usd` | `5000` | P2: 30m volume floor |

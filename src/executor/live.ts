@@ -1114,7 +1114,7 @@ export class LiveExecutor implements Executor {
 
     const stateByReason: Record<ExitReason, string> = {
       P0_safety: "closed_safety", P1_stop: "closed_stop", P2_rotation: "closed_rotation",
-      P3_above: "closed_win", P5_below: "closed_below", escape: "closed_escape", manual: "closed_manual",
+      P3_above: "closed_win", P5_below: "closed_below", give_back: "closed_giveback", escape: "closed_escape", manual: "closed_manual",
     };
     // Actual wallet credit for this close (exit value + rent refunds - tx fees).
     const closeReturnSol = sigs.length ? await this.walletDelta(sigs) : 0;

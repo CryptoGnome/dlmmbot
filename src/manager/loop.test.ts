@@ -3,7 +3,7 @@ import { CLAIM_EST_TX_COST_SOL, giveBackPeakFloor, managePositions, pollSleepMs,
 import { FakeExecutor } from "../test/fakeExecutor.js";
 import { installConfig, restoreConfig } from "../test/config.js";
 import { useMemoryDb, resetTestDb, insertOpenPosition } from "../test/db.js";
-import { getDb } from "../db/db.js";
+import { getDb, now } from "../db/db.js";
 import { config, ESCAPE_ARM_DRAWDOWN_PCT, ESCAPE_RECOVER_DRAWDOWN_PCT } from "../config.js";
 import type { ExitReason, Position } from "../types.js";
 
@@ -78,6 +78,7 @@ describe("managePositions contracts", () => {
       c.manage.escape_hatch_drawdown_pct = 26.4;
       c.manage.escape_hatch_recovery_drawdown_pct = 12;
       c.manage.house_money_rule = false;
+      c.manage.give_back_enabled = false; // rule under test separately below
       c.follow.enabled = false;
     });
     exec = new FakeExecutor("paper");
@@ -342,6 +343,85 @@ describe("managePositions contracts", () => {
       mark(id, 0.42);
       await managePositions(exec);
       expect(candidates()).toHaveLength(1);
+    });
+  });
+
+  /**
+   * The same trigger with give_back_enabled: a REAL exit (promoted 2026-08-28
+   * after replay and live telemetry agreed). Meme sleeves only.
+   */
+  describe("give-back stop (enabled)", () => {
+    const mark = (id: number, valueSol: number) =>
+      exec.setMark(id, { valueSol, price: 1, activeBinId: 150, inRange: true });
+    const enable = () => installConfig((c) => {
+      c.manage.give_back_enabled = true;
+      c.manage.house_money_rule = false;
+      c.follow.enabled = false;
+    });
+
+    it("closes with reason give_back and benches the token", async () => {
+      enable();
+      const id = insertOpenPosition({ entrySol: 0.4, minBinId: 100, maxBinId: 200 });
+      mark(id, 0.45);
+      await managePositions(exec);
+      expect(exec.closed).toHaveLength(0); // at the peak — nothing to do
+
+      mark(id, 0.43); // +0.03 = 60% of the +0.05 peak, under keep_frac 0.75
+      await managePositions(exec);
+      expect(exec.closed).toEqual([{ id, reason: "give_back" }]);
+      const row = getDb().prepare("SELECT state, exit_reason FROM positions WHERE id = ?").get(id) as
+        { state: string; exit_reason: string };
+      expect(row.state).toBe("closed_giveback");
+      expect(row.exit_reason).toBe("give_back");
+      // Benched like an escape: re-buying on the next sweep is not "leaving".
+      const bl = getDb().prepare("SELECT reason FROM blacklist WHERE key = 'mint1'").get() as
+        { reason: string } | undefined;
+      expect(bl?.reason).toContain("give-back");
+      const exited = getDb().prepare(
+        "SELECT features_json FROM decisions WHERE action = 'exited' AND failed_gate = 'give_back'"
+      ).all();
+      expect(exited).toHaveLength(1);
+    });
+
+    it("fires even when the candidate was already logged under the telemetry-only build", async () => {
+      // Telemetry era logs the counterfactual and sets give_back_logged=1; a
+      // deploy that enables the rule must still act on the NEXT trigger tick,
+      // or every open gave-back position sails through untouched.
+      const id = insertOpenPosition({ entrySol: 0.4, minBinId: 100, maxBinId: 200 });
+      mark(id, 0.45);
+      await managePositions(exec);
+      mark(id, 0.43);
+      await managePositions(exec); // telemetry-only: logs, closes nothing
+      expect(exec.closed).toHaveLength(0);
+
+      enable();
+      mark(id, 0.42);
+      await managePositions(exec);
+      expect(exec.closed).toEqual([{ id, reason: "give_back" }]);
+    });
+
+    it("never fires on a majors position — the evidence base is meme-book only", async () => {
+      enable();
+      const id = insertOpenPosition({ entrySol: 0.4, minBinId: 100, maxBinId: 200 });
+      getDb().prepare(
+        `INSERT INTO decisions (ts, mint, pool, action, failed_gate, score, features_json)
+         VALUES (?, 'mint1', 'pool1', 'entered', NULL, 80, '{"sleeve":"majors"}')`
+      ).run(now() - 600);
+      mark(id, 0.45);
+      await managePositions(exec);
+      mark(id, 0.43);
+      await managePositions(exec);
+      expect(exec.closed).toHaveLength(0); // telemetry may log; the exit must not fire
+    });
+
+    it("leaves a position alone while it holds above keep_frac of peak", async () => {
+      enable();
+      const id = insertOpenPosition({ entrySol: 0.4, minBinId: 100, maxBinId: 200 });
+      mark(id, 0.45);
+      await managePositions(exec);
+      mark(id, 0.44); // +0.04 = 80% of peak, above keep 0.75
+      await managePositions(exec);
+      expect(exec.closed).toHaveLength(0);
     });
   });
 

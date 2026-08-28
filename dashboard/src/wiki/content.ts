@@ -326,7 +326,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
             code: "P4",
             title: "Still in range — manage",
             when: "Price is trading our bins",
-            then: "Claim/bank fees; maybe profit-lock a slice; escape hatch closes after deep dip + recovery",
+            then: "Claim/bank fees; maybe profit-lock a slice; give-back stop closes a winner that hands back 25%+ of its peak; escape hatch closes after deep dip + recovery",
             tone: "fg",
           },
           {
@@ -784,6 +784,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           ["Swap", "Jupiter converts the token side back into SOL when we exit."],
           ["Reachable depth", "Some pools use very fine price steps, so a 40%-deep range would need 256 or 512 bins when we can only place 138. The bot used to quietly enter with a third of the range it meant to. Now it skips the pool instead (shown as range_too_shallow). Only affects meme entries — the majors sleeve plans its ranges separately."],
           ["Escape hatch", "Deep dip, then recovery → close and free the slot (reset), not a slow bleed. The token is benched 15 min (escape_reentry_cooldown_min) so the reset doesn’t re-buy it on the next tick. “Deep” is measured as a fraction of the range’s depth, so the trigger price moves with how wide the range is: −26% on a 40%-deep range, −19% on a 30%-deep one. An absolute-drawdown version is wired up but switched off — it changes 14 of 96 replayable closes and 10 of those cannot be judged from recorded data, so the bot just logs where the two disagree."],
+          ["Give-back stop", "Once a position has been up (fees included), close it the moment it hands back a quarter of that peak — leave before the round-trip completes. Of 25 positions that went green then closed red, zero ever got back to break-even, so there is no second chance to wait for. Promoted from a month of watch-only logging: acting on the 20 real triggers would have netted +0.86 SOL, including both BANDOS stops of 08-28. Meme sleeves only; the token is benched 15 min like an escape. give_back_enabled / give_back_keep_frac."],
           ["Profit lock", "Bank a slice of a big winner while the rest keeps earning."],
           ["Usage fee", "1% on live wins → GNME buy+burn. See dlmmbot.com/setup/fees."],
           ["Profile", "Pack of Bot settings — official / local / GitHub community. See Wiki → Settings profiles."],
