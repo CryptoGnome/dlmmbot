@@ -164,7 +164,7 @@ Thresholds:
 | `escape_hatch_depth_pct` | `60` | Escape hatch: dip through this % of range depth… |
 | `escape_hatch_recovery_pct` | `25` | …then recovery into the top % of range → close & reset |
 | `max_position_accounts` | `2` | Bin-account ceiling (69 bins each). A pool too fine-stepped to fit `min_down_pct` is skipped as `range_too_shallow` |
-| `escape_hatch_absolute` | `false` | Use absolute drawdown from entry instead of a fraction of range depth. Off — not a no-op, see STRATEGY.md |
+| `escape_hatch_absolute` | `true` | Use absolute drawdown from entry (arm at −26.4%, recover at −12%) instead of a fraction of range depth. On since 2026-09-05 as the range-width test's prerequisite; see RANGE-WIDTH-DECISION.md |
 | `escape_hatch_drawdown_pct` | `26.4` | Absolute form: arm once price is this % below entry |
 | `escape_hatch_recovery_drawdown_pct` | `12.0` | Absolute form: …then recovery to within this % of entry → close & reset |
 | `escape_reentry_cooldown_min` | `15` | Bench the token this long after an escape close before re-entering it (0 = off) |
@@ -191,7 +191,7 @@ Thresholds:
 | `kelly_cold_start_frac` | `0.03` | Cold start: flat 3% of wallet per position |
 | `kelly_max_position_frac` | `0.10` | Hard cap: no position exceeds 10% of wallet (Kelly and Fixed) |
 | `kelly_block_negative` | `false` | Off: negative edge clamps to the min-size floor instead of a permanent stop |
-| `kelly_core_unit` / `_sol` / `_pct` / `_mult` | `kelly` / `0.5` / `5` / `1.0` | Core meme base when `mode=kelly` |
+| `kelly_core_unit` / `_sol` / `_pct` / `_mult` | `pct` / `0.5` / `4` / `1.0` | Core meme base when `mode=kelly`. Default is a flat 4% of deployable since 2026-09-05 (SIZING-MODE-DECISION.md Gate 3: the adaptive Kelly base sat at the floor for a week after three bad closes); set `kelly` for the adaptive base |
 | `kelly_micro_unit` / `_sol` / `_pct` / `_mult` | `kelly` / `0.3` / `3` / `1.0` | Micro sleeve when `mode=kelly` |
 | `kelly_majors_unit` / `_sol` / `_pct` / `_mult` | `sol` / `0.75` / `10` / `1.0` | Majors when `mode=kelly` |
 | `kelly_follow_unit` / `_sol` / `_pct` / `_mult` | `sol` / `0.25` / `2` / `1.0` | Follow legs when `mode=kelly` |
@@ -235,7 +235,7 @@ Thresholds:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `enabled` / `discovery` | `true` / `true` | Sleeve on; discovery sweep on |
+| `enabled` / `discovery` | `false` / `true` | Sleeve off by default since 2026-09-05 (43 live closes, +0.04 SOL on 837 SOL-hours); open majors positions still manage out. `true` re-enables; discovery sweep runs only when enabled |
 | `discovery_pages` | `8` | Datapi pages for the majors sweep |
 | `symbol_allowlist` | `PUMP, JTO, BONK, WIF, RAY, JUP` | Only these symbols (ANSEM removed 2026-08-20 — it carried ~92% of majors losses on both live bots) |
 | `mcap_min_usd` | `0` | No mcap floor (allowlist is the gate) |

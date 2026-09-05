@@ -278,7 +278,7 @@ escape_hatch_recovery_pct = 25
 # is why the hatch is off on follow legs and why RANGE-WIDTH-DECISION.md makes
 # fixing it the prerequisite for testing a narrower range.
 #
-# It is OFF because it is not the no-op that document assumed. The thresholds
+# It was OFF until 2026-09-05 because it is not the no-op that document assumed. The thresholds
 # below reproduce the depth rule at min_down_pct = 40 (1 - 0.60**0.60 = 26.4%,
 # 1 - 0.60**0.25 = 12.0%), but the book's real depths run 11-50%, so replaying
 # the 96 closed positions the depth rule reproduces faithfully changes 14 of
@@ -286,7 +286,9 @@ escape_hatch_recovery_pct = 25
 # data can say what holding would have done. The bot logs an
 # `escape_absolute_deferred` decision every time the two disagree; a week of
 # those decides. Do not flip this on the strength of the replay alone.
-escape_hatch_absolute = false
+# 2026-09-05: ON, as the RANGE-WIDTH-DECISION.md prerequisite (operator request
+# after the strategy review; the depth gradient held at n=181).
+escape_hatch_absolute = true
 escape_hatch_drawdown_pct = 26.4
 escape_hatch_recovery_drawdown_pct = 12.0
 # After an escape close the token is benched this long before the scanner may
@@ -370,15 +372,17 @@ kelly_block_negative = false   # 2026-08-08: the brake is a one-way door — blo
                                # sizing falls to the min_position_sol floor (0.3 SOL): small
                                # size while the sample rebuilds, rather than a permanent stop.
 # Kelly per-sleeve (when mode=kelly): unit=kelly scales adaptive base; sol/pct = explicit target
-kelly_core_unit = "kelly"
+kelly_core_unit = "pct"        # 2026-09-05: flat arm (SIZING-MODE-DECISION.md Gate 4). Gate 3
+                               # passed at 233% against a 15% bar: after three 08-27/08-31
+                               # closes the 100-close f* went to -0.29 and every entry sat at
+                               # the 1%-of-equity floor for a week. "kelly" restores the
+                               # adaptive base; the counterfactual is still logged either way.
 kelly_core_sol = 0.5
-kelly_core_pct = 5             # Also the reference the Gate 3 `sizing_flat_deferred` telemetry
-                               # sizes its counterfactual with (SIZING-MODE-DECISION.md). It is
-                               # NOT calibrated: the flat arm must match the trailing MEAN Kelly
-                               # size or a live test measures leverage instead of timing, and
-                               # that calibration differs ~2x by when it is taken (3.01 vs 6.41
-                               # on the server, 2026-08-26). The decision logs the raw bankroll
-                               # inputs so the analysis can recalibrate without a restart.
+kelly_core_pct = 4             # 4% of deployable ≈ the 0.79 SOL mean Kelly size of the
+                               # profitable 08-07→08-26 period on a 24 SOL wallet — the
+                               # calibration the decision asks for (a flat arm must match the
+                               # trailing MEAN Kelly size or it measures leverage, not timing).
+                               # Also what the `sizing_flat_deferred` telemetry sizes with.
 kelly_core_mult = 1.0
 kelly_micro_unit = "kelly"
 kelly_micro_sol = 0.3
@@ -445,7 +449,9 @@ awaiting_dip_max_min = 90
 open_fail_cooldown_s = 300 # after a failed leg open, wait before retrying (was every 15s × 4 sims)
 
 [majors]                   # STRATEGY.md §1.1 — spot parking, separate from meme BidAsk
-enabled = true
+enabled = false            # 2026-09-05: off. 43 live closes earned +0.04 SOL on 837 SOL-hours
+                           # (meme sleeves: +1.08 on 88). Open majors positions still manage
+                           # out on their own rules; only discovery stops. true re-enables.
 discovery = true
 discovery_pages = 8
 # ANSEM removed 2026-08-20: it carried ~92% of the sleeve's realized losses on

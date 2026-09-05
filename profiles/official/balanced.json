@@ -57,7 +57,7 @@
     "manage.loss_reentry_cooldown_h": 24,
     "rotation.displacement_enabled": true,
     "gmgn.enabled": true,
-    "majors.enabled": true,
+    "majors.enabled": false,
     "majors.size_sol": 0.75,
     "majors.max_slots": 1,
     "majors.symbol_allowlist": ["PUMP", "JTO", "BONK", "WIF", "RAY", "JUP"]

@@ -728,11 +728,13 @@ describe("managePositions contracts", () => {
       expect(ESCAPE_RECOVER_DRAWDOWN_PCT).toBeCloseTo((1 - bottomRatio ** 0.25) * 100, 1);
     });
 
-    it("stays OFF by default: the narrow range still arms on a shallow dip", async () => {
-      // The property this commit must not break. With the switch off the depth
-      // rule is live, so a -20% dip arms the 25-bin range (63% of its depth)
-      // and leaves the 100-bin one alone — the coupling the absolute form
-      // removes, and the reason it is not a no-op on the real book.
+    it("with the switch off, the narrow range still arms on a shallow dip", async () => {
+      // With the switch off the depth rule is live, so a -20% dip arms the
+      // 25-bin range (63% of its depth) and leaves the 100-bin one alone — the
+      // coupling the absolute form removes, and the reason it is not a no-op on
+      // the real book. The template default flipped to ON on 2026-09-05; this
+      // pins the legacy behaviour behind the switch, not the default.
+      installConfig((c) => { c.manage.escape_hatch_absolute = false; });
       const wide = insertOpenPosition({ entrySol: 0.4, minBinId: 100, maxBinId: 200 });
       const narrow = insertOpenPosition({ entrySol: 0.4, minBinId: 175, maxBinId: 200, pool: "pool2" });
       const armed = (id: number) =>

@@ -154,7 +154,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           {
             title: "Majors",
             badge: "alts",
-            text: "Allowlisted SOL-quoted alts. Spot (flat) bins + separate timing. P2 rotation needs BOTH fee and volume dead (and a lower fee floor than entry) so parks like PUMP don’t churn every few minutes. Settings → Majors parking: search a ticker on Meteora and add to the allowlist. Runs after memes so hot memes keep slots. Since v0.14.0 majors also respect the 24h re-entry cooldown after our own stop / below-range / safety exit — but not meme vetting bans. Since v0.15.0 the range tops out at the current price: the old band reached 6% above price, but SOL-only liquidity can’t sit in bins above price, so those bins were always empty and just cost rent. 2026-08-20: ANSEM was dropped from the default allowlist (it carried ~92% of the sleeve’s realized losses on both live bots) and the entry volume floor rose 5k → 15k — every sub-15k entry only ever churned a P2 rotation.",
+            text: "Allowlisted SOL-quoted alts. Spot (flat) bins + separate timing. P2 rotation needs BOTH fee and volume dead (and a lower fee floor than entry) so parks like PUMP don’t churn every few minutes. Settings → Majors parking: search a ticker on Meteora and add to the allowlist. Runs after memes so hot memes keep slots. Since v0.14.0 majors also respect the 24h re-entry cooldown after our own stop / below-range / safety exit — but not meme vetting bans. Since v0.15.0 the range tops out at the current price: the old band reached 6% above price, but SOL-only liquidity can’t sit in bins above price, so those bins were always empty and just cost rent. 2026-08-20: ANSEM was dropped from the default allowlist (it carried ~92% of the sleeve’s realized losses on both live bots) and the entry volume floor rose 5k → 15k — every sub-15k entry only ever churned a P2 rotation. 2026-09-05: the sleeve is OFF by default — 43 live closes earned +0.04 SOL on 837 SOL-hours of capital while the meme sleeves earned +1.08 on 88. Open majors positions still manage out on their own rules; Settings → Majors parking → Enabled turns it back on.",
             icon: "layers",
           },
         ],
@@ -427,7 +427,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           { label: "Cold start", detail: "Until min samples, each position uses cold-start % of wallet." },
           { label: "Estimate f*", detail: "Rolling closed trades → win rate + avg win/loss → full Kelly fraction." },
           { label: "Apply fraction", detail: "Bet kelly_fraction × f*, capped at max share of wallet." },
-          { label: "Per-sleeve tweak", detail: "Settings → Kelly per-sleeve: Kelly (adaptive × mult), fixed SOL, or % deployable per core/micro/majors/follow." },
+          { label: "Per-sleeve tweak", detail: "Settings → Kelly per-sleeve: Kelly (adaptive × mult), fixed SOL, or % deployable per core/micro/majors/follow. Since 2026-09-05 the core default is a flat 4% of deployable: the adaptive base had sized every entry at the 1% floor for a week after three bad closes, and the measured counterfactual (SIZING-MODE-DECISION.md Gate 3) differed by 233% against a 15% bar." },
           { label: "Score tilt", detail: "Scan score picks low/mid/high multiplier on the result." },
           { label: "Floors", detail: "Never below the min position size; negative edge can block or clamp to the floor." },
         ],
