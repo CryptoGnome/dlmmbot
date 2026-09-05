@@ -139,6 +139,15 @@ carries the same units and is owed the same audit before starting.
 > until the absolute form is ON, and turning it on is now its own decision with
 > its own evidence bar, gated on the live disagreement log rather than on a
 > replay. Integrity check (c) is unchanged and becomes its regression test.
+>
+> **2026-09-05: prerequisite flipped ON** (`manage.escape_hatch_absolute = true`
+> on both runtime configs, 26.4 / 12.0 thresholds) by operator request after a
+> full strategy review found the depth gradient had held with more data: deep
+> ranges (bottom below −45%, two accounts) n=71 **−0.60 SOL** at 49% win vs
+> mid ranges (−45..−35%, one account) n=110 **+1.20** at 56% — on young (<6h)
+> tokens −0.18 vs +1.40, the difference sitting entirely in P0/P1 stops (−2.05
+> over 27 vs −0.64 over 21). The arm-assignment code below is **not built yet**;
+> the stopping rule starts when it ships, server only.
 
 ## The design
 
