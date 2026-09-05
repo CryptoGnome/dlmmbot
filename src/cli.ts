@@ -50,9 +50,17 @@ async function main(): Promise<void> {
     }
     case "status": {
       const db = getDb();
-      const open = db.prepare(
-        "SELECT id, symbol, entry_sol, entry_price, state, fees_claimed_sol, datetime(entry_ts,'unixepoch') AS opened FROM positions WHERE state IN ('open','pending')"
-      ).all();
+      // Eastern like the dashboard, and labeled — the raw datetime() string
+      // this used to print was UTC with no zone, which reads 4-5h in the
+      // future to the operator it is for.
+      const easternTime = (ts: number) => new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York", month: "2-digit", day: "2-digit",
+        hour: "numeric", minute: "2-digit", hour12: true,
+      }).format(new Date(ts * 1000)) + " ET";
+      const open = (db.prepare(
+        "SELECT id, symbol, entry_sol, entry_price, state, fees_claimed_sol, entry_ts FROM positions WHERE state IN ('open','pending')"
+      ).all() as Array<{ entry_ts: number } & Record<string, unknown>>)
+        .map(({ entry_ts, ...rest }) => ({ ...rest, opened: easternTime(entry_ts) }));
       const closed = db.prepare(
         `SELECT COUNT(*) AS n, COALESCE(SUM(${REALIZED_PNL_SQL}), 0) AS pnl,
                 COALESCE(SUM(fees_measured_sol + fees_at_close_sol), 0) AS fees

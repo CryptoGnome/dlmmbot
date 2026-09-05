@@ -441,3 +441,27 @@ been touched; `kelly_core_unit` is `"kelly"` on both bots. No sizing knob has be
 beyond the `kelly_lookback` / `kelly_min_samples` change of the same date, which
 is a separate, already-shipped decision. `kelly_core_unit` is `"kelly"` on both
 bots.
+
+**2026-09-05 — Gate 3 PASSED; flat sizing switched on wholesale (not the
+hash A/B).** Forward `sizing_flat_deferred` rows carrying a `posId`, 08-26 →
+09-05: n=69, median `|flat − kelly| / kelly` = **233%** against the 15% bar;
+every day from 08-29 on is ≥ 122%. The mechanism was the one the replay
+predicted, only larger: three closes on 08-27/08-31 (RAX −37%, BANDOS −39%,
+chimp −44%) pushed the 100-close estimator to f\* = −0.29, `appliedFraction`
+went to 0 on 08-31 and every entry since has been the 1%-of-equity floor
+(0.22–0.39 SOL); without those three rows f\* is +0.096, and the last 25 closes
+alone give +0.33. Average deployed capital 08-29 → 09-05 was 1.55 SOL of 24.35,
+1.5 of it the PUMP majors position. Railway was in the identical state
+(negative_edge, 0.0965 SOL entries on 9.65 SOL).
+
+The operator chose to set `kelly_core_unit = "pct"`, `kelly_core_pct = 4` on
+**both** runtime configs rather than build the randomised arm: with Kelly pinned
+at the floor, a control arm would have measured the floor, not Kelly. 4% of
+deployable ≈ 0.83 SOL on the server, which is the 0.79 SOL mean size of the
+08-07 → 08-26 period (the calibration this document asks for); the score
+multiplier and `kelly_max_position_frac` cap still apply on top. The Kelly
+counterfactual stays recoverable per entry: `sizing_flat_deferred` rows now
+carry `kellySol == flatSol`, but `appliedFraction`, `walletSol` and `regime` on
+the same row reproduce what Kelly would have sized
+(`max(walletSol × appliedFraction, floor) × mult`, same clamps). Judge the switch
+on those pairs plus realized PnL per SOL deployed, not on the headline book.

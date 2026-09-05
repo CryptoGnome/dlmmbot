@@ -54,7 +54,9 @@ describe("majorsSlotBudget", () => {
 describe("openSleeveExposure", () => {
   beforeEach(() => {
     useMemoryDb();
-    installConfig();
+    // The sleeve is off in the template since 2026-09-05; these tests are about
+    // the exposure counter, so run them with it on.
+    installConfig((c) => { c.majors.enabled = true; });
   });
   afterEach(() => { resetTestDb(); restoreConfig(); });
 
