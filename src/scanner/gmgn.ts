@@ -183,8 +183,13 @@ export function parseGmgnResetMs(text: string, now = Date.now()): number | null 
   const m =
     /(?:reset_at|X-RateLimit-Reset|RateLimit-Reset)["'\s:=]+(\d{10,13})/i.exec(text)
     ?? /reset(?:s)?\s+(?:at|in)\s+(\d{10,13})/i.exec(text);
-  if (!m?.[1]) return null;
-  return parseResetEpoch(m[1], now);
+  if (m?.[1]) return parseResetEpoch(m[1], now);
+  // gmgn-cli prints the reset as a LOCAL timestamp plus "(~Ns remaining)", never
+  // the epoch — so every ban fell to the 300s default (six times 09-06..09-07,
+  // each logged pause_sec 300) even when the bucket reset in seconds.
+  const rem = /\(~(\d+)s remaining\)/.exec(text);
+  if (!rem?.[1]) return null;
+  return parseResetEpoch(now + Number(rem[1]) * 1000 + 1000, now);
 }
 
 function parseResetEpoch(raw: number | string, now: number): number | null {

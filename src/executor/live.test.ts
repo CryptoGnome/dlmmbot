@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   txErrorDetail,
+  landedTxError,
   rangeGapTooLarge,
   shouldRebuildOpenOnSlippage,
   wealthDeltaLamports,
@@ -37,6 +38,28 @@ describe("txErrorDetail", () => {
       logs: ["Error Code: InsufficientFunds"],
     });
     expect(d.code).toBe("InsufficientFunds");
+  });
+});
+
+describe("landedTxError", () => {
+  it("names the program code from a confirmed-but-failed tx so open can rebuild", () => {
+    const e = landedTxError("SIG", {
+      err: { InstructionError: [2, { Custom: 6004 }] },
+      logMessages: [
+        "Program LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo invoke [1]",
+        "Program log: AnchorError thrown in programs/lb_clmm/src/instructions/deposit/add_liquidity_by_strategy.rs:41. Error Code: ExceededBinSlippageTolerance. Error Number: 6004. Error Message: Exceeded bin slippage tolerance.",
+      ],
+    });
+    expect(e.code).toBe("ExceededBinSlippageTolerance");
+    expect(e.message).toMatch(/SIG — ExceededBinSlippageTolerance/);
+    expect(txErrorDetail(e).code).toBe("ExceededBinSlippageTolerance");
+    expect(shouldRebuildOpenOnSlippage(txErrorDetail(e).code, 0)).toBe(true);
+  });
+
+  it("still reports the signature when the tx cannot be fetched", () => {
+    const e = landedTxError("SIG", null);
+    expect(e.code).toBeNull();
+    expect(e.message).toBe("tx landed with on-chain error: SIG — tx not retrievable");
   });
 });
 

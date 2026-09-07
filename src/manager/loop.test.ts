@@ -254,6 +254,26 @@ describe("managePositions contracts", () => {
   });
 
   /**
+   * PUMP #251, 2026-09-02: a frozen-blockhash RPC failed the claim every tick
+   * for 71 minutes — 34 error rows, ~11s of tick stalled each. A failed claim
+   * now waits CLAIM_FAIL_BACKOFF_S before the next attempt.
+   */
+  it("backs off P4 claims after a failed one instead of retrying every tick", async () => {
+    const id = insertOpenPosition({ entrySol: 0.4 });
+    exec.setMark(id, { valueSol: 0.4, price: 1, activeBinId: 150, inRange: true, unclaimedFeesSol: 0.2 });
+    let calls = 0;
+    exec.claimFees = async () => { calls++; throw new Error("Unable to obtain a new blockhash after 11382ms"); };
+
+    await managePositions(exec);
+    await managePositions(exec);
+    expect(calls).toBe(1);
+
+    resetManagerStateForTests();
+    await managePositions(exec);
+    expect(calls).toBe(2);
+  });
+
+  /**
    * TELEMETRY ONLY. Fee-inclusive peak, then the give-back. Nothing closes —
    * the whole point is to collect the counterfactual before deciding.
    */
