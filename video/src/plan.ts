@@ -10,13 +10,16 @@
 export interface Daily {
   day: string;
   dayNumber: number;
+  /** 1 = a daily; N>1 = a recap whose day-scoped figures cover the last N days. */
+  periodDays: number;
   version: string | null;
   balance: { total: number; wallet: number; open: number; rent: number; usd: number; solUsd: number };
   today: { pnl: number; pct: number | null; closes: number; entries: number; scanned: number };
   allTime: { pnl: number; closes: number; winRate: number | null };
   /** `icon` is a public/ path (icons/<mint>.png) or null when the fetch failed — render the ticker alone. */
-  best: { symbol: string; icon?: string | null; pnl: number; reason: string } | null;
-  worst: { symbol: string; icon?: string | null; pnl: number; reason: string } | null;
+  /** `note` replaces the exit-rule line on a recap, where the standout is a token over the window, not one close. */
+  best: { symbol: string; icon?: string | null; pnl: number; reason: string; note?: string | null } | null;
+  worst: { symbol: string; icon?: string | null; pnl: number; reason: string; note?: string | null } | null;
   reasons: Array<{ reason: string; n: number; pnl: number }>;
   releases: Array<{ tag: string; title: string }>;
   open: Array<{ symbol: string; mint?: string | null; icon?: string | null; sleeve: string; status: string; pnl: number }>;
@@ -46,6 +49,9 @@ const NOTABLE_SOL = 0.01;
  */
 export const MAX_SECONDS = 120;
 
+/** "today" on a daily, "last 30 days" on a recap — every day-scoped label reads it. */
+export const periodLabel = (d: Daily) => (d.periodDays > 1 ? `last ${d.periodDays} days` : "today");
+
 export function planScenes(d: Daily): Beat[] {
   const beats: Beat[] = [
     { id: "title", seconds: 3 },
@@ -54,8 +60,10 @@ export function planScenes(d: Daily): Beat[] {
     { id: "dashboard", seconds: 4.5 },
     { id: "headline", seconds: 6 },
     { id: "trend", seconds: 5.5 },
-    { id: "funnel", seconds: 5 },
   ];
+  // Skip counts are pruned after ~30h (pruneHistory keeps the ledger small), so
+  // a recap cannot honestly say how many pools it screened over the window.
+  if (d.periodDays === 1) beats.push({ id: "funnel", seconds: 5 });
 
   if (d.best && d.best.pnl >= NOTABLE_SOL) beats.push({ id: "trade", seconds: 5 });
   if (d.open.length > 0) beats.push({ id: "positions", seconds: 4.5 });
