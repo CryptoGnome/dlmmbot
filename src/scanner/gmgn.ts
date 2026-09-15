@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { config, env } from "../config.js";
 import { logError } from "../db/db.js";
@@ -63,9 +65,88 @@ const SPEND_WINDOW_MAX = 36;
 /** Start below full bucket so a cold boot cannot burst 20 weight-1 calls. */
 const BUCKET_START_TOKENS = 8;
 
+/**
+ * Adaptive throttle. A local bucket can never see GMGN's real remaining budget
+ * (a second consumer on the same key, or a server bucket still draining after a
+ * restart, is invisible to us), so resuming at exactly the rate that just got
+ * banned reproduces the ban — that sawtooth is what fills the error log. Each
+ * ban tightens the local budget a step; a clean stretch relaxes it one step.
+ * The level survives restarts, otherwise the auto-deploy watcher resets our
+ * memory of the ban every deploy while GMGN still remembers it.
+ */
+const THROTTLE_FACTORS = [1, 0.7, 0.5, 0.35, 0.25];
+const THROTTLE_DECAY_MS = 15 * 60_000;
+
 let banLoggedUntil = 0;
 let spendWindowStart = 0;
 let spendWindowWeight = 0;
+let throttleLevel = 0;
+let throttleUpdatedAt = 0;
+let stateLoaded = false;
+/** Tests drive the throttle directly and must not touch the runtime pace file. */
+let persistState = true;
+
+function statePath(): string {
+  const db = process.env.FARMER_DB_PATH;
+  return db ? join(dirname(db), "gmgn-pace.json") : join(process.cwd(), "data", "gmgn-pace.json");
+}
+
+/** Load persisted ban/throttle once — a restart must not forget GMGN's cooldown. */
+function loadState(): void {
+  if (stateLoaded) return;
+  stateLoaded = true;
+  try {
+    const j = JSON.parse(readFileSync(statePath(), "utf8")) as {
+      bannedUntil?: number; throttleLevel?: number; throttleUpdatedAt?: number;
+    };
+    const now = Date.now();
+    // Ignore a far-future ban (clock skew / corrupt file) — cap at one hour out.
+    if (typeof j.bannedUntil === "number" && j.bannedUntil > now && j.bannedUntil < now + 3_600_000) {
+      bannedUntil = j.bannedUntil;
+      banLoggedUntil = j.bannedUntil;
+    }
+    if (typeof j.throttleLevel === "number") {
+      throttleLevel = Math.min(THROTTLE_FACTORS.length - 1, Math.max(0, Math.round(j.throttleLevel)));
+    }
+    throttleUpdatedAt = typeof j.throttleUpdatedAt === "number" ? j.throttleUpdatedAt : now;
+  } catch { /* no state yet, or unreadable — start clean */ }
+}
+
+function saveState(): void {
+  if (!persistState) return;
+  try {
+    const path = statePath();
+    mkdirSync(dirname(path), { recursive: true });
+    const tmp = `${path}.${process.pid}.tmp`;
+    writeFileSync(tmp, JSON.stringify({ bannedUntil, throttleLevel, throttleUpdatedAt }));
+    renameSync(tmp, path);
+  } catch { /* state is an optimization; never fail a call over it */ }
+}
+
+/** Relax one step per clean stretch, so a one-off ban does not throttle us forever. */
+function decayThrottle(now = Date.now()): void {
+  if (throttleLevel === 0) return;
+  while (throttleLevel > 0 && now - throttleUpdatedAt >= THROTTLE_DECAY_MS) {
+    throttleLevel -= 1;
+    throttleUpdatedAt += THROTTLE_DECAY_MS;
+  }
+}
+
+function throttleFactor(): number {
+  loadState();
+  decayThrottle();
+  return THROTTLE_FACTORS[throttleLevel] ?? 1;
+}
+
+/** Current rolling budget after adaptive throttling. */
+export function gmgnSpendBudget(): number {
+  return Math.max(6, Math.round(SPEND_WINDOW_MAX * throttleFactor()));
+}
+
+/** Observability for the dashboard / tests. */
+export function gmgnPaceState(): { throttleLevel: number; budget: number; bannedUntil: number } {
+  return { throttleLevel: (loadState(), decayThrottle(), throttleLevel), budget: gmgnSpendBudget(), bannedUntil };
+}
 
 type Job = {
   args: string[];
@@ -107,7 +188,7 @@ function resetSpendWindow(now = Date.now()): void {
 
 function spendWindowOk(weight: number, now = Date.now()): boolean {
   if (now - spendWindowStart > SPEND_WINDOW_MS) resetSpendWindow(now);
-  return spendWindowWeight + weight <= SPEND_WINDOW_MAX;
+  return spendWindowWeight + weight <= gmgnSpendBudget();
 }
 
 function recordSpend(weight: number, now = Date.now()): void {
@@ -122,7 +203,12 @@ function rejectQueued(reason = BAN_ERR): void {
 }
 
 function enterBan(untilMs: number): void {
+  loadState();
+  decayThrottle();
   bannedUntil = Math.max(bannedUntil, untilMs);
+  if (throttleLevel < THROTTLE_FACTORS.length - 1) throttleLevel += 1;
+  throttleUpdatedAt = Date.now();
+  saveState();
   rejectQueued();
   logBanOnce();
 }
@@ -200,18 +286,23 @@ function logBanOnce(): void {
   if (bannedUntil <= banLoggedUntil) return;
   banLoggedUntil = bannedUntil;
   const sec = Math.ceil((bannedUntil - Date.now()) / 1000);
-  const msg = "GMGN rate limited — trending/vetting paused until reset";
+  const msg =
+    `GMGN rate limited — trending/vetting paused ${sec}s; local budget now `
+    + `${gmgnSpendBudget()}/min (throttle L${throttleLevel})`;
   logError({
     source: "gmgn",
     code: "rate_limit",
     level: "warn",
+    // One line per 30m: the pacing now self-corrects, so a burst of identical
+    // bans is one story, not N incidents.
     message: msg,
-    dedupeSec: Math.min(Math.max(sec, 60), 600),
-    detail: { pause_sec: sec },
+    dedupeSec: 1_800,
+    detail: { pause_sec: sec, throttle_level: throttleLevel, budget_per_min: gmgnSpendBudget() },
   });
 }
 
 export function gmgnIsBanned(): boolean {
+  loadState();
   return Date.now() < bannedUntil;
 }
 
@@ -280,9 +371,10 @@ async function runOne(args: string[]): Promise<string> {
     throw e;
   } finally {
     const weightGap = Math.ceil((weight / GMGN_BUCKET_RATE) * 1000);
-    const minGap = weight >= 5 && bucketId === "token"
+    const slow = 1 / throttleFactor();
+    const minGap = Math.ceil(slow * (weight >= 5 && bucketId === "token"
       ? Math.max(TOKEN_HEAVY_GAP_MS, weightGap)
-      : Math.max(MIN_GAP_MS, weightGap);
+      : Math.max(MIN_GAP_MS, weightGap)));
     b.nextSlotAt = Date.now() + minGap;
   }
 }
@@ -314,6 +406,16 @@ export async function gmgnCli(args: string[]): Promise<string> {
   });
 }
 
+/** Test hook — drive the adaptive throttle without a real 429. */
+export function _gmgnEnterBanForTests(untilMs: number): void {
+  enterBan(untilMs);
+}
+
+/** Test hook — age the throttle so decay can be observed without waiting. */
+export function _gmgnAgeThrottleForTests(ms: number): void {
+  throttleUpdatedAt -= ms;
+}
+
 /** Test hook — set module bucket tokens without waiting. */
 export function _setGmgnBucketForTests(id: GmgnBucketId, tokens: number): void {
   const b = getBucket(id);
@@ -329,6 +431,10 @@ export function _resetGmgnPaceForTests(): void {
   banLoggedUntil = 0;
   spendWindowStart = 0;
   spendWindowWeight = 0;
+  throttleLevel = 0;
+  throttleUpdatedAt = 0;
+  stateLoaded = true;   // tests never read or write the persisted pace file
+  persistState = false;
   buckets.clear();
   cache = null;
   secCache.clear();

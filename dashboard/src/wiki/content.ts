@@ -227,7 +227,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
         type: "callout",
         tone: "warn",
         title: "GMGN is paced",
-        text: "Optional trending / honeypot / holder checks share one serial queue with **separate leaky buckets per module** (market, token, track). Local pacing mirrors GMGN’s published limits but cannot see the server’s remaining tokens — another bot on the same key (or a drained bucket after restart) can still 429. Holders/traders cost 5×; trader tags off by default. A real `RATE_LIMIT_*` **parks all GMGN until reset** — queued work is dropped (retries extend the ban). Meteora scanning continues.",
+        text: "Optional trending / honeypot / holder checks share one serial queue with **separate leaky buckets per module** (market, token, track). Local pacing mirrors GMGN’s published limits but cannot see the server’s remaining tokens — another bot on the same key (or a drained bucket after restart) can still 429. Holders/traders cost 5×; trader tags off by default. A real `RATE_LIMIT_*` **parks all GMGN until reset** — queued work is dropped (retries extend the ban), and the cooldown is written to `data/gmgn-pace.json` so a restart or deploy still honours it. Each ban also **tightens the local budget one step** (36 → 25 → 18 → 13 → 9 calls/min, with proportionally wider gaps) and a clean 15 min relaxes it one step, so pacing converges instead of re-earning the same ban. Repeats log one line per 30 min. Meteora scanning, entries, exits and marks never depend on GMGN.",
       },
     ],
   },
