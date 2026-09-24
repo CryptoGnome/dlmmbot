@@ -28,6 +28,7 @@ A candidate pool must pass **every** gate:
 |---|---|---|
 | TVL | ≥ $5,000 and ≤ $2,000,000 | Below: no routing, arb-only. Above: fees too diluted for meme mode |
 | Market cap | ≥ $100,000 ($100–200k routes to the **micro** sleeve) | Hard floor |
+| Final opportunity score | ≥ 60 (`min_entry_score`, checked after vetting) | Below it the size was already zero; raise it to trade fewer, better entries |
 | Fee/TVL 24h (or lifetime if pool < 24h old) | ≥ 20%/day | The meme-pool heat threshold |
 | Fee/TVL 30m, annualized to daily | ≥ 10%/day | Catches pools that *were* hot but died |
 | Volume 30m | ≥ $25,000 | Fees need flow *now*, not this morning |

@@ -225,6 +225,12 @@ export const WIKI_SECTIONS: WikiSection[] = [
       },
       {
         type: "callout",
+        tone: "fg",
+        title: "Minimum entry score",
+        text: "Settings key min_entry_score (default 60) skips any candidate whose final score is below it — logged as score_min. 60 is where sizing already refused, so the default changes nothing. On live history, entries scoring under 80 lost money even among $1M+ market caps, so raising it trades fewer entries for better ones.",
+      },
+      {
+        type: "callout",
         tone: "warn",
         title: "GMGN is paced",
         text: "Optional trending / honeypot / holder checks share one serial queue with **separate leaky buckets per module** (market, token, track). Local pacing mirrors GMGN’s published limits but cannot see the server’s remaining tokens — another bot on the same key (or a drained bucket after restart) can still 429. Holders/traders cost 5×; trader tags off by default. A real `RATE_LIMIT_*` **parks all GMGN until reset** — queued work is dropped (retries extend the ban). Meteora scanning continues.",

@@ -35,6 +35,7 @@ Every knob the bot obeys lives in one TOML file. Key facts before the tables:
 | `mcap_min_usd` | `100000` | Hard market-cap floor |
 | `mcap_micro_max_usd` | `200000` | $100–200k mcap routes to the micro sleeve |
 | `mcap_micro_score_min` | `75` | Micro needs a higher score than the normal 60 floor |
+| `min_entry_score` | `60` | Skip any entry whose final score is below this (`score_min`). 60 = the sizing floor, so no change until raised |
 | `micro_tvl_min_usd` | `15000` | Stricter TVL floor for micro only |
 | `micro_max_pool_share_pct` | `10` | Micro position may not exceed this % of pool TVL |
 | `micro_size_mult` | `0.5` | Micro sizes at half the core Kelly size |

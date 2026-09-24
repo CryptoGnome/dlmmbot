@@ -753,6 +753,13 @@ export const DEFAULT_MARK_CONCURRENCY = 4;
 export const DEFAULT_MAX_QUOTE_DRIFT_BINS = 3;
 
 /**
+ * Entry score floor when the config predates `gates.min_entry_score`: the
+ * sizing floor, below which positionSize already returned 0 — so an old
+ * config behaves exactly as before.
+ */
+export const DEFAULT_MIN_ENTRY_SCORE = 60;
+
+/**
  * TELEMETRY ONLY — nothing acts on this. How close to the planner's swing high
  * an entry has to be before it is flagged as a top-blast.
  *
@@ -1663,9 +1670,19 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     const baseScore = Math.max(0, blended - trendingBonus - flowPenalty); // fundamentals only
     let score = Math.max(0, Math.min(100, blended + flowBonus - flowPenalty));
 
+    // Score floor on the FINAL score. Measured 2026-09-24 over 268 live meme
+    // entries at mcap >= $1M: the 63 below 80 lost 0.251 SOL, negative in both
+    // halves of the sample, while 80+ made 0.821. Sizing already refused < 60;
+    // this lets the operator raise the bar without touching the size tiers.
+    const g = config().gates;
+    const minScore = g.min_entry_score ?? DEFAULT_MIN_ENTRY_SCORE;
+    if (score < minScore) {
+      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "score_min", score, { required: minScore, baseScore });
+      continue;
+    }
+
     // Microcap band: $100-200k tokens are riskier — the higher bar must be
     // met on FUNDAMENTALS (base score), not reachable via bonuses.
-    const g = config().gates;
     const isMicro = isMicroMcap(cand.pool.marketCapUsd);
     if (isMicro && baseScore < g.mcap_micro_score_min) {
       recordDecision(cand.tokenMint, cand.pool.address, "skipped", "micro_score", baseScore, { mcapUsd: cand.pool.marketCapUsd, required: g.mcap_micro_score_min, score });
