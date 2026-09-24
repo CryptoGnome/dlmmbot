@@ -42,6 +42,7 @@ tvl_max_usd = 2000000
 mcap_min_usd = 100000        # hard floor
 mcap_micro_max_usd = 200000  # 100-200k = micro sleeve (loss-budgeted, not Kelly-equal)
 mcap_micro_score_min = 75    # vs the normal 60 sizing floor
+min_entry_score = 60         # skip entries whose final score is below this (60 = sizing floor, no change)
 micro_tvl_min_usd = 15000    # stricter TVL floor for micro sleeve only
 micro_max_pool_share_pct = 10
 micro_size_mult = 0.5        # half core Kelly size
