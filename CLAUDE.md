@@ -32,6 +32,12 @@ npm run docs:build       # VitePress docs (docs-site/ → writes into docs/setup
 
 Tests run single-file-serially (`fileParallelism: false`) with a forked pool; unit tests use in-memory DBs plus helpers in `src/test/` (`fakeExecutor.ts`, `config.ts`, `db.ts`, `pool.ts`) and `resetManagerStateForTests()` for the loop's in-memory timers.
 
+## Testing rules
+
+- NEVER write unit tests after you write code.
+- Highly prefer E2E tests as the sole testing mechanism. Use them to verify complex features work. At the end of E2E tests, produce a verifiable and repeatable artifact.
+- If you must test a system in isolation, FIRST write all the ways it could fail, THEN write the code.
+
 ## Architecture
 
 Pipeline: **scan → vet → enter → manage → exit**, all driven by the tick loop in `src/manager/loop.ts` (the largest and most central file — it implements the P0–P5 exit state machine from STRATEGY.md §4, watchdog, HALT/PAUSE files, residual sweep, heartbeat).
