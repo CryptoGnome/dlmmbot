@@ -125,7 +125,7 @@ export function presentError(input: {
       label: "GMGN rate limited",
       kind: "degraded",
       level: "warn",
-      hint: "Optional trending/vetting paused until reset — Meteora scanning continues. Client pacing cannot see GMGN’s real remaining bucket (or another consumer on the same key). Do not retry during cooldown — that extends the ban.",
+      hint: "Optional trending/vetting paused until reset — Meteora scanning, entries, exits and marks continue; nothing about trading depends on GMGN. Client pacing cannot see GMGN’s real remaining bucket (or another consumer on the same key), so each ban tightens the local budget a step and a clean 15m relaxes it; the cooldown survives restarts. Do not retry during cooldown — that extends the ban. Repeats at the same throttle level are one line per 30m.",
     };
   }
 
