@@ -8,6 +8,10 @@
  *   DASH_URL    default https://dlmmbot-production.up.railway.app
  *   DASH_TOKEN  required
  *   DAY_ONE     first day of the challenge, YYYY-MM-DD (default 2026-08-14)
+ *   PERIOD_DAYS 1 (default) = today's numbers; N>1 = a recap of the last N
+ *               days ending today. Day-scoped figures (closes, PnL, releases)
+ *               then aggregate over the window; the day number and balance
+ *               are unchanged because they are points, not sums.
  */
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -19,6 +23,7 @@ const OUT = resolve(HERE, "..", "public", "daily.json");
 const BASE = process.env.DASH_URL ?? "https://dlmmbot-production.up.railway.app";
 const TOKEN = process.env.DASH_TOKEN;
 const DAY_ONE = process.env.DAY_ONE ?? "2026-08-14";
+const PERIOD_DAYS = Math.max(1, Math.floor(Number(process.env.PERIOD_DAYS ?? 1)) || 1);
 
 if (!TOKEN) {
   console.error("DASH_TOKEN is required (the dashboard bearer token).");
@@ -31,7 +36,9 @@ const get = async (path) => {
   return res.json();
 };
 
-const [watch, hist] = await Promise.all([get("/api/watch"), get("/api/history")]);
+// The history range only needs to cover the window; 30d is the API's widest
+// day-bucketed range and the default, so a recap never asks for more.
+const [watch, hist] = await Promise.all([get("/api/watch"), get(`/api/history?range=${PERIOD_DAYS <= 7 ? "7d" : "30d"}`)]);
 
 /**
  * Token icons for the beats that feature a token (best trade, open positions).
@@ -75,32 +82,60 @@ async function localIcon(mint) {
 const today = new Date(watch.at).toISOString().slice(0, 10);
 const dayNum = Math.floor((Date.parse(today) - Date.parse(DAY_ONE)) / 86_400_000) + 1;
 
-const closes = (hist.ladder ?? []).filter((r) => r.at >= today);
+// First day of the window, inclusive. PERIOD_DAYS=1 makes it today.
+const since = new Date(Date.parse(today) - (PERIOD_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
+const inWindow = (day) => day >= since && day <= today;
+const period = PERIOD_DAYS > 1;
+
+const closes = (hist.ladder ?? []).filter((r) => r.at >= since);
 const byPnl = [...closes].sort((a, b) => b.pnl - a.pnl);
-const best = byPnl[0] ?? null;
-const worst = byPnl[byPnl.length - 1] ?? null;
-const activity = (hist.activity ?? []).find((d) => d.day === today) ?? {};
-const equity = (hist.equity ?? []).find((d) => d.day === today) ?? {};
+// A recap's standout is a TOKEN over the window, not one close: the ladder is
+// capped at the last 40 closes, so "best close in 30 days" is not knowable
+// from it, while stats.tokens_best spans the whole range.
+const tokenPick = (row) => row && {
+  symbol: row.symbol, mint: row.mint, pnl: row.pnl,
+  exit_reason: `${row.n} trade${row.n === 1 ? "" : "s"}`,
+  note: `${row.wins} won, ${row.losses} lost across ${row.n} trades`,
+};
+const best = period ? tokenPick(hist.stats?.tokens_best?.[0]) ?? null : byPnl[0] ?? null;
+const worst = period ? tokenPick(hist.stats?.tokens_worst?.[0]) ?? null : byPnl[byPnl.length - 1] ?? null;
+const sum = (rows, key) => rows.filter((d) => inWindow(d.day)).reduce((s, d) => s + (Number(d[key]) || 0), 0);
+const activity = period
+  ? { entered: sum(hist.activity ?? [], "entered"), skipped: sum(hist.activity ?? [], "skipped") }
+  : (hist.activity ?? []).find((d) => d.day === today) ?? {};
+const exitsIn = (hist.exits ?? []).filter((d) => inWindow(d.day));
+const exitPnl = exitsIn.reduce((s, d) => s + (Number(d.pnl) || 0), 0);
+const exitEntry = exitsIn.reduce((s, d) => s + (Number(d.entry_sol) || 0), 0);
+const equity = period
+  ? { sol: sum(hist.equity ?? [], "sol"), day_pct: exitEntry > 0 ? Math.round((exitPnl / exitEntry) * 1e6) / 1e6 : null }
+  : (hist.equity ?? []).find((d) => d.day === today) ?? {};
+const periodCloses = period ? exitsIn.reduce((s, d) => s + (Number(d.n) || 0), 0) : closes.length;
 const head = hist.stats?.headline ?? {};
 
 // Exit-reason mix drives the Analytics beat; only reasons that fired today.
 const reasonLabel = {
   P0_safety: "Safety exit", P1_stop: "Stop loss", P2_rotation: "Rotation",
-  P3_above: "Take-profit", P5_below: "Below range", escape: "Escape hatch", manual: "Manual",
+  P3_above: "Take-profit", P5_below: "Below range", escape: "Escape hatch", give_back: "Give-back stop", manual: "Manual",
 };
-const reasons = Object.entries(
-  closes.reduce((a, r) => {
-    a[r.exit_reason] = a[r.exit_reason] ?? { n: 0, pnl: 0 };
-    a[r.exit_reason].n += 1;
-    a[r.exit_reason].pnl += r.pnl;
-    return a;
-  }, {}),
-).map(([k, v]) => ({ reason: reasonLabel[k] ?? k, n: v.n, pnl: round(v.pnl) }))
- .sort((a, b) => b.n - a.n);
+// Over a window the API's by-reason table is the truth (the ladder is capped).
+const reasons = (period
+  ? (hist.exit_by_reason ?? []).map((r) => ({ reason: reasonLabel[r.reason] ?? r.reason, n: r.n, pnl: round(r.pnl) }))
+  : Object.entries(
+    closes.reduce((a, r) => {
+      a[r.exit_reason] = a[r.exit_reason] ?? { n: 0, pnl: 0 };
+      a[r.exit_reason].n += 1;
+      a[r.exit_reason].pnl += r.pnl;
+      return a;
+    }, {}),
+  ).map(([k, v]) => ({ reason: reasonLabel[k] ?? k, n: v.n, pnl: round(v.pnl) })))
+ // A recap ranks by money moved so the rules that lost show beside the ones
+ // that won; four most-frequent rules over 30 days were all green, which
+ // read as cherry-picking on a flat book.
+ .sort((a, b) => (period ? Math.abs(b.pnl) - Math.abs(a.pnl) : b.n - a.n));
 
 // Releases shipped today — the "what we fixed" beat. Tag names + one-liners.
 const releases = (watch.build?.releases ?? [])
-  .filter((r) => (r.at ?? "").slice(0, 10) === today)
+  .filter((r) => inWindow((r.at ?? "").slice(0, 10)))
   .map((r) => ({ tag: r.tag, title: (r.name ?? "").replace(/^v[\d.]+\s*—\s*/, "") }));
 
 const open = [];
@@ -153,6 +188,7 @@ const daily = {
   generatedAt: new Date().toISOString(),
   day: today,
   dayNumber: dayNum,
+  periodDays: PERIOD_DAYS,
   version: watch.build?.version ?? null,
   balance: {
     total: round(watch.balance?.total_sol),
@@ -165,7 +201,7 @@ const daily = {
   today: {
     pnl: round(equity.sol),
     pct: equity.day_pct ?? null,
-    closes: closes.length,
+    closes: periodCloses,
     entries: activity.entered ?? 0,
     scanned: activity.skipped ?? 0,
   },
@@ -174,8 +210,8 @@ const daily = {
     closes: head.closes ?? 0,
     winRate: head.win_rate ?? null,
   },
-  best: best && { symbol: best.symbol, icon: bestIcon, pnl: round(best.pnl), reason: reasonLabel[best.exit_reason] ?? best.exit_reason },
-  worst: worst && { symbol: worst.symbol, icon: worstIcon, pnl: round(worst.pnl), reason: reasonLabel[worst.exit_reason] ?? worst.exit_reason },
+  best: best && { symbol: best.symbol, icon: bestIcon, pnl: round(best.pnl), reason: reasonLabel[best.exit_reason] ?? best.exit_reason, note: best.note ?? null },
+  worst: worst && { symbol: worst.symbol, icon: worstIcon, pnl: round(worst.pnl), reason: reasonLabel[worst.exit_reason] ?? worst.exit_reason, note: worst.note ?? null },
   reasons,
   releases,
   open,
@@ -185,5 +221,5 @@ const daily = {
 
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, `${JSON.stringify(daily, null, 2)}\n`);
-console.log(`day ${dayNum} (${today}): ${daily.today.closes} closes, ${daily.today.pnl >= 0 ? "+" : ""}${daily.today.pnl} SOL, ${daily.releases.length} release(s)`);
+console.log(`day ${dayNum} (${today}${period ? `, last ${PERIOD_DAYS} days` : ""}): ${daily.today.closes} closes, ${daily.today.pnl >= 0 ? "+" : ""}${daily.today.pnl} SOL, ${daily.releases.length} release(s)`);
 console.log(`wrote ${OUT}`);

@@ -2,7 +2,7 @@ import React from "react";
 import { useCurrentFrame, interpolate, Easing } from "remotion";
 import { C, SANS, sol, pct, tone, commas } from "../theme";
 import { Stage, ShotStage, MascotStage, Kicker, Big, Sub, Rail, Card, TokenBadge, enter } from "../ui";
-import type { Daily } from "../plan";
+import { periodLabel, type Daily } from "../plan";
 
 type P = { d: Daily; mascot?: { open: boolean; close: boolean } };
 
@@ -29,7 +29,7 @@ export const Title: React.FC<P> = ({ d, mascot }) => {
     <Frame label="dlmmbot.com" file="mascot-open.png">
       <div style={{ opacity: t, translate: `0px ${(1 - t) * 30}px` }}>
         <div style={{ fontSize: 34, letterSpacing: 10, color: C.green, textTransform: "uppercase" }}>
-          Daily update
+          {d.periodDays > 1 ? `${d.periodDays}-day update` : "Daily update"}
         </div>
         <div
           style={{
@@ -66,7 +66,7 @@ export const Headline: React.FC<P> = ({ d }) => {
   const up = d.today.pnl >= 0;
   return (
     <Stage
-      label="today"
+      label={periodLabel(d)}
       rail={
         <Rail
           delay={30}
@@ -78,13 +78,13 @@ export const Headline: React.FC<P> = ({ d }) => {
         />
       }
     >
-      <Kicker>Profit / loss today</Kicker>
+      <Kicker>Profit / loss {periodLabel(d)}</Kicker>
       <Big color={tone(d.today.pnl)} size={230}>
         {sol(v)} <span style={{ fontSize: 100, color: C.dim }}>SOL</span>
       </Big>
       <Sub delay={26} color={tone(d.today.pnl)}>
         {pct(d.today.pct)} · {d.today.closes} trade{d.today.closes === 1 ? "" : "s"} closed
-        {up ? " · green day" : " · red day"}
+        {d.periodDays > 1 ? (up ? " · net green" : " · net red") : up ? " · green day" : " · red day"}
       </Sub>
       <Sub delay={34} color={C.dim}>
         ≈ ${commas(d.balance.usd)} at ${d.balance.solUsd}/SOL
@@ -144,7 +144,7 @@ export const Funnel: React.FC<P> = ({ d }) => {
         />
       }
     >
-      <Kicker>Pools screened today</Kicker>
+      <Kicker>Pools screened {periodLabel(d)}</Kicker>
       <Big size={215}>{commas(scanned)}</Big>
       <div style={{ marginTop: 44, width: "100%", height: 14, backgroundColor: C.panel, border: `1px solid ${C.grid}`, overflow: "hidden" }}>
         <div style={{ width: `${bar * 100}%`, height: "100%", backgroundColor: C.grid }} />
@@ -161,26 +161,28 @@ export const Funnel: React.FC<P> = ({ d }) => {
 export const Trade: React.FC<P> = ({ d }) => {
   const b = d.best!;
   const v = useCountUp(b.pnl, 30, 10);
+  // On a recap the standout is a coin summed over the window, not one close.
+  const unit = d.periodDays > 1 ? "coin" : "close";
   return (
     <Stage
-      label="best trade"
+      label={d.periodDays > 1 ? "best coin" : "best trade"}
       rail={
         d.worst && d.worst.pnl < 0 ? (
           <Rail
             delay={34}
             rows={[
-              { k: "Worst close", v: d.worst.symbol },
+              { k: `Worst ${unit}`, v: d.worst.symbol },
               { k: d.worst.reason, v: sol(d.worst.pnl, 4), c: C.red },
             ]}
           />
         ) : undefined
       }
     >
-      <Kicker>Standout close</Kicker>
+      <Kicker>Standout {unit}</Kicker>
       <TokenBadge symbol={b.symbol} icon={b.icon} size={150} />
       <Big size={190} color={tone(b.pnl)} delay={8}>{sol(v, 4)} <span style={{ fontSize: 80, color: C.dim }}>SOL</span></Big>
       <Sub delay={30}>
-        Exit rule: <span style={{ color: C.accent }}>{b.reason}</span>
+        {b.note ?? <>Exit rule: <span style={{ color: C.accent }}>{b.reason}</span></>}
       </Sub>
     </Stage>
   );
@@ -239,7 +241,7 @@ export const Shipped: React.FC<P> = ({ d }) => {
   const frame = useCurrentFrame();
   const top = d.releases.slice(0, 3);
   return (
-    <Stage label="shipped today">
+    <Stage label={`shipped ${periodLabel(d)}`}>
       <Kicker>Fixes shipped</Kicker>
       <Big size={200} color={C.accent}>{d.releases.length}</Big>
       <div style={{ marginTop: 34, display: "flex", flexDirection: "column", gap: 16 }}>

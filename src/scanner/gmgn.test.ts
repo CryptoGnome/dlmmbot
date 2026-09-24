@@ -61,6 +61,13 @@ describe("gmgn rate-limit helpers", () => {
     expect(parseGmgnResetMs("nope", now)).toBeNull();
   });
 
+  it("reads gmgn-cli's '(~Ns remaining)' form — the epoch is never printed", () => {
+    const now = 1_700_000_000_000;
+    const cli = "GET /market/trending failed: HTTP 429 error=RATE_LIMIT_EXCEEDED. " +
+      "Rate limit resets at 2026-09-07 02:23:30+00:00 (~12s remaining). Stop sending requests before then";
+    expect(parseGmgnResetMs(cli, now)).toBe(now + 13_000);
+  });
+
   it("ignores bare 429 (npm noise) but catches GMGN RATE_LIMIT payloads", () => {
     expect(isGmgnRateLimitText("npm ERR! code E429")).toBe(false);
     expect(isGmgnRateLimitText("HTTP 429 Too Many Requests")).toBe(false);

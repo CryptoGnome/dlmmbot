@@ -165,6 +165,22 @@ export function txErrorDetail(e: unknown): { summary: string; code: string | nul
   return { summary, code, logs: interesting };
 }
 
+/**
+ * A tx that was broadcast fine and then failed on chain carries its reason only
+ * in the confirmed tx's meta. solly 2026-08-31: the error row said "tx landed
+ * with on-chain error: <sig>", logs [], code null — and had it been a slippage
+ * fail the open rebuild could not have seen it. Same shape as txErrorDetail so
+ * callers keep matching on `code`.
+ */
+export function landedTxError(
+  sig: string,
+  meta: { err: unknown; logMessages?: string[] | null } | null | undefined,
+): Error & { logs: string[]; code: string | null } {
+  const detail = txErrorDetail({ message: JSON.stringify(meta?.err ?? ""), logs: meta?.logMessages ?? [] });
+  const reason = meta ? detail.summary : "tx not retrievable";
+  return Object.assign(new Error(`tx landed with on-chain error: ${sig} — ${reason}`), { logs: detail.logs, code: detail.code });
+}
+
 export class LiveExecutor implements Executor {
   readonly mode = "live" as const;
   readonly connection: Connection;
@@ -391,7 +407,10 @@ export class LiveExecutor implements Executor {
       const fate = await this.signatureFate(sig, tx.recentBlockhash ?? "");
       if (fate === "landed") return sig;
       if (fate === "failed") {
-        throw new Error(`tx landed with on-chain error: ${sig}`);
+        const landed = await this.connection
+          .getParsedTransaction(sig, { commitment: "confirmed", maxSupportedTransactionVersion: 0 })
+          .catch(() => null);
+        throw landedTxError(sig, landed?.meta);
       }
       if (fate === "unknown") {
         throw Object.assign(
@@ -843,7 +862,16 @@ export class LiveExecutor implements Executor {
     const claimBins = this.binSnapshot(positions);
 
     const sigs: string[] = [];
-    const txs = await pool.claimAllSwapFee({ owner: this.wallet.publicKey, positions });
+    let txs: Transaction[];
+    try {
+      txs = await pool.claimAllSwapFee({ owner: this.wallet.publicKey, positions });
+    } catch (e) {
+      // The SDK refuses when every account's feeX/feeY is zero — nothing to do,
+      // not an incident (PUMP #251, 2026-09-02: logged as position_act error).
+      if (!/No fee to claim/.test((e as Error).message)) throw e;
+      console.warn(`[live] pos#${position.id}: mark showed ${feesSol.toFixed(4)} SOL unclaimed but the chain has no fee to claim`);
+      return { claimedSol: 0, txCostSol: 0 };
+    }
     for (const tx of txs) sigs.push(await this.send(tx));
 
     // Bank policy: token-side fees -> SOL immediately (§4 P4).

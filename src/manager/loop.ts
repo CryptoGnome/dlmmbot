@@ -119,6 +119,12 @@ const everInRange = new Set<number>();                // P3 win-vs-missed classi
 const fellDeep = new Set<number>();                   // escape hatch armed (also persisted)
 const peakPnl = new Map<number, number>();            // give-back telemetry: best fee-inclusive PnL (persisted)
 const giveBackLogged = new Set<number>();             // give-back counterfactual logged once (persisted)
+// Earliest next P4 claim attempt after one failed or claimed nothing. PUMP
+// #251 on 2026-09-02: the RPC served a frozen blockhash for 71 minutes and the
+// claim was retried every tick — 34 error rows, each stalling the tick ~11s
+// inside withBusy. Fees are not urgent; a failed claim waits before retrying.
+const claimRetryAfter = new Map<number, number>();
+export const CLAIM_FAIL_BACKOFF_S = 600;
 
 /** Positions whose timers have been read back from the DB this process. */
 const hydrated = new Set<number>();
@@ -208,6 +214,7 @@ export function resetManagerStateForTests(): void {
   fellDeep.clear();
   peakPnl.clear();
   giveBackLogged.clear();
+  claimRetryAfter.clear();
 }
 
 // Watchdog / breaker state.
@@ -1312,7 +1319,7 @@ export async function managePositions(exec: Executor): Promise<void> {
       const lastClaimTs = ((getDb().prepare(
         "SELECT MAX(ts) AS t FROM events WHERE position_id = ? AND type = 'claim'"
       ).get(pos.id) as { t: number | null }).t) ?? pos.entryTs;
-      if (shouldClaimFees(mark.unclaimedFeesSol, now() - lastClaimTs, {
+      if ((claimRetryAfter.get(pos.id) ?? 0) <= now() && shouldClaimFees(mark.unclaimedFeesSol, now() - lastClaimTs, {
         claim_min_sol: pm.claim_min_sol,
         claim_min_txcost_mult: m.claim_min_txcost_mult,
         claim_interval_h: m.claim_interval_h,
@@ -1325,8 +1332,17 @@ export async function managePositions(exec: Executor): Promise<void> {
           ).run(pos.id, now(), mark.unclaimedFeesSol, JSON.stringify({ kind: "majors_compound" }));
           console.log(`[majors] pos#${pos.id} ${pos.symbol}: compounded ${mark.unclaimedFeesSol.toFixed(4)} SOL fees`);
         } else {
-          const { claimedSol } = await withBusy(() => exec.claimFees(pos));
-          await alert("claim", `${pos.symbol} pos#${pos.id}: claimed ${claimedSol.toFixed(4)} SOL in fees`);
+          let claimedSol = 0;
+          try {
+            ({ claimedSol } = await withBusy(() => exec.claimFees(pos)));
+          } catch (e) {
+            claimRetryAfter.set(pos.id, now() + CLAIM_FAIL_BACKOFF_S);
+            throw e;
+          }
+          // 0 = the chain had nothing to claim although the mark did (PUMP
+          // #251, 2026-09-02 11:45). Re-asking next tick answers the same.
+          if (claimedSol > 0) await alert("claim", `${pos.symbol} pos#${pos.id}: claimed ${claimedSol.toFixed(4)} SOL in fees`);
+          else claimRetryAfter.set(pos.id, now() + CLAIM_FAIL_BACKOFF_S);
         }
       }
       if (
