@@ -77,6 +77,8 @@ Fail-closed rule: when the engine is blind it fails, it does not pass on the gat
 
 Weighted blend `[weights in config]`: fee/TVL momentum (30m vs 24h) 30%, volume/TVL turnover 20%, vetting softness (holder distribution quality, holder growth, maker diversity) 25%, timing (§2.3) 15%, pool structure (bin step fit, fee tier vs competition) 10%. Entry queue is score-descending; ties broken by younger pool.
 
+**Entry score floor** `[min_entry_score = 60]` (`[gates]`, 2026-09-24): a candidate whose *final* score (vetting re-blend plus smart-flow bonus/penalty) is under the floor is skipped as `score_min`. The default equals the sizing floor — below 60 the score multiplier was already 0 — so it changes nothing until raised. Measured on 268 live meme entries with mcap ≥ $1M: the 63 scoring under 80 lost 0.251 SOL, negative in both halves of the sample, while 80+ made 0.821 SOL.
+
 ## 3. Entry execution
 
 Default shape — **Tux entry**: one-sided SOL, bid-ask, below current price.

@@ -54,6 +54,12 @@ export interface Config {
   gates: {
     tvl_min_usd: number; tvl_max_usd: number; mcap_min_usd: number;
     mcap_micro_max_usd: number; mcap_micro_score_min: number;
+    /**
+     * Final entry score (bonuses included) below this is skipped as
+     * `score_min`. Optional: defaults in code to the sizing floor (60), which
+     * is where positionSize already returned 0.
+     */
+    min_entry_score?: number;
     micro_tvl_min_usd: number; micro_max_pool_share_pct: number;
     micro_size_mult: number; micro_max_position_sol: number;
     micro_max_slots: number; micro_deploy_cap_pct: number;
