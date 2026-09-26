@@ -24,6 +24,11 @@
  *  F12 retention breaks on episode rows
  *  F13 the dedupe lookup does not use an index
  *  F14 the table does not actually shrink
+ *  F15 the size ceiling deletes rejection history while snapshots it could
+ *      delete instead still exist (3 days of snapshots is ~245 MB on the live
+ *      book: they alone hold the file over a 250 MB ceiling)
+ *  F16 when snapshots alone cannot get under the ceiling, the trim stalls
+ *      instead of falling back to skip rows, and the volume fills (see F12)
  */
 import Database from "better-sqlite3";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -376,7 +381,27 @@ const size = (() => {
 })();
 check("F14", "episode rows == distinct episodes, and fewer than one-row-per-rejection",
   size.episodeRows === realKeys.size && size.twinRows === observations && size.episodeRows < size.twinRows, size);
-// F12: retention on episode rows — size mode trims them, spares telemetry. Last: it deletes.
+// F15: a ceiling that deleting snapshots can satisfy leaves every skip row alone.
+{
+  const count = () => conn.prepare(
+    `SELECT (SELECT COUNT(*) FROM pool_snapshots) snaps,
+            (SELECT COUNT(*) FROM decisions WHERE action = 'skipped') skips`
+  ).get() as { snaps: number; skips: number };
+  const used = () => {
+    const pc = conn.pragma("page_count", { simple: true }) as number;
+    const fl = conn.pragma("freelist_count", { simple: true }) as number;
+    return (pc - fl) * (conn.pragma("page_size", { simple: true }) as number);
+  };
+  const before = count();
+  const ceiling = used() - 50 * 1024; // well inside what ~1,500 snapshot rows occupy
+  const pr = db.pruneHistory({ skippedDays: 30, snapshotDays: 3, maxBytes: ceiling });
+  const after = count();
+  check("F15", "the size ceiling takes snapshots first and leaves rejection history alone while it can",
+    pr.mode === "size" && after.snaps < before.snaps && after.skips === before.skips && used() <= ceiling,
+    { before, after, mode: pr.mode, ceiling, used: used() });
+}
+// F12 + F16: a ceiling snapshots cannot satisfy falls through to episode rows
+// (oldest-first) and still spares telemetry. Last: it deletes.
 {
   const telBefore = (conn.prepare("SELECT COUNT(*) n FROM decisions WHERE failed_gate = 'give_back_candidate'").get() as { n: number }).n;
   const pr = db.pruneHistory({ skippedDays: 30, snapshotDays: 3, maxBytes: 1 });
@@ -384,7 +409,7 @@ check("F14", "episode rows == distinct episodes, and fewer than one-row-per-reje
     `SELECT failed_gate g, COUNT(*) n FROM decisions WHERE action = 'skipped' GROUP BY failed_gate`
   ).all() as Array<{ g: string; n: number }>;
   const nonTel = left.filter((r) => !(db.TELEMETRY_GATES as readonly string[]).includes(r.g));
-  check("F12", "size-mode retention trims episode rows oldest-first and spares telemetry",
+  check("F12", "past the snapshots, size-mode retention trims episode rows too and spares telemetry",
     pr.mode === "size" && nonTel.length === 0 && left.find((r) => r.g === "give_back_candidate")?.n === telBefore,
     { prune: { mode: pr.mode, decisions: pr.decisions, vacuumed: pr.vacuumed }, left });
 }
