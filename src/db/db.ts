@@ -92,7 +92,10 @@ CREATE TABLE IF NOT EXISTS decisions (
   failed_gate TEXT,                 -- which gate rejected it (skips)
   score REAL,
   features_json TEXT NOT NULL,
-  outcome_backfill_json TEXT        -- filled later: what the token did after
+  outcome_backfill_json TEXT,       -- filled later: what the token did after
+  sweeps INTEGER NOT NULL DEFAULT 1, -- rejections this row stands for (recordSkip)
+  last_ts INTEGER,                  -- latest of them; NULL on rows older than episodes
+  score_max REAL                    -- best score among them
 );
 CREATE INDEX IF NOT EXISTS idx_decisions_mint ON decisions(mint, ts);
 
@@ -371,6 +374,11 @@ function migrate(database: Database.Database): void {
   try { database.exec("ALTER TABLE tokens ADD COLUMN name TEXT"); } catch { /* */ }
   try { database.exec("ALTER TABLE tokens ADD COLUMN icon_url TEXT"); } catch { /* */ }
   try { database.exec("ALTER TABLE tokens ADD COLUMN meta_updated_ts INTEGER"); } catch { /* */ }
+  // Skip episodes (2026-09-25, see recordSkip). ADD COLUMN with a constant
+  // default does not rewrite the table, so this is instant on a 400 MB file.
+  for (const col of ["sweeps INTEGER NOT NULL DEFAULT 1", "last_ts INTEGER", "score_max REAL"]) {
+    try { database.exec(`ALTER TABLE decisions ADD COLUMN ${col}`); } catch { /* column already exists */ }
+  }
   database.exec(`
 CREATE TABLE IF NOT EXISTS error_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -412,6 +420,12 @@ CREATE INDEX IF NOT EXISTS idx_error_log_ts ON error_log(ts DESC);
   const missing = required.filter((c) => !cols.has(c));
   if (missing.length)
     throw new Error(`positions table is missing migrated column(s): ${missing.join(", ")} — migration failed, refusing to start`);
+  const decisionCols = new Set(
+    (database.prepare("PRAGMA table_info(decisions)").all() as Array<{ name: string }>).map((c) => c.name)
+  );
+  const missingDecision = ["sweeps", "last_ts", "score_max"].filter((c) => !decisionCols.has(c));
+  if (missingDecision.length)
+    throw new Error(`decisions table is missing migrated column(s): ${missingDecision.join(", ")} — migration failed, refusing to start`);
 }
 
 /** Open and migrate a DB at an arbitrary path (tests use :memory: or a temp file). */
@@ -753,16 +767,9 @@ export function recordConfigSnapshot(toml: string): boolean {
   return true;
 }
 
-export function recordDecision(
-  mint: string,
-  pool: string | null,
-  action: "entered" | "skipped" | "exited",
-  failedGate: string | null,
-  score: number | null,
-  features: unknown
-): void {
+/** features_json as written: the caller's features plus the book mode and a hoisted symbol. */
+function decisionPayload(features: unknown): Record<string, unknown> & { mode: string } {
   const mode = currentMode();
-  let payload: Record<string, unknown>;
   if (features && typeof features === "object" && !Array.isArray(features)) {
     const f = features as Record<string, unknown>;
     const cand = f.cand && typeof f.cand === "object" ? f.cand as Record<string, unknown> : null;
@@ -772,19 +779,110 @@ export function recordDecision(
       (typeof cand?.symbol === "string" && cand.symbol) ||
       (typeof poolObj?.symbol === "string" && poolObj.symbol) ||
       null;
-    payload = {
+    return {
       ...f,
       ...(symbol && f.symbol !== symbol ? { symbol } : {}),
       mode: typeof f.mode === "string" ? f.mode : mode,
     };
-  } else {
-    payload = { mode, value: features };
   }
+  return { mode, value: features };
+}
+
+export function recordDecision(
+  mint: string,
+  pool: string | null,
+  action: "entered" | "skipped" | "exited",
+  failedGate: string | null,
+  score: number | null,
+  features: unknown
+): void {
+  const ts = now();
   getDb()
     .prepare(
-      "INSERT INTO decisions (ts, mint, pool, action, failed_gate, score, features_json) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      `INSERT INTO decisions (ts, mint, pool, action, failed_gate, score, features_json, last_ts, score_max)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(now(), mint, pool, action, failedGate, score, JSON.stringify(payload));
+    .run(ts, mint, pool, action, failedGate, score, JSON.stringify(decisionPayload(features)), ts, score);
+}
+
+/**
+ * Skip episodes: one row per (mint, pool, gate, book mode) per this many
+ * seconds, on a fixed epoch — the unit `npm run sim:skips` already judged a
+ * gate in, now also the unit it is stored in.
+ *
+ * Fixed epoch, so a blockade longer than the bucket splits into several
+ * episodes instead of collapsing into one. That is the intent: Pistacio was
+ * rejected for 21 straight hours, and a single anchor at hour 0 would describe
+ * none of hours 6-21. 6 divides 24, so no episode crosses a UTC day and the
+ * dashboard's daily charts attribute every sweep to the right day.
+ */
+export const EPISODE_BUCKET_S = 6 * 3600;
+
+/** The lookup `recordSkip` runs on every rejection. Exported so its plan can be checked. */
+export const SKIP_EPISODE_LOOKUP_SQL = `
+  SELECT id FROM decisions
+   WHERE mint = @mint AND ts >= @from AND ts < @to
+     AND action = 'skipped' AND failed_gate = @gate AND pool IS @pool
+     AND COALESCE(json_extract(features_json, '$.mode'), 'paper') = @mode
+   ORDER BY id ASC LIMIT 1`;
+
+/**
+ * Record a rejection that is re-evaluated every sweep or tick — a pool gate, a
+ * vetting hard fail, a full slot table — as ONE row per episode (see
+ * EPISODE_BUCKET_S) instead of one row per evaluation.
+ *
+ * Measured on the server 2026-09-25: ~7,000 skip rows an hour, nearly all the
+ * same pools failing the same gate every minute. At `db_max_mb = 200` that left
+ * only a few hours of rejection history against `retain_skipped_days = 30`; at
+ * 400 about two days, while the hourly VACUUM pushed the 1 GB volume to 92%.
+ * The per-sweep copies carried nothing `sim:skips` used: it grouped them back
+ * into these same episodes before reading them.
+ *
+ * The row keeps its FIRST evaluation — `ts`, `score`, `features_json` — because
+ * that is the anchor `sim:skips` measures the price path from. Later
+ * evaluations only add to `sweeps` (how many rejections the row stands for;
+ * readers SUM it where they used to COUNT rows), `last_ts` and `score_max`.
+ *
+ * Opt-in on purpose. Events — an open that failed, a counterfactual logged
+ * once per position — must stay one row each, and forgetting to opt a gate IN
+ * costs only rows, where forgetting to opt one OUT would silently merge events.
+ * Telemetry gates are refused here as a second guard.
+ */
+export function recordSkip(
+  mint: string,
+  pool: string | null,
+  gate: string,
+  score: number | null,
+  features: unknown
+): void {
+  if ((TELEMETRY_GATES as readonly string[]).includes(gate)) {
+    recordDecision(mint, pool, "skipped", gate, score, features);
+    return;
+  }
+  const db = getDb();
+  const ts = now();
+  const from = ts - (ts % EPISODE_BUCKET_S);
+  const payload = decisionPayload(features);
+  // Rows written before episodes existed match too, so the first sweep after a
+  // deploy folds into the oldest of them instead of opening a parallel row.
+  const hit = db.prepare(SKIP_EPISODE_LOOKUP_SQL).get({
+    mint, pool, gate, mode: payload.mode, from, to: from + EPISODE_BUCKET_S,
+  }) as { id: number } | undefined;
+  if (hit) {
+    db.prepare(
+      `UPDATE decisions
+          SET sweeps = sweeps + 1,
+              last_ts = @ts,
+              score_max = CASE WHEN @score IS NULL THEN COALESCE(score_max, score)
+                               ELSE MAX(COALESCE(score_max, score, @score), @score) END
+        WHERE id = @id`
+    ).run({ ts, score, id: hit.id });
+    return;
+  }
+  db.prepare(
+    `INSERT INTO decisions (ts, mint, pool, action, failed_gate, score, features_json, last_ts, score_max)
+     VALUES (?, ?, ?, 'skipped', ?, ?, ?, ?, ?)`
+  ).run(ts, mint, pool, gate, score, JSON.stringify(payload), ts, score);
 }
 
 export type ErrorLevel = "error" | "warn" | "fatal";

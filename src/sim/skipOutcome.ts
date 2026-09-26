@@ -1,4 +1,5 @@
 import type { Database } from "better-sqlite3";
+import { EPISODE_BUCKET_S } from "../db/db.js";
 import { fetchBars, type Bar } from "./postExit.js";
 
 /**
@@ -12,11 +13,14 @@ import { fetchBars, type Bar } from "./postExit.js";
  *
  * Two things make the naive version useless:
  *
- *  1. VOLUME. 93% of skip rows are one gate (`fee_tvl_24h`, 203k rows) logged
+ *  1. VOLUME. 93% of skip rows were one gate (`fee_tvl_24h`, 203k rows) logged
  *     once per pool per sweep. Backfilling per row would be ~200k API calls to
  *     re-fetch the same handful of price paths. We collapse to EPISODES —
  *     one (mint, pool, gate) per `EPISODE_BUCKET_S` — and anchor on the first
  *     sweep of each. A token blocked for six straight hours is one fetch.
+ *     Since 2026-09-25 `recordSkip` stores rows as episodes already, carrying
+ *     the sweep count in `sweeps`; the GROUP BY below still folds the per-sweep
+ *     rows written before that.
  *
  *  2. EVICTION. Skip rows are pruned, and the size ceiling has been evicting
  *     them at ~30 hours on the live book, far inside the 30-day age window. A
@@ -28,15 +32,8 @@ import { fetchBars, type Bar } from "./postExit.js";
  * measurements should not have to be re-fetched when they do.
  */
 
-/**
- * One backfill per (mint, pool, gate) per this many seconds.
- *
- * Bucketed on a fixed epoch, so a blockade longer than the bucket is split into
- * several episodes rather than collapsing into one. That is the intent: Pistacio
- * was rejected for 21 straight hours, and a single anchor at hour 0 would
- * describe none of hours 6-21.
- */
-export const EPISODE_BUCKET_S = 6 * 3600;
+/** One backfill per (mint, pool, gate) per episode — the unit rows are now stored in too. */
+export { EPISODE_BUCKET_S };
 /** `fetchBars` tops out at 100 minute bars per call; leave room for the anchor. */
 export const MAX_WINDOW_MIN = 90;
 /** A first bar further than this from the skip is not a usable anchor price. */
@@ -92,7 +89,7 @@ export function pendingSkips(
   // returns two rows for the gate you asked about.
   return db.prepare(`
     SELECT MIN(id) AS id, mint, pool, failed_gate AS failedGate, MIN(ts) AS ts,
-           COUNT(*) AS sweeps, MAX(score) AS bestScore
+           SUM(sweeps) AS sweeps, MAX(COALESCE(score_max, score)) AS bestScore
       FROM decisions
      WHERE action = 'skipped' AND failed_gate IS NOT NULL AND pool IS NOT NULL
        AND ts <= ? AND (? IS NULL OR failed_gate = ?)

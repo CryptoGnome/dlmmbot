@@ -166,8 +166,11 @@ export function buildHistorySnapshot(root, range = "30d") {
       };
     });
 
+    // Skip rows are episodes (recordSkip): `sweeps` is how many rejections a row
+    // stands for. SUM it wherever this used to COUNT rows, or the funnel drops
+    // ~100x the day the format changed.
     const skipTop = db.prepare(
-      `SELECT failed_gate AS g, COUNT(*) AS n
+      `SELECT failed_gate AS g, SUM(sweeps) AS n
        FROM decisions
        WHERE action='skipped' AND ts >= ? AND failed_gate IS NOT NULL
          AND failed_gate NOT LIKE '%open_failed%'
@@ -182,7 +185,7 @@ export function buildHistorySnapshot(root, range = "30d") {
     if (topGates.length > 0) {
       const placeholders = topGates.map(() => "?").join(",");
       const skipRows = db.prepare(
-        `SELECT date(ts,'unixepoch') AS day, failed_gate AS g, COUNT(*) AS n
+        `SELECT date(ts,'unixepoch') AS day, failed_gate AS g, SUM(sweeps) AS n
          FROM decisions
          WHERE action='skipped' AND ts >= ? AND failed_gate IN (${placeholders})
            AND COALESCE(json_extract(features_json, '$.mode'), 'paper') = ?
@@ -204,7 +207,7 @@ export function buildHistorySnapshot(root, range = "30d") {
     const activity = db.prepare(
       `SELECT date(ts,'unixepoch') AS day,
               SUM(CASE WHEN action='entered' THEN 1 ELSE 0 END) AS entered,
-              SUM(CASE WHEN action='skipped' AND IFNULL(failed_gate,'') NOT LIKE '%open_failed%' THEN 1 ELSE 0 END) AS skipped,
+              SUM(CASE WHEN action='skipped' AND IFNULL(failed_gate,'') NOT LIKE '%open_failed%' THEN sweeps ELSE 0 END) AS skipped,
               SUM(CASE WHEN IFNULL(failed_gate,'') LIKE '%open_failed%' THEN 1 ELSE 0 END) AS open_failed
        FROM decisions
        WHERE ts >= ?
@@ -429,7 +432,7 @@ export function buildHistorySnapshot(root, range = "30d") {
     const funnelCounts = db.prepare(
       `SELECT
          SUM(CASE WHEN action='entered' THEN 1 ELSE 0 END) AS entered,
-         SUM(CASE WHEN action='skipped' AND IFNULL(failed_gate,'') NOT LIKE '%open_failed%' THEN 1 ELSE 0 END) AS skipped,
+         SUM(CASE WHEN action='skipped' AND IFNULL(failed_gate,'') NOT LIKE '%open_failed%' THEN sweeps ELSE 0 END) AS skipped,
          SUM(CASE WHEN IFNULL(failed_gate,'') LIKE '%open_failed%' THEN 1 ELSE 0 END) AS open_failed
        FROM decisions
        WHERE ts >= ?

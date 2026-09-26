@@ -1,5 +1,5 @@
 import { config } from "../config.js";
-import { isBlacklisted, isExitCooldown, recordDecision, logError } from "../db/db.js";
+import { isBlacklisted, isExitCooldown, recordDecision, recordSkip, logError } from "../db/db.js";
 import type { Executor } from "../executor/executor.js";
 import { alert } from "../alerts.js";
 import { solUsdPrice } from "../market.js";
@@ -58,7 +58,7 @@ export async function enterMajorsPositions(exec: Executor, bankroll: Bankroll): 
     if (majorsSlotBudget(openPositionCount()) <= 0) break;
 
     if (tokenExposureSol(cand.tokenMint) > 0) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "majors_token_open", cand.score, { sleeve: "majors", symbol: cand.symbol });
+      recordSkip(cand.tokenMint, cand.pool.address, "majors_token_open", cand.score, { sleeve: "majors", symbol: cand.symbol });
       skip(cand.symbol, "token_open");
       continue;
     }
@@ -70,7 +70,7 @@ export async function enterMajorsPositions(exec: Executor, bankroll: Bankroll): 
     // Vetting bans are deliberately NOT enforced here: see isExitCooldown.
     const bl = isBlacklisted(cand.tokenMint);
     if (bl !== null && isExitCooldown(bl)) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "majors_exit_cooldown", cand.score, { sleeve: "majors", symbol: cand.symbol, reason: bl });
+      recordSkip(cand.tokenMint, cand.pool.address, "majors_exit_cooldown", cand.score, { sleeve: "majors", symbol: cand.symbol, reason: bl });
       skip(cand.symbol, `cooldown(${bl})`);
       continue;
     }
@@ -78,7 +78,7 @@ export async function enterMajorsPositions(exec: Executor, bankroll: Bankroll): 
     const candles = await fetchCandlesDeep(cand.pool.address, "5m").catch(() => []);
     const timing = majorsEntryTiming(candles, cand.pool.price);
     if (!timing.ok) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", timing.reason!, cand.score, { sleeve: "majors", timing });
+      recordSkip(cand.tokenMint, cand.pool.address, timing.reason!, cand.score, { sleeve: "majors", timing });
       skip(cand.symbol, `${timing.reason!.replace("majors_", "")}(rsi ${timing.rsi?.toFixed(0) ?? "?"},swing ${((timing.swingPos ?? 0) * 100).toFixed(0)}%)`);
       continue;
     }
@@ -91,7 +91,7 @@ export async function enterMajorsPositions(exec: Executor, bankroll: Bankroll): 
     if (exp.deployedSol + size > capSol) {
       size = Math.max(0, capSol - exp.deployedSol);
       if (size < floor) {
-        recordDecision(cand.tokenMint, cand.pool.address, "skipped", "majors_deploy_cap", cand.score, { sleeve: "majors", exp, capSol });
+        recordSkip(cand.tokenMint, cand.pool.address, "majors_deploy_cap", cand.score, { sleeve: "majors", exp, capSol });
         skip(cand.symbol, "deploy_cap");
         continue;
       }
@@ -99,7 +99,7 @@ export async function enterMajorsPositions(exec: Executor, bankroll: Bankroll): 
     if (size < floor) {
       // Used to `continue` silently — no decision, no log. Exactly the kind of
       // hole that turned pos#5 into a 20-minute reconstruction.
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "majors_size_below_floor", cand.score, { sleeve: "majors", size, floor });
+      recordSkip(cand.tokenMint, cand.pool.address, "majors_size_below_floor", cand.score, { sleeve: "majors", size, floor });
       skip(cand.symbol, `size ${size.toFixed(3)}<floor ${floor.toFixed(3)}`);
       continue;
     }
@@ -109,7 +109,7 @@ export async function enterMajorsPositions(exec: Executor, bankroll: Bankroll): 
       const shareCapSol = (cand.pool.tvlUsd * (majorsPoolSharePct() / 100)) / solUsd;
       if (size > shareCapSol) {
         if (shareCapSol < floor) {
-          recordDecision(cand.tokenMint, cand.pool.address, "skipped", "majors_pool_share", cand.score, { shareCapSol, sleeve: "majors" });
+          recordSkip(cand.tokenMint, cand.pool.address, "majors_pool_share", cand.score, { shareCapSol, sleeve: "majors" });
           skip(cand.symbol, "pool_share");
           continue;
         }
@@ -129,7 +129,7 @@ export async function enterMajorsPositions(exec: Executor, bankroll: Bankroll): 
       sizeSol: size,
     });
     if (!rent.ok) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "majors_bin_rent", cand.score, {
+      recordSkip(cand.tokenMint, cand.pool.address, "majors_bin_rent", cand.score, {
         sleeve: "majors", range: rent.range, rent: rent.meta,
       });
       skip(cand.symbol, `bin_rent(${rent.meta.actual ?? rent.meta.est}>${rent.meta.budget.toFixed(3)})`);

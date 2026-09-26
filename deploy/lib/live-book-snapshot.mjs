@@ -1144,7 +1144,7 @@ export function buildLiveBookSnapshot(root) {
     function binRentNearMiss(since) {
       const gates = BIN_RENT_GATES.map(() => "?").join(",");
       const byGate = db.prepare(
-        `SELECT failed_gate g, COUNT(*) n
+        `SELECT failed_gate g, SUM(sweeps) n
          FROM decisions
          WHERE action='skipped' AND failed_gate IN (${gates}) AND score >= ? AND ts > ?
            AND COALESCE(json_extract(features_json, '$.mode'), 'paper') = ?

@@ -1,5 +1,5 @@
 import { config, SOL_MINT } from "../config.js";
-import { getDb, isBlacklisted, now, recordDecision } from "../db/db.js";
+import { getDb, isBlacklisted, now, recordSkip } from "../db/db.js";
 import type { Candidate } from "../types.js";
 import { poolGates } from "./gates.js";
 import { priceDivergenceGate } from "./priceGate.js";
@@ -205,8 +205,10 @@ export async function scan(opts: { withTiming?: boolean } = {}): Promise<ScanRes
       // volume hit 83% inside a day and the local DB grew 27 MB in 200 hours
       // of `decisions` alone. The pool's numbers for this exact sweep are
       // already in pool_snapshots; the decision row only needs the reason and
-      // the few numbers the funnel reads to explain it.
-      recordDecision(p.mintX, p.address, "skipped", gateFailures[0]?.gate ?? null, score, {
+      // the few numbers the funnel reads to explain it. One row per episode,
+      // not per sweep (recordSkip): the same pools fail the same gate every
+      // minute, ~7,000 rows an hour on the server.
+      recordSkip(p.mintX, p.address, gateFailures[0]!.gate, score, {
         symbol, gateFailures,
         tvlUsd: Math.round(p.tvlUsd), vol30mUsd: Math.round(p.vol30mUsd),
         feeTvl24hPct: +p.feeTvl24hPct.toFixed(2), feeTvl30mPct: +p.feeTvl30mPct.toFixed(2),
