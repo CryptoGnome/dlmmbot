@@ -31,9 +31,11 @@ retain_snapshots_days = 3
 # 2026-08-16: the age windows above are calibrated to what the dashboard READS,
 # not what the volume can HOLD. On a one-day-old install nothing was older than
 # 30 days, so retention pruned zero rows and the 0.5 GB Railway volume filled to
-# ENOSPC overnight. This is the hard ceiling: above it, skipped decisions and
-# snapshots are trimmed oldest-first regardless of age. entered/exited rows are
-# never touched. Set well under your volume size — Railway's default is 0.5 GB.
+# ENOSPC overnight. This is the hard ceiling: above it, rows are trimmed
+# oldest-first regardless of age — snapshots first, skipped decisions only once
+# no snapshot is left (2026-09-26: 3 days of snapshots is ~245 MB on a live
+# book, and trimming both in step wiped the rejection history). entered/exited
+# rows are never touched. Set well under your volume size — Railway's default is 0.5 GB.
 # The hourly VACUUM briefly needs about the DB's size again in free space, so
 # keep this under ~40% of the volume (2026-09-25: 400 MB on 1 GB peaked at 92%).
 db_max_mb = 200

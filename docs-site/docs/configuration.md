@@ -24,8 +24,8 @@ Every knob the bot obeys lives in one TOML file. Key facts before the tables:
 | `copycat_ignore_h` | `24` | Losers of symbol dedupe ignored this long (hours) |
 | `sibling_tvl_tie_pct` | `25` | Among a token's gate-passing pools, the **deepest** wins; fee/TVL breaks ties only within this % of the deepest pool's TVL. Replaces "highest fee/TVL", which structurally picked the thinnest sibling — thin pools earn less and their TVL swings 40–50% on ordinary LP moves, which P0 `tvl_drain` reads as a rug |
 | `retain_skipped_days` | `30` | Prune `skipped` decision rows older than this (hourly). `entered`/`exited` rows — the audit trail — are **never** pruned. Nothing pruned these before; a Railway volume hit 83% inside a day. A rejection that repeats every sweep is stored as one row per 6-hour episode with a `sweeps` count, so 30 days now fits where a few hours used to |
-| `retain_snapshots_days` | `3` | Prune `pool_snapshots` older than this. Only the latest row per pool is read; the rest was an offline replay dataset. Every ~300-row sweep lands here |
-| `db_max_mb` | `200` | Hard ceiling on `farmer.db`: above it, skip rows and snapshots are trimmed oldest-first regardless of age. The hourly `VACUUM` briefly needs about the database's size again in free space, so keep this under **~40% of your volume** — on a 1 GB Railway volume, 400 MB peaked at 92% |
+| `retain_snapshots_days` | `3` | Prune `pool_snapshots` older than this. Only the latest row per pool is read; the rest was an offline replay dataset. Every ~300-row sweep lands here — at one sweep a minute, 3 days is ~1.3M rows (~245 MB), more than the default `db_max_mb` by itself. `1` keeps it near 80 MB |
+| `db_max_mb` | `200` | Hard ceiling on `farmer.db`: above it, rows are trimmed oldest-first regardless of age — **snapshots first**, skip rows only once no snapshot is left to take, so the rejection history survives the ceiling. The hourly `VACUUM` briefly needs about the database's size again in free space, so keep this under **~40% of your volume** — on a 1 GB Railway volume, 400 MB peaked at 92% |
 
 ## `[gates]` — pool hard gates
 

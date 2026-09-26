@@ -705,9 +705,19 @@ export function pruneHistory(opts: {
   // one-day-old install nothing is older than 30 days, so the age rule pruned
   // zero rows, printed nothing, and the Railway volume filled to ENOSPC
   // overnight at ~890 rejection rows/hour. Below the ceiling this is a no-op;
-  // above it, trim the two append-only tables oldest-first in chunks until the
-  // file is under the ceiling. entered/exited rows are never touched here
-  // either — they are the audit trail and are rare.
+  // above it, trim oldest-first in chunks until the file is under the ceiling
+  // — snapshots first, skip rows only once no snapshot is left to take.
+  // entered/exited rows are never touched here either — they are the audit
+  // trail and are rare.
+  //
+  // Snapshots first (2026-09-26). Only the newest row per pool is ever read
+  // and the next sweep rewrites all ~300 of them, while skip rows are the
+  // rejection history gates are judged on — one row per episode since
+  // recordSkip, so a 5000-row chunk of them is weeks. The two used to be
+  // trimmed in step, and 3 days of snapshots is ~245 MB on the live book: by
+  // themselves they held the file over the ceiling, so every pass took skip
+  // rows with them. At 200 MB that ground the rejection window to hours; with
+  // episode rows it would have wiped all of it at once.
   //
   // Note the file does not shrink on DELETE; VACUUM below gives the space back.
   // We measure "used pages" rather than file size for the loop so freed pages
@@ -725,7 +735,7 @@ export function pruneHistory(opts: {
       const s = db.prepare(
         "DELETE FROM pool_snapshots WHERE rowid IN (SELECT rowid FROM pool_snapshots ORDER BY ts ASC LIMIT 5000)"
       ).run().changes;
-      const d = db.prepare(
+      const d = s > 0 ? 0 : db.prepare(
         `DELETE FROM decisions WHERE rowid IN (SELECT rowid FROM decisions WHERE action = 'skipped' AND ${NOT_TELEMETRY_SQL} AND ${BACKFILLED_SQL} ORDER BY ts ASC LIMIT 5000)`
       ).run().changes;
       snapshots += s;
