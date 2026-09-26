@@ -6,7 +6,7 @@ import { config, configToml, currentMode, isLive, onConfigChange, syncFarmerMode
 import { mapGrouped } from "../concurrent.js";
 import { reconcileLive } from "./reconcile.js";
 import { alert, type AlertKind } from "../alerts.js";
-import { blacklist, describeError, getDb, now, pruneHistory, recordConfigSnapshot, recordCreatorRug, recordDecision, REALIZED_PNL_SQL, logError, installProcessErrorHooks } from "../db/db.js";
+import { blacklist, describeError, getDb, now, pruneHistory, recordConfigSnapshot, recordCreatorRug, recordDecision, recordSkip, REALIZED_PNL_SQL, logError, installProcessErrorHooks } from "../db/db.js";
 import { RESIDUAL_SWEEP_MIN_SOL } from "../executor/executor.js";
 import type { Executor } from "../executor/executor.js";
 import { LiveExecutor } from "../executor/live.js";
@@ -1603,6 +1603,9 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     });
     return;
   }
+  // Gates below re-run on every tick for the same candidate, so they write one
+  // row per episode (recordSkip). Events — vet_error, quote_stale, open
+  // failures — and counterfactual telemetry stay one row each (recordDecision).
   for (const cand of candidates) {
     const opened = openPositionCount();
     // Cheap admission pre-check before spending vetting calls: when the normal
@@ -1610,7 +1613,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     // score + max vetting uplift) are worth vetting.
     const maxVetUplift = 0.5 * config().score.w_vetting_soft;
     if (opened >= normalCap && cand.score + maxVetUplift < rot.alpha_score_min) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "slots_full", cand.score, { symbol: cand.symbol });
+      recordSkip(cand.tokenMint, cand.pool.address, "slots_full", cand.score, { symbol: cand.symbol });
       continue;
     }
     if (opened >= bankroll.effectiveSlots && !rot.displacement_enabled) break;
@@ -1619,7 +1622,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     // chain decides re-entry timing — the normal pipeline entering in parallel
     // would double exposure and race the chain's up-only discipline.
     if (hasActiveFollowChain(cand.tokenMint, exec.mode)) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "follow_active", cand.score, { symbol: cand.symbol });
+      recordSkip(cand.tokenMint, cand.pool.address, "follow_active", cand.score, { symbol: cand.symbol });
       continue;
     }
 
@@ -1640,7 +1643,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       continue;
     }
     if (vet.verdict !== "pass") {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", vet.hardFailures[0]?.gate ?? "vet", cand.score, { vet, cand });
+      recordSkip(cand.tokenMint, cand.pool.address, vet.hardFailures[0]?.gate ?? "vet", cand.score, { vet, cand });
       continue;
     }
 
@@ -1677,7 +1680,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     const g = config().gates;
     const minScore = g.min_entry_score ?? DEFAULT_MIN_ENTRY_SCORE;
     if (score < minScore) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "score_min", score, { required: minScore, baseScore });
+      recordSkip(cand.tokenMint, cand.pool.address, "score_min", score, { required: minScore, baseScore });
       continue;
     }
 
@@ -1685,16 +1688,16 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     // met on FUNDAMENTALS (base score), not reachable via bonuses.
     const isMicro = isMicroMcap(cand.pool.marketCapUsd);
     if (isMicro && baseScore < g.mcap_micro_score_min) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "micro_score", baseScore, { mcapUsd: cand.pool.marketCapUsd, required: g.mcap_micro_score_min, score });
+      recordSkip(cand.tokenMint, cand.pool.address, "micro_score", baseScore, { mcapUsd: cand.pool.marketCapUsd, required: g.mcap_micro_score_min, score });
       continue;
     }
     if (isMicro && cand.pool.tvlUsd < g.micro_tvl_min_usd) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "micro_tvl", score, { tvlUsd: cand.pool.tvlUsd, required: g.micro_tvl_min_usd, sleeve: "micro" });
+      recordSkip(cand.tokenMint, cand.pool.address, "micro_tvl", score, { tvlUsd: cand.pool.tvlUsd, required: g.micro_tvl_min_usd, sleeve: "micro" });
       continue;
     }
     const microExp = isMicro ? microSleeveExposure() : null;
     if (isMicro && microExp!.slots >= g.micro_max_slots) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "micro_slots_full", score, { ...microExp, max: g.micro_max_slots });
+      recordSkip(cand.tokenMint, cand.pool.address, "micro_slots_full", score, { ...microExp, max: g.micro_max_slots });
       continue;
     }
 
@@ -1709,7 +1712,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     // counted against displacement_max_per_6h.
     const needsDisplacement = !admitted && isAlpha;
     if (!admitted && !isAlpha) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "alpha_reserved", score, { opened, normalCap });
+      recordSkip(cand.tokenMint, cand.pool.address, "alpha_reserved", score, { opened, normalCap });
       continue;
     }
 
@@ -1719,7 +1722,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       const gate = sizingMode() === "kelly" && kelly.regime === "negative_edge" ? "kelly_negative_edge" : "size_zero";
       if (sizingMode() === "kelly" && kelly.regime === "negative_edge")
         console.log(`[risk] Kelly estimates negative edge (f*=${kelly.fullKelly?.toFixed(3)}, n=${kelly.samples}) — entries blocked`);
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", gate, score, { bankroll, kelly });
+      recordSkip(cand.tokenMint, cand.pool.address, gate, score, { bankroll, kelly });
       continue;
     }
     // SIZING-MODE-DECISION.md Gate 3 — instrumented-off, same pattern as
@@ -1763,7 +1766,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       "SELECT COUNT(*) AS c FROM positions WHERE token_mint = ? AND entry_ts > ? AND mode = ?"
     ).get(cand.tokenMint, now() - 86_400, currentMode()) as { c: number }).c;
     if (priorEntries24h > m.reentry_max_per_24h) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "reentry_limit", score, { priorEntries24h });
+      recordSkip(cand.tokenMint, cand.pool.address, "reentry_limit", score, { priorEntries24h });
       continue;
     }
     const preLadderSize = size;
@@ -1796,13 +1799,13 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       ? minReentrySol(bankroll.walletSol)
       : minPositionSol(bankroll.walletSol);
     if (size < sizeFloor) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "ladder_below_min", score, { priorEntries24h, size, sizeFloor });
+      recordSkip(cand.tokenMint, cand.pool.address, "ladder_below_min", score, { priorEntries24h, size, sizeFloor });
       continue;
     }
     if (isMicro) {
       const capSol = bankroll.walletSol * (g.micro_deploy_cap_pct / 100);
       if (microExp!.deployedSol + size > capSol) {
-        recordDecision(cand.tokenMint, cand.pool.address, "skipped", "micro_deploy_cap", score, {
+        recordSkip(cand.tokenMint, cand.pool.address, "micro_deploy_cap", score, {
           deployed: microExp!.deployedSol, size, capSol, pct: g.micro_deploy_cap_pct,
         });
         continue;
@@ -1811,14 +1814,14 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     // One primary position per token (§5) — tranches are the only sanctioned
     // second position and they're opened by the manager, not the entry pipeline.
     if (tokenExposureSol(cand.tokenMint) > 0) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "already_positioned", score, { symbol: cand.symbol });
+      recordSkip(cand.tokenMint, cand.pool.address, "already_positioned", score, { symbol: cand.symbol });
       continue;
     }
     // Per-token cap (§5).
     const exposure = tokenExposureSol(cand.tokenMint);
     const cap = (bankroll.deployableSol + bankroll.deployedSol) * (config().sizing.per_token_max_pct / 100);
     if (exposure + size > cap) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "per_token_cap", score, { exposure, cap });
+      recordSkip(cand.tokenMint, cand.pool.address, "per_token_cap", score, { exposure, cap });
       continue;
     }
     // Pool-share cap (§6): never become a dominant share of the pool — the
@@ -1831,7 +1834,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       const shareCapSol = (cand.pool.tvlUsd * (sharePct / 100)) / solUsd;
       if (size > shareCapSol) {
         if (shareCapSol < sizeFloor) {
-          recordDecision(cand.tokenMint, cand.pool.address, "skipped", "pool_share", score, { shareCapSol, size, tvlUsd: cand.pool.tvlUsd });
+          recordSkip(cand.tokenMint, cand.pool.address, "pool_share", score, { shareCapSol, size, tvlUsd: cand.pool.tvlUsd });
           continue;
         }
         console.log(`[risk] ${cand.symbol}: size ${size.toFixed(2)} -> ${shareCapSol.toFixed(2)} SOL (pool-share cap ${sharePct}% of $${cand.pool.tvlUsd.toFixed(0)} TVL)`);
@@ -1889,7 +1892,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     // pool we cannot trade properly costs us nothing.
     const reach = depthReachable(config().entry.min_down_pct, cand.pool.binStep, config().entry.max_position_accounts);
     if (!reach.ok) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "range_too_shallow", score, {
+      recordSkip(cand.tokenMint, cand.pool.address, "range_too_shallow", score, {
         binStep: cand.pool.binStep, minDownPct: config().entry.min_down_pct, ...reach,
       });
       console.log(`[enter] ${cand.symbol}: skip — step ${cand.pool.binStep} needs ${reach.binsNeeded} bins for -${config().entry.min_down_pct}%, cap is ${reach.maxBins}`);
@@ -1909,7 +1912,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       sizeSol: size,
     });
     if (!rent.ok) {
-      recordDecision(cand.tokenMint, cand.pool.address, "skipped", "bin_rent", score, {
+      recordSkip(cand.tokenMint, cand.pool.address, "bin_rent", score, {
         range: rent.range, rent: rent.meta,
       });
       continue;
@@ -1930,7 +1933,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     if (needsDisplacement) {
       const displaced = await tryDisplacement(exec, score, cand.tokenMint);
       if (!displaced) {
-        recordDecision(cand.tokenMint, cand.pool.address, "skipped", "displacement_declined", score, { opened, normalCap });
+        recordSkip(cand.tokenMint, cand.pool.address, "displacement_declined", score, { opened, normalCap });
         continue;
       }
     }

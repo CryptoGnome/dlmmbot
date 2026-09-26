@@ -1,5 +1,5 @@
 import { config, SOL_MINT } from "../config.js";
-import { recordDecision } from "../db/db.js";
+import { recordDecision, recordSkip } from "../db/db.js";
 import type { PoolInfo } from "../types.js";
 import { DEFAULT_DATAPI_CONCURRENCY, fetchPool, sweepMajorsPools, type RawPoolExtras } from "./meteora.js";
 import { mapGrouped } from "../concurrent.js";
@@ -55,12 +55,13 @@ async function loadWhitelist(): Promise<MajorsCandidate[]> {
     }
     const raw = value ?? null;
     if (!raw) {
-      recordDecision(entry.pool, entry.pool, "skipped", "majors_pool_missing", null, { sleeve: "majors", pool: entry.pool });
+      recordSkip(entry.pool, entry.pool, "majors_pool_missing", null, { sleeve: "majors", pool: entry.pool });
       continue;
     }
     const fails = majorsPoolGates(raw);
     if (fails.length > 0) {
-      recordDecision(raw.mintX, raw.address, "skipped", fails[0]!.gate, null, { sleeve: "majors", pool: raw, gateFailures: fails, source: "whitelist" });
+      // Same pools, same gate, every sweep: one row per episode (recordSkip).
+      recordSkip(raw.mintX, raw.address, fails[0]!.gate, null, { sleeve: "majors", pool: raw, gateFailures: fails, source: "whitelist" });
       continue;
     }
     out.push({ ...toCandidate(raw, "whitelist"), symbol: entry.symbol ?? majorsSymbol(raw) });
