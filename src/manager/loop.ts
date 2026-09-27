@@ -2282,7 +2282,16 @@ export async function runLoop(): Promise<void> {
       if (exec.sweepResiduals && Date.now() - lastSweep > RESIDUAL_SWEEP_INTERVAL_MS) {
         if (Date.now() - tickStart < pollMs) {
           lastSweep = Date.now();
-          for (const r of await exec.sweepResiduals(RESIDUAL_SWEEP_MIN_SOL)) {
+          // Housekeeping, not trading: an RPC hiccup here (Helius "account index
+          // service overloaded" on the token-accounts read) must not surface as
+          // a tick incident or skip retention. Next sweep retries in 10 min.
+          let swept: Awaited<ReturnType<NonNullable<typeof exec.sweepResiduals>>> = [];
+          try {
+            swept = await exec.sweepResiduals(RESIDUAL_SWEEP_MIN_SOL);
+          } catch (e) {
+            console.warn(`[farmer] residual sweep skipped:`, (e as Error).message.split("\n")[0]);
+          }
+          for (const r of swept) {
             const tag = r.positionId ? ` pos#${r.positionId}` : "";
             let restated = "";
             if (r.positionId) {
