@@ -33,15 +33,21 @@ export interface YoungRead {
   source: "mint" | "pool" | "unknown";
 }
 
-/** Mint age first (vet), pool age as fallback; unknown age is treated as young. */
+/**
+ * Mint age first (vet), pool age as fallback; unknown age is treated as young.
+ * `tokenAgeSource` is vet's record of where the age came from: an age vet
+ * itself took from the pool is labelled "pool", not "mint". Pool age is a
+ * lower bound on mint age, so the fallback can only err toward young.
+ */
 export function classifyYoung(
   tokenAgeMin: number | null | undefined,
   poolCreatedAtMs: number | null | undefined,
+  tokenAgeSource?: "rugcheck" | "jupiter" | "pool" | null,
   nowMs = Date.now(),
 ): YoungRead {
   const max = config().gates.young_max_age_min ?? YOUNG_DEFAULTS.maxAgeMin;
   if (tokenAgeMin != null && Number.isFinite(tokenAgeMin)) {
-    return { young: tokenAgeMin < max, ageMin: tokenAgeMin, source: "mint" };
+    return { young: tokenAgeMin < max, ageMin: tokenAgeMin, source: tokenAgeSource === "pool" ? "pool" : "mint" };
   }
   if (poolCreatedAtMs != null && Number.isFinite(poolCreatedAtMs)) {
     const ageMin = (nowMs - poolCreatedAtMs) / 60_000;

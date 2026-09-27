@@ -22,6 +22,8 @@ export interface JupAssetSnapshot {
   organicSellVol24h: number | null;
   /** Total USD liquidity across every pool Jupiter routes through (not just ours). */
   liquidityUsd: number | null;
+  /** Mint creation time (Jupiter `createdAt`, else `firstPool.createdAt`), ISO. */
+  createdAt: string | null;
   /** Display fields from the same search payload (for dashboard icons). */
   symbol: string | null;
   name: string | null;
@@ -101,6 +103,9 @@ async function fetchAsset(mint: string): Promise<JupAssetSnapshot | null> {
       organicBuyVol24h: num(s24.buyOrganicVolume),
       organicSellVol24h: num(s24.sellOrganicVolume),
       liquidityUsd: num(a.liquidity),
+      createdAt: typeof a.createdAt === "string" ? a.createdAt
+        : typeof (a.firstPool as Record<string, unknown> | undefined)?.createdAt === "string"
+          ? (a.firstPool as Record<string, string>).createdAt! : null,
       symbol,
       name,
       icon,

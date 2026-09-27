@@ -69,7 +69,7 @@ Master switches (also in Settings UI) — off skips that hard fail; thresholds a
 
 | Key | Default | Meaning |
 |---|---|---|
-| `age_min_enabled` | `true` | Block "too young" (mint age via RugCheck, not pool age) |
+| `age_min_enabled` | `true` | Block "too young" (mint age: RugCheck `detectedAt`, then Jupiter `createdAt`, pool age only as a last resort) |
 | `age_max_enabled` | `false` | Block "too old". Off by default — the fee/volume gates already test current traction, so a revived old meme with live volume is a valid pool. A *fit* gate, not a safety one. |
 | `insider_gate_enabled` | `true` | Block high insider / funding-cluster % |
 | `holder_gate_enabled` | `true` | Block single-holder / top-10 concentration |

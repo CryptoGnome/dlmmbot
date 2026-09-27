@@ -98,7 +98,7 @@ max_pool_share_pct = 20          # skip if our position would exceed this % of p
 
 [vetting]                  # STRATEGY.md §2.2 — token hard gates
 # Master switches (Settings UI). Off = skip that hard fail; thresholds still apply when on.
-age_min_enabled = true           # block "too young" (mint age via RugCheck, not pool age)
+age_min_enabled = true           # block "too young" (mint age: RugCheck, then Jupiter, pool age last)
 age_max_enabled = false          # OFF: a revived old meme with live volume is a valid pool.
                                  # The fee/volume gates already test current traction directly;
                                  # mint age was a worse proxy for the same thing. Set true to

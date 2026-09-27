@@ -57,6 +57,8 @@ export interface VetResult {
     rugcheckRisks: Array<{ name: string; score: number; level: string }>;
     launchpad: string | null;
     tokenAgeMinutes: number | null;
+    /** Where tokenAgeMinutes came from. "pool" = DLMM pool age, a lower bound on the mint's. */
+    tokenAgeSource?: "rugcheck" | "jupiter" | "pool" | null;
     gmgnSellTaxPct?: number | null;       // GMGN security cross-check
     gmgnHoneypot?: boolean | null;
     /** True when the honeypot/sell-tax source was blind for this vet (soft note, not a gate). */
