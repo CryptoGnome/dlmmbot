@@ -101,6 +101,63 @@ export function rangeGapTooLarge(plannedTop: number, activeBinId: number, maxGap
   return Math.abs(activeBinId - plannedTop) > maxGap;
 }
 
+/**
+ * Bins a live open actually uses. Pure so the placement rules can be checked
+ * without a funded wallet.
+ *
+ * "active" — the primary's rule: the top re-anchors to the live active bin and
+ * the planned width is kept (or clamped to the planned floor when price has
+ * fallen); refuses when that clamp collapses the ladder.
+ *
+ * "planned" — a tranche pocket under its primary: the planned bins are used
+ * as-is and must lie strictly below the active bin. Until 2026-09-27 tranches
+ * went through the "active" rule too, which lifted every live tranche (50/50)
+ * from below the primary to the top of the book, doubling size at price
+ * instead of adding a deep catch. If price has already fallen into the pocket,
+ * refuse: a SOL-only deposit cannot fund a bin at or above the active one, and
+ * the entry premise (a pocket BELOW price) is gone.
+ */
+export function resolveOpenBins(
+  planned: { minBinId: number; maxBinId: number },
+  activeBinId: number,
+  anchor: "active" | "planned" = "active",
+): { minBin: number; maxBin: number } {
+  if (rangeGapTooLarge(planned.maxBinId, activeBinId)) {
+    const gap = Math.abs(activeBinId - planned.maxBinId);
+    throw new Error(
+      `range sanity: planned top bin ${planned.maxBinId} is ${gap} bins from on-chain active ${activeBinId} — refusing to open`
+    );
+  }
+  if (anchor === "planned") {
+    if (planned.maxBinId >= activeBinId) {
+      throw new Error(
+        `range sanity: planned pocket top ${planned.maxBinId} is not below active ${activeBinId} — ` +
+        `price already fell into the tranche range; refusing to open`
+      );
+    }
+    return { minBin: planned.minBinId, maxBin: planned.maxBinId };
+  }
+  const width = planned.maxBinId - planned.minBinId;
+  const maxBin = activeBinId;
+  const minBin = activeBinId > planned.maxBinId
+    ? maxBin - width
+    : Math.min(planned.minBinId, maxBin - 1);
+  const totalBins = maxBin - minBin + 1;
+  // Re-anchor sanity: when the on-chain price has dumped THROUGH the
+  // planned depth between planning and open, the min(plannedMin, maxBin-1)
+  // clamp above collapses a ~50-bin ladder into 2 bins holding full size —
+  // a max-size buy wall directly under a crashing (plausibly rugging)
+  // price. The 150-bin gap check only guards the other direction.
+  const plannedBins = planned.maxBinId - planned.minBinId + 1;
+  if (totalBins < Math.max(10, Math.ceil(plannedBins * 0.5))) {
+    throw new Error(
+      `range sanity: re-anchored range is ${totalBins} bins vs ${plannedBins} planned — ` +
+      `price fell through the planned depth between planning and open; refusing to open`
+    );
+  }
+  return { minBin, maxBin };
+}
+
 /** Native SOL + wSOL ATA change for our wallet in one tx (Jupiter/zap often credit wSOL). */
 export function wealthDeltaLamports(
   meta: NonNullable<ParsedTransactionWithMeta["meta"]>,
@@ -445,6 +502,26 @@ export class LiveExecutor implements Executor {
 
   /** As tokenBalanceRaw, but also returns the slot the RPC evaluated it at. */
   private async tokenBalanceWithSlot(mint: string): Promise<{ total: bigint; slot: number }> {
+    // One mint-filtered read: the RPC resolves Token vs Token-2022 from the
+    // mint's owner, and it is far lighter on Helius's account index than
+    // listing every token account the wallet holds (which returned "account
+    // index service overloaded", error #238). Same accounts, same total.
+    try {
+      const accs = await this.connection.getParsedTokenAccountsByOwner(this.wallet.publicKey, { mint: new PublicKey(mint) });
+      let total = 0n;
+      for (const acc of accs.value) {
+        const info = acc.account.data.parsed.info as { tokenAmount: { amount: string } };
+        total += BigInt(info.tokenAmount.amount);
+      }
+      return { total, slot: accs.context.slot };
+    } catch (e) {
+      console.warn(`[live] mint-filtered balance read failed, full scan:`, (e as Error).message.split("\n")[0]);
+      return this.tokenBalanceFullScan(mint);
+    }
+  }
+
+  /** Fallback for tokenBalanceWithSlot: list every token account and sum this mint's. */
+  private async tokenBalanceFullScan(mint: string): Promise<{ total: bigint; slot: number }> {
     let total = 0n;
     let slot = 0;
     const TOKEN_PROGRAMS = [
@@ -669,30 +746,9 @@ export class LiveExecutor implements Executor {
     // coupling "spot" to "majors" so no other sleeve could use the shape.
     // Both shapes now take the planner's bins and re-anchor the top to the
     // live active bin the same way; only the SDK strategyType differs.
-    if (rangeGapTooLarge(params.range.maxBinId, activeBin.binId)) {
-      const gap = Math.abs(activeBin.binId - params.range.maxBinId);
-      throw new Error(
-        `range sanity: planned top bin ${params.range.maxBinId} is ${gap} bins from on-chain active ${activeBin.binId} — refusing to open`
-      );
-    }
-    const width = params.range.maxBinId - params.range.minBinId;
-    let maxBin = activeBin.binId;
-    let minBin = activeBin.binId > params.range.maxBinId
-      ? maxBin - width
-      : Math.min(params.range.minBinId, maxBin - 1);
+    const anchor = params.anchor ?? "active";
+    let { minBin, maxBin } = resolveOpenBins(params.range, activeBin.binId, anchor);
     const totalBins = maxBin - minBin + 1;
-    // Re-anchor sanity: when the on-chain price has dumped THROUGH the
-    // planned depth between planning and open, the min(plannedMin, maxBin-1)
-    // clamp above collapses a ~50-bin ladder into 2 bins holding full size —
-    // a max-size buy wall directly under a crashing (plausibly rugging)
-    // price. The 150-bin gap check only guards the other direction.
-    const plannedBins = params.range.maxBinId - params.range.minBinId + 1;
-    if (totalBins < Math.max(10, Math.ceil(plannedBins * 0.5))) {
-      throw new Error(
-        `range sanity: re-anchored range is ${totalBins} bins vs ${plannedBins} planned — ` +
-        `price fell through the planned depth between planning and open; refusing to open`
-      );
-    }
     let liveEntryPrice = Number(pool.fromPricePerLamport(Number(activeBin.price)));
     const lamports = Math.floor(params.sizeSol * 1e9);
     const strategyType = shape === "spot" ? StrategyType.Spot : StrategyType.BidAsk;
@@ -726,7 +782,16 @@ export class LiveExecutor implements Executor {
           await pool.refetchStates();
           // Only re-anchor when nothing is on chain yet. A later chunk failing
           // after an earlier one landed must keep the same bin window.
-          if (accountRows.length === 0) {
+          if (accountRows.length === 0 && anchor === "planned") {
+            // A planned pocket keeps its bins; it only has to still be below price.
+            const fresh = await pool.getActiveBin();
+            resolveOpenBins({ minBinId: curMin, maxBinId: curMax }, fresh.binId, "planned");
+            curPrice = Number(pool.fromPricePerLamport(Number(fresh.price)));
+            console.warn(
+              `[live] rebuild open after ${lastDetail?.code ?? "slippage"} — ` +
+              `active=${fresh.binId}, keeping planned bins=[${chunk.min},${chunk.max}]`
+            );
+          } else if (accountRows.length === 0) {
             const fresh = await pool.getActiveBin();
             const widthBins = curMax - curMin;
             curMax = fresh.binId;

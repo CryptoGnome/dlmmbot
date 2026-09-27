@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { resolveBuildLabel } from "../buildLabel.js";
-import { config, configToml, currentMode, isLive, onConfigChange, syncFarmerModeFromDisk,
+import { config, configToml, currentMode, env, isLive, onConfigChange, syncFarmerModeFromDisk,
   escapeDrawdownPct, ESCAPE_ARM_DRAWDOWN_PCT, ESCAPE_RECOVER_DRAWDOWN_PCT } from "../config.js";
 import { mapGrouped } from "../concurrent.js";
 import { reconcileLive } from "./reconcile.js";
@@ -27,6 +27,7 @@ import { clearHolderWatch, holderCheck } from "./holderwatch.js";
 import { sol24hChangePct, solUsdPrice } from "../market.js";
 import { circuitBreakerTripped, clusterBrakeTripped, computeBankroll, flatCounterfactualSol, kellyStats, minPositionSol, minReentrySol, openPositionCount, positionSize, regimeFactor, sizingMode, tokenExposureSol } from "../risk/limits.js";
 import { applyMicroSize, isMicroMcap, microPoolSharePct, microSleeveExposure } from "../risk/micro.js";
+import { applyRiskCut, classifyYoung, whaleCheck } from "../risk/entryRisk.js";
 import { enterMajorsPositions } from "./majorsEntry.js";
 import { manageForSleeve } from "../risk/majorsManage.js";
 import { sleeveAtEntry } from "../risk/sleeve.js";
@@ -1696,6 +1697,9 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       continue;
     }
     const microExp = isMicro ? microSleeveExposure() : null;
+    // Young-token risk cut (entryRisk.ts): classified here, applied with the
+    // micro cut below. Mint age from vet; pool age only when that is unknown.
+    const young = classifyYoung(vet.facts.tokenAgeMinutes, poolCreatedAtMs);
     if (isMicro && microExp!.slots >= g.micro_max_slots) {
       recordSkip(cand.tokenMint, cand.pool.address, "micro_slots_full", score, { ...microExp, max: g.micro_max_slots });
       continue;
@@ -1786,7 +1790,14 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       });
     }
     size *= regime; // regime filter halves sizing in a SOL downdraft
-    if (isMicro && sizingMode() === "kelly") size = applyMicroSize(size);
+    const microCut = isMicro && sizingMode() === "kelly";
+    if (microCut) size = applyMicroSize(size);
+    // Shrink-only, all sizing modes. `riskCut` also withholds the tranche.
+    let riskCut = false;
+    if (young.young) {
+      size = applyRiskCut(size, microCut);
+      riskCut = true;
+    }
     // Viability floor, applied once, here — AFTER the ladder and regime have
     // had their say. A re-entry gets the lower floor because it reuses a token
     // account the first entry already paid rent for (see min_reentry_sol).
@@ -1799,7 +1810,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       ? minReentrySol(bankroll.walletSol)
       : minPositionSol(bankroll.walletSol);
     if (size < sizeFloor) {
-      recordSkip(cand.tokenMint, cand.pool.address, "ladder_below_min", score, { priorEntries24h, size, sizeFloor });
+      recordSkip(cand.tokenMint, cand.pool.address, "ladder_below_min", score, { priorEntries24h, size, sizeFloor, young: young.young });
       continue;
     }
     if (isMicro) {
@@ -1824,6 +1835,28 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       recordSkip(cand.tokenMint, cand.pool.address, "per_token_cap", score, { exposure, cap });
       continue;
     }
+    // Whale overhang (entryRisk.ts). Placed after already_positioned and the
+    // per-token cap so an open position's token does not spend a GMGN call
+    // every sweep; reads are cached per mint for 10 min for candidates that
+    // pass here and fail a later gate. "unavailable" is no signal, not a block.
+    const whale = await whaleCheck(
+      cand.tokenMint, cand.pool.address, vet.facts.jupLiquidityUsd, cand.pool.tvlUsd, !!env().gmgnApiKey,
+    );
+    if (whale.verdict === "skip") {
+      recordSkip(cand.tokenMint, cand.pool.address, "whale_overhang", score, { symbol: cand.symbol, whale, young });
+      console.log(`[enter] ${cand.symbol}: skip — ${whale.reason}`);
+      continue;
+    }
+    if (whale.verdict === "cut" && !riskCut) {
+      size = applyRiskCut(size, microCut);
+      riskCut = true;
+      if (size < sizeFloor) {
+        recordSkip(cand.tokenMint, cand.pool.address, "risk_cut_below_min", score, { size, sizeFloor, whale, young });
+        continue;
+      }
+    }
+    if (whale.verdict === "cut") console.log(`[enter] ${cand.symbol}: whale overhang — ${whale.reason}; reduced size, no tranche`);
+
     // Pool-share cap (§6): never become a dominant share of the pool — the
     // binding size limit as the bankroll grows. Clamp rather than skip; skip
     // only when the clamped size falls under the minimum. Fail-open if the
@@ -1997,6 +2030,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     const ofSwingHigh = swingHigh && swingHigh > 0 ? entryPrice / swingHigh : null;
     recordDecision(cand.tokenMint, cand.pool.address, "entered", null, score, {
       size, range, vet: vet.facts, pool: cand.pool, kelly, isAlpha, flow,
+      risk: { young, whale, riskCut },
       sleeve: isMicro ? "micro" : "meme",
       entryOfSwingHigh: ofSwingHigh,
       experiment: { feePath, isMicro, baseScore, trendingBonus, flowBonus, flowPenalty },
@@ -2023,7 +2057,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
       );
     }
     await alert("entry",
-      `${cand.symbol} pos#${pos.id}: entered ${size.toFixed(2)} SOL @ ${entryPrice.toPrecision(4)} (score ${score.toFixed(0)}/base ${baseScore.toFixed(0)}${isAlpha ? ", alpha" : ""}${isMicro ? ", micro" : ""}${feePath === "recent_hot" ? ", recent-hot" : ""}, range depth ${range.bottomPricePct.toFixed(0)}%)${flowNote}\n` +
+      `${cand.symbol} pos#${pos.id}: entered ${size.toFixed(2)} SOL @ ${entryPrice.toPrecision(4)} (score ${score.toFixed(0)}/base ${baseScore.toFixed(0)}${isAlpha ? ", alpha" : ""}${isMicro ? ", micro" : ""}${feePath === "recent_hot" ? ", recent-hot" : ""}, range depth ${range.bottomPricePct.toFixed(0)}%)${riskCut ? `\nreduced size: ${young.young ? `young token (${young.ageMin ?? "?"}m)` : whale.reason}` : ""}${flowNote}\n` +
       `chart: https://gmgn.ai/sol/token/${cand.tokenMint}`);
     console.log(
       `[enter] ${cand.symbol} score=${score.toFixed(1)} size=${size.toFixed(2)} SOL ` +
@@ -2034,7 +2068,9 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     // Second tranche — wider BidAsk pocket below primary when score clears the
     // gate and the primary left room above the P0-safe floor.
     const te = config().entry;
-    if (te.tranche_enabled && score >= te.tranche_score_min && !isMicro) {
+    // Never on a risk-cut entry: a young token or a whale overhang is exactly
+    // the crash-through case a deeper pocket would be filled by.
+    if (te.tranche_enabled && score >= te.tranche_score_min && !isMicro && !riskCut) {
       const tSize = size * (te.tranche_size_pct / 100);
       const tFloor = minPositionSol(bankroll.walletSol);
       const slotsLeft = bankroll.effectiveSlots - openPositionCount();
@@ -2065,6 +2101,10 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
                 range: tRent.range,
                 entryPrice,
                 trancheOf: pos.id,
+                // Keep the planned pocket BELOW the primary. Re-anchoring its
+                // top to the active bin (the primary's rule) stacked all 50
+                // live tranches on top of their primaries.
+                anchor: "planned",
               }));
               recordDecision(cand.tokenMint, cand.pool.address, "entered", null, score, {
                 tranche: true, primaryId: pos.id, size: tSize, range: tRent.range,
@@ -2282,7 +2322,16 @@ export async function runLoop(): Promise<void> {
       if (exec.sweepResiduals && Date.now() - lastSweep > RESIDUAL_SWEEP_INTERVAL_MS) {
         if (Date.now() - tickStart < pollMs) {
           lastSweep = Date.now();
-          for (const r of await exec.sweepResiduals(RESIDUAL_SWEEP_MIN_SOL)) {
+          // Housekeeping, not trading: an RPC hiccup here (Helius "account index
+          // service overloaded" on the token-accounts read) must not surface as
+          // a tick incident or skip retention. Next sweep retries in 10 min.
+          let swept: Awaited<ReturnType<NonNullable<typeof exec.sweepResiduals>>> = [];
+          try {
+            swept = await exec.sweepResiduals(RESIDUAL_SWEEP_MIN_SOL);
+          } catch (e) {
+            console.warn(`[farmer] residual sweep skipped:`, (e as Error).message.split("\n")[0]);
+          }
+          for (const r of swept) {
             const tag = r.positionId ? ` pos#${r.positionId}` : "";
             let restated = "";
             if (r.positionId) {

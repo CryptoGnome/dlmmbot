@@ -63,6 +63,26 @@ export interface Config {
     micro_tvl_min_usd: number; micro_max_pool_share_pct: number;
     micro_size_mult: number; micro_max_position_sol: number;
     micro_max_slots: number; micro_deploy_cap_pct: number;
+    /**
+     * Young-token risk cut (2026-09-27). Tokens younger than this (mint age,
+     * pool age as fallback) enter at young_size_mult, capped at
+     * young_max_position_sol, and never get a tranche. Optional: defaults in code.
+     */
+    young_max_age_min?: number; young_size_mult?: number; young_max_position_sol?: number;
+    /**
+     * Whale-overhang check at entry (GMGN holders vs token-wide liquidity).
+     * A "fresh" whale bought within whale_fresh_hold_min, holds at least
+     * whale_fresh_min_supply_pct of supply and sits at >= whale_fresh_min_profit_mult
+     * of its cost. Skip when one fresh whale's holdings are worth
+     * >= whale_skip_liquidity_frac of liquidity; apply the young-token cut when
+     * the unrealized profit of wallets that bought within whale_fresh_hold_min
+     * (top 20 holders) is >= whale_cut_fresh_overhang_frac of liquidity.
+     * Optional: defaults in code.
+     */
+    whale_check_enabled?: boolean;
+    whale_fresh_hold_min?: number; whale_fresh_min_supply_pct?: number;
+    whale_fresh_min_profit_mult?: number;
+    whale_skip_liquidity_frac?: number; whale_cut_fresh_overhang_frac?: number;
     fee_tvl_24h_min_pct: number; fee_tvl_30m_daily_min_pct: number;
     vol_30m_min_usd: number; vol_trend_min: number;
     base_fee_min_pct: number; base_fee_max_pct: number;

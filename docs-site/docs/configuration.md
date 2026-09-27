@@ -43,6 +43,15 @@ Every knob the bot obeys lives in one TOML file. Key facts before the tables:
 | `micro_max_position_sol` | `0.45` | Absolute micro position cap |
 | `micro_max_slots` | `1` | At most one micro position at a time |
 | `micro_deploy_cap_pct` | `5` | Max % of wallet in open micro positions |
+| `young_max_age_min` | `180` | Tokens younger than this (mint age; pool age if unknown) get the young-token cut |
+| `young_size_mult` | `0.5` | Young-token / whale-overhang size multiplier (not compounded with micro's) |
+| `young_max_position_sol` | `0.45` | Absolute cap on a risk-cut entry; risk-cut entries never get a tranche |
+| `whale_check_enabled` | `true` | One GMGN holders read per entry vs token-wide liquidity. No GMGN key → skipped |
+| `whale_fresh_hold_min` | `180` | A "fresh" wallet first bought within this many minutes |
+| `whale_fresh_min_supply_pct` | `2` | ...and holds at least this % of supply (to count as a fresh whale) |
+| `whale_fresh_min_profit_mult` | `1.5` | ...and its holdings are worth at least this multiple of their cost |
+| `whale_skip_liquidity_frac` | `0.25` | Skip when one fresh whale's holdings are worth ≥ this share of liquidity |
+| `whale_cut_fresh_overhang_frac` | `0.25` | Young-token cut when fresh wallets' paper profit is ≥ this share of liquidity |
 | `fee_tvl_24h_min_pct` | `20` | Min 24h fee/TVL, %/day |
 | `fee_tvl_30m_daily_min_pct` | `10` | Min 30m fee/TVL annualized to daily, %/day |
 | `vol_30m_min_usd` | `25000` | Min 30-minute volume |
@@ -119,7 +128,7 @@ Thresholds:
 | `bin_rent_hard_score_min` | `80` | Score needed for the two-array budget |
 | `bin_rent_max_pos_pct` | `25` | Rent is non-refundable, so it may not exceed this % of the position either. Identical to the soft budget at a 0.3 SOL entry; only binds on smaller ones. `0` = no cap |
 | `liquidity_slippage_pct` | `5.0` | Active-bin slippage at open (≈5 bins at step 100; 1% caused 100% of live open failures) |
-| `tranche_enabled` | `true` | Second, deeper BidAsk pocket for top scores |
+| `tranche_enabled` | `true` | Second, deeper BidAsk pocket for top scores (not on young / whale-overhang entries; opens below the primary) |
 | `tranche_score_min` | `85` | Score needed for a tranche |
 | `tranche_size_pct` | `50` | Tranche size as % of primary |
 | `tranche_max_down_pct` | `70` | Tranche target depth (clamped by the P0 safety margin to ~50%) |

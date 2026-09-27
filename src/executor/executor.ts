@@ -11,6 +11,13 @@ export interface OpenParams {
   range: RangePlan;
   entryPrice: number;
   trancheOf?: number;
+  /**
+   * "active" (default): the range top re-anchors to the live active bin,
+   * width preserved — the primary's rule. "planned": open exactly the planned
+   * bins, which must sit strictly below the active bin — a tranche pocket
+   * under its primary. Paper always opens the planned bins.
+   */
+  anchor?: "active" | "planned";
 }
 
 export interface PositionMark {

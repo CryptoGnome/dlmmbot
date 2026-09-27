@@ -20,6 +20,8 @@ export interface JupAssetSnapshot {
   sellVol24h: number | null;
   organicBuyVol24h: number | null;
   organicSellVol24h: number | null;
+  /** Total USD liquidity across every pool Jupiter routes through (not just ours). */
+  liquidityUsd: number | null;
   /** Display fields from the same search payload (for dashboard icons). */
   symbol: string | null;
   name: string | null;
@@ -98,6 +100,7 @@ async function fetchAsset(mint: string): Promise<JupAssetSnapshot | null> {
       sellVol24h: num(s24.sellVolume),
       organicBuyVol24h: num(s24.buyOrganicVolume),
       organicSellVol24h: num(s24.sellOrganicVolume),
+      liquidityUsd: num(a.liquidity),
       symbol,
       name,
       icon,
