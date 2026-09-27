@@ -210,6 +210,7 @@ export async function vetToken(mint: string, poolCreatedAtMs: number | null): Pr
   facts.jupDevMints = jup?.devMints ?? null;
   facts.jupTopHoldersPct = jup?.topHoldersPct ?? null;
   facts.jupOrganicVolShare24h = null;
+  facts.jupLiquidityUsd = jup?.liquidityUsd ?? null;
   if (jup) {
     const totalVol = (jup.buyVol24h ?? 0) + (jup.sellVol24h ?? 0);
     const organicVol = (jup.organicBuyVol24h ?? 0) + (jup.organicSellVol24h ?? 0);

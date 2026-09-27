@@ -55,6 +55,15 @@ Each sleeve (core, micro, majors, follow) has its own **SOL amount** or **% of d
 
 Follow-mode legs are **excluded** from the Kelly ledger — in Kelly mode they stay a small fixed `leg_size_sol`; in Fixed mode they use the Follow row.
 
+## Young tokens and whale overhang
+
+Two entry checks that can only **shrink** a position or skip it:
+
+- **Young token** — mint younger than **3 hours** (`young_max_age_min`): half size (`young_size_mult`), capped at **0.45 SOL** (`young_max_position_sol`), and no tranche. Young tokens earn most of the fees but carry nearly all of the −50% to −78% losses; over 551 live entries, age was the one signal that held in both halves of the history.
+- **Whale overhang** — one GMGN holders read per entry, compared with the token's total liquidity across every pool (from Jupiter). A *fresh whale* bought in the last 3 hours, holds ≥ 2% of supply and is up ≥ 1.5×. If one fresh whale's holdings are worth **≥ 25%** of liquidity, the entry is **skipped** (`whale_overhang`). If fresh wallets' combined paper profit is ≥ 25% of liquidity, the entry gets the young-token cut. Without a GMGN key, or while GMGN is rate-limited, this check simply doesn't run.
+
+Why: on 2026-09-27 two wallets that had bought REGULARS an hour earlier sold 7% of supply in 9 seconds. The price fell 67% inside one 15-second poll, faster than any exit rule can react. Every whale read is recorded on the entry so the thresholds can be tuned from results.
+
 ## Per-token and pool-share caps
 
 - **1** primary position per token (plus an optional tranche at score ≥ 85).

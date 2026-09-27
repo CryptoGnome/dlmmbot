@@ -68,6 +68,7 @@ export interface VetResult {
     jupDevMints?: number | null;
     jupTopHoldersPct?: number | null;
     jupOrganicVolShare24h?: number | null; // organic / total 24h volume, 0-1
+    jupLiquidityUsd?: number | null;       // token-wide liquidity, all pools (whale-overhang denominator)
   };
 }
 

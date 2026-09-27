@@ -12,7 +12,7 @@ vi.mock("../market.js", () => ({
   solUsdPrice: vi.fn(async () => 200),
 }));
 vi.mock("../vetting/vet.js", () => ({
-  vetToken: vi.fn(async () => ({ verdict: "pass", softScore: 80, hardFailures: [], soft: {} })),
+  vetToken: vi.fn(async () => ({ verdict: "pass", softScore: 80, hardFailures: [], soft: {}, facts: { tokenAgeMinutes: 5000 } })),
 }));
 // Bin-array rent is an on-chain read; let the planned range through untouched.
 vi.mock("../ranges/binRent.js", () => ({

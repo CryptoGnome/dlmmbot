@@ -53,6 +53,30 @@ micro_size_mult = 0.5        # half core Kelly size
 micro_max_position_sol = 0.45
 micro_max_slots = 1          # at most one micro position among max_positions
 micro_deploy_cap_pct = 5     # max % of wallet in open micro sleeve
+# Young-token risk cut (2026-09-27). Over 551 live entries the big losers were
+# young: median token age 134 min vs 1,360 for the rest, the one signal that
+# held in both halves of the history. Tokens < 6h old won 69% of the time but
+# lost -12.6% on an average loss (worst -78%) vs -2.4% for older tokens, at the
+# same position size. Half size on < 3h would have added ~+0.8 SOL and halved
+# the worst single loss. Young entries also never get a tranche.
+young_max_age_min = 180      # mint age (pool age if unknown); unknown age counts as young
+young_size_mult = 0.5
+young_max_position_sol = 0.45
+# Whale-overhang check at entry (2026-09-27, REGULARS pos#605): two wallets that
+# bought 1-1.5h earlier sat on ~3x paper gains and sold 7% of supply in 9s
+# (~136 SOL) into ~$58k of token-wide liquidity; price fell 67% inside one poll.
+# One GMGN holders call per entry, measured against Jupiter's token-wide
+# liquidity. Not backtestable (GMGN only serves current holders) — every read is
+# recorded on the entered decision (`risk.whale`) so the thresholds can be tuned.
+# GMGN down/banned -> the check is skipped, never blocks.
+whale_check_enabled = true
+whale_fresh_hold_min = 180        # "fresh" = first bought within this many minutes
+whale_fresh_min_supply_pct = 2    # ...holds at least this % of supply
+whale_fresh_min_profit_mult = 1.5 # ...and holdings are worth >= 1.5x their cost (REGULARS CE3e4… was ~2.1x)
+whale_skip_liquidity_frac = 0.25  # SKIP: one fresh whale's holdings >= 25% of liquidity
+whale_cut_fresh_overhang_frac = 0.25 # CUT (young sizing, no tranche): paper profit of wallets that bought
+                                  # within whale_fresh_hold_min >= 25% of liquidity. Fresh only: all-holder
+                                  # profit exceeded 30% of liquidity on 11/16 live tokens (2026-09-27).
 fee_tvl_24h_min_pct = 20         # %/day
 fee_tvl_30m_daily_min_pct = 10   # 30m ratio annualized to daily, %/day
 vol_30m_min_usd = 25000

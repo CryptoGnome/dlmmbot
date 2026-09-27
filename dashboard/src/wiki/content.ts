@@ -275,7 +275,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
       },
       {
         type: "p",
-        text: "Very high scores may add a second, deeper “tranche” pocket. Tranches count toward your max open slots. When that happens you see the same symbol twice in Open positions: the first one is tagged “core”, the second “tranche of #N” pointing back at it.",
+        text: "Very high scores may add a second, deeper “tranche” pocket below the first one — never on a young token or a whale-overhang entry. Tranches count toward your max open slots. When that happens you see the same symbol twice in Open positions: the first one is tagged “core”, the second “tranche of #N” pointing back at it.",
       },
       {
         type: "callout",
@@ -435,6 +435,8 @@ export const WIKI_SECTIONS: WikiSection[] = [
           { label: "Apply fraction", detail: "Bet kelly_fraction × f*, capped at max share of wallet." },
           { label: "Per-sleeve tweak", detail: "Settings → Kelly per-sleeve: Kelly (adaptive × mult), fixed SOL, or % deployable per core/micro/majors/follow. Since 2026-09-05 the core default is a flat 4% of deployable: the adaptive base had sized every entry at the 1% floor for a week after three bad closes, and the measured counterfactual (SIZING-MODE-DECISION.md Gate 3) differed by 233% against a 15% bar." },
           { label: "Score tilt", detail: "Scan score picks low/mid/high multiplier on the result." },
+          { label: "Young-token cut", detail: "Token under 3h old (young_max_age_min): half size, max 0.45 SOL, no tranche. Young tokens earn most of the fees but carry nearly all the −50% to −78% losses — age was the one signal that held across 551 live entries." },
+          { label: "Whale overhang", detail: "One GMGN holders read per entry vs the token's total liquidity (Jupiter). A wallet that bought in the last 3h, holds ≥2% and is up ≥1.5× is a fresh whale. Its holdings ≥25% of liquidity → skip (whale_overhang); fresh wallets' paper profit ≥25% → young-token cut. REGULARS 2026-09-27: two such wallets dumped 7% of supply in 9s. No GMGN → no check, never a block." },
           { label: "Floors", detail: "Never below the min position size; negative edge can block or clamp to the floor." },
         ],
       },

@@ -18,6 +18,7 @@
     "sim:backfill": "tsx src/sim/backfill.ts",
     "sim:skips": "tsx src/sim/skipBackfill.ts",
     "e2e:skips": "tsx src/e2e/skipEpisodes.ts",
+    "e2e:protection": "tsx src/e2e/entryProtection.ts",
     "halt": "tsx src/cli.ts halt",
     "pause": "tsx src/cli.ts pause",
     "blacklist": "tsx src/cli.ts blacklist",

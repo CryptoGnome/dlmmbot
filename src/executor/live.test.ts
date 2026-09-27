@@ -3,6 +3,7 @@ import {
   txErrorDetail,
   landedTxError,
   rangeGapTooLarge,
+  resolveOpenBins,
   shouldRebuildOpenOnSlippage,
   wealthDeltaLamports,
   OPEN_SLIPPAGE_REBUILDS,
@@ -170,5 +171,55 @@ describe("classifyLeftover — what a close left in the wallet", () => {
 
   it("returns no share when the mark is zero (empty close)", () => {
     expect(classifyLeftover(0.05, 0, true).share).toBeNull();
+  });
+});
+
+/**
+ * Live bin placement (2026-09-27). Failure modes written before the change:
+ *  F1 a tranche planned fully below active is lifted to the active bin
+ *  F2 price already inside/below the planned pocket still opens
+ *  F3 the 150-bin gap sanity no longer applies to planned pockets
+ *  F4 the primary ("active") rule changes: top, width, collapse refusal
+ *  F5 a rebuild moves a planned pocket (the rebuild path re-validates through
+ *     resolveOpenBins with the SAME bins, so F2's check is what it relies on)
+ *  F6 callers that pass no anchor stop getting the primary rule
+ * REGULARS pos#605/606 bins are the fixture: primary [-618,-567], tranche
+ * planned [-636,-619], opened live at [-582,-565] with active -566.
+ */
+describe("resolveOpenBins", () => {
+  const tranche = { minBinId: -636, maxBinId: -619 };
+  const primary = { minBinId: -618, maxBinId: -567 };
+
+  it("F1: keeps a planned pocket below active exactly where it was planned", () => {
+    expect(resolveOpenBins(tranche, -566, "planned")).toEqual({ minBin: -636, maxBin: -619 });
+  });
+
+  it("F1 regression: the active rule is what lifted the REGULARS tranche to [-582,-565]", () => {
+    expect(resolveOpenBins(tranche, -565, "active")).toEqual({ minBin: -582, maxBin: -565 });
+  });
+
+  it("F2: refuses when price has fallen into or below the pocket", () => {
+    expect(() => resolveOpenBins(tranche, -619, "planned")).toThrow(/not below active/);
+    expect(() => resolveOpenBins(tranche, -625, "planned")).toThrow(/not below active/);
+    expect(() => resolveOpenBins(tranche, -700, "planned")).toThrow(/not below active/);
+  });
+
+  it("F3: the gap sanity still applies to planned pockets", () => {
+    expect(() => resolveOpenBins(tranche, -619 + 151, "planned")).toThrow(/bins from on-chain active/);
+    expect(resolveOpenBins(tranche, -619 + 150, "planned")).toEqual({ minBin: -636, maxBin: -619 });
+  });
+
+  it("F4: primary re-anchors its top to active and keeps its width", () => {
+    expect(resolveOpenBins(primary, -560, "active")).toEqual({ minBin: -611, maxBin: -560 });
+    expect(resolveOpenBins(primary, -567, "active")).toEqual({ minBin: -618, maxBin: -567 });
+  });
+
+  it("F4: primary clamps to its planned floor when price fell, and refuses a collapsed ladder", () => {
+    expect(resolveOpenBins(primary, -580, "active")).toEqual({ minBin: -618, maxBin: -580 });
+    expect(() => resolveOpenBins(primary, -600, "active")).toThrow(/re-anchored range is/);
+  });
+
+  it("F6: no anchor means the primary rule", () => {
+    expect(resolveOpenBins(primary, -560)).toEqual(resolveOpenBins(primary, -560, "active"));
   });
 });
