@@ -38,14 +38,25 @@ function applyHolderGates(
 }
 
 /** Mint age source: RugCheck first (true token age), else DLMM pool createdAt. */
-export function resolveTokenCreatedAtMs(
+export function resolveTokenCreatedAt(
   rugDetectedAt: string | null | undefined,
+  jupCreatedAt: string | null | undefined,
   poolCreatedAtMs: number | null,
-): number | null {
-  const rug = rugDetectedAt ? Date.parse(rugDetectedAt) : NaN;
-  if (Number.isFinite(rug) && rug > 0) return rug;
+): { ms: number; source: "rugcheck" | "jupiter" | "pool" } | null {
+  const parse = (iso: string | null | undefined) => {
+    const ms = iso ? Date.parse(iso) : NaN;
+    return Number.isFinite(ms) && ms > 0 ? ms : null;
+  };
+  const rug = parse(rugDetectedAt);
+  if (rug != null) return { ms: rug, source: "rugcheck" };
+  // Jupiter's mint createdAt before pool age (2026-09-27). With RugCheck's
+  // detectedAt missing, a migrated token read its fresh DLMM pool as its
+  // birth: WORLD (minted 09-26 18:57) vetted as 51 min old, then as 1,361
+  // min on the next entry once RugCheck answered; bukangi (7 days) as 119 min.
+  const jup = parse(jupCreatedAt);
+  if (jup != null) return { ms: jup, source: "jupiter" };
   if (poolCreatedAtMs != null && Number.isFinite(poolCreatedAtMs) && poolCreatedAtMs > 0) {
-    return poolCreatedAtMs;
+    return { ms: poolCreatedAtMs, source: "pool" };
   }
   return null;
 }
@@ -221,9 +232,10 @@ export async function vetToken(mint: string, poolCreatedAtMs: number | null): Pr
   // Token mint age — not Meteora pool age. Migrated pump tokens often have a
   // brand-new DLMM pool while the mint is hours/days old; pool.createdAt caused
   // false age_min skips (and would under-count age_max the other way).
-  const tokenCreatedAtMs = resolveTokenCreatedAtMs(report?.detectedAt, poolCreatedAtMs);
-  if (tokenCreatedAtMs != null) {
-    const ageMin = (Date.now() - tokenCreatedAtMs) / 60_000;
+  const created = resolveTokenCreatedAt(report?.detectedAt, jup?.createdAt, poolCreatedAtMs);
+  facts.tokenAgeSource = created?.source ?? null;
+  if (created != null) {
+    const ageMin = (Date.now() - created.ms) / 60_000;
     facts.tokenAgeMinutes = Math.round(ageMin);
     if (v.age_min_enabled !== false && ageMin < v.age_min_minutes)
       fail("age_min", `${ageMin.toFixed(0)}m`, `${v.age_min_minutes}m`);

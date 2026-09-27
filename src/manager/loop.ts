@@ -1699,7 +1699,7 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     const microExp = isMicro ? microSleeveExposure() : null;
     // Young-token risk cut (entryRisk.ts): classified here, applied with the
     // micro cut below. Mint age from vet; pool age only when that is unknown.
-    const young = classifyYoung(vet.facts.tokenAgeMinutes, poolCreatedAtMs);
+    const young = classifyYoung(vet.facts.tokenAgeMinutes, poolCreatedAtMs, vet.facts.tokenAgeSource);
     if (isMicro && microExp!.slots >= g.micro_max_slots) {
       recordSkip(cand.tokenMint, cand.pool.address, "micro_slots_full", score, { ...microExp, max: g.micro_max_slots });
       continue;

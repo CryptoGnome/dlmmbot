@@ -32,6 +32,8 @@
  *  P9  a risk-cut entry exceeds young_max_position_sol or gets a tranche
  *  P10 a tranche opens at or above its primary's bottom bin
  *  P11 (report only) the thresholds fire on most live tokens — miscalibrated
+ *  P13 a migrated token's fresh DLMM pool is read as its mint age (WORLD was
+ *      vetted as 51 min old, bukangi as 119 min; both were days old)
  *  P12 an established token whose long-term holders sit on large paper gains
  *      is flagged (all-holder profit exceeded 30% of liquidity on 11/16 live
  *      tokens when measured — only FRESH wallets may count)
@@ -124,7 +126,7 @@ const { enterNewPositions, resetManagerStateForTests } = await import("../manage
   const payload = JSON.stringify({ data: { list: [vault, ce, sq] } });
   const rows = risk.parseHolderRows(payload, "3ktbi7CghEsnKrwpfgnDqYxbsscV1Nodpr3dSBoBbMfX");
 
-  const young = risk.classifyYoung(148, Date.parse("2026-09-27T14:02:23Z"), t605 * 1000);
+  const young = risk.classifyYoung(148, Date.parse("2026-09-27T14:02:23Z"), "rugcheck", t605 * 1000);
   check("P1", "REGULARS (token 148 min old) is classified young", young.young && young.source === "mint", young);
 
   // Token-wide liquidity at entry: our pool $12.1k + PumpSwap ~$46k.
@@ -155,6 +157,27 @@ const { enterNewPositions, resetManagerStateForTests } = await import("../manage
     nothing.verdict === "unavailable" && noLiq.verdict === "unavailable", { nothing: nothing.reason, noLiq: noLiq.reason });
 }
 
+// ------------------------------------------------------------- 1b. mint age
+// Real vetting of two migrated tokens, handed a pool created minutes ago —
+// the shape that made the pool-age fallback misread them.
+{
+  const fresh = Date.now() - 30 * 60_000;
+  const ages: Array<Record<string, unknown>> = [];
+  for (const [sym, mint, minMin] of [
+    ["WORLD", "CC5D6puFmcsnGaJh7kNXeAcRpL2SZzQfoQezvx45uKjt", 1_300],
+    ["bukangi", "3iUTyNYW6xKv5kZUjtbrEDTsuJTrSVwvB3bQtxkLpump", 9_000],
+  ] as const) {
+    try {
+      const v = await vetToken(mint, fresh);
+      ages.push({ sym, ageMin: v.facts.tokenAgeMinutes, source: v.facts.tokenAgeSource, ok:
+        (v.facts.tokenAgeMinutes ?? 0) >= minMin && v.facts.tokenAgeSource !== "pool" });
+    } catch (e) {
+      ages.push({ sym, error: (e as Error).message, ok: false });
+    }
+  }
+  check("P13", "migrated tokens vet with their mint age, not their fresh pool's", ages.every((a) => a.ok), ages);
+}
+
 // ------------------------------------------------------------- 2. live reads
 const gmgnKey = !!env().gmgnApiKey;
 const live: Array<Record<string, unknown>> = [];
@@ -180,7 +203,7 @@ try {
       live.push({ symbol: cand.symbol, vetError: (e as Error).message });
       continue;
     }
-    const young = risk.classifyYoung(vet.facts.tokenAgeMinutes, poolCreatedAtMs);
+    const young = risk.classifyYoung(vet.facts.tokenAgeMinutes, poolCreatedAtMs, vet.facts.tokenAgeSource);
     const rows = gmgnKey ? await risk.holderRowsFor(cand.tokenMint, cand.pool.address) : null;
     let whale;
     try {
