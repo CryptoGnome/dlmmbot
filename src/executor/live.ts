@@ -445,6 +445,26 @@ export class LiveExecutor implements Executor {
 
   /** As tokenBalanceRaw, but also returns the slot the RPC evaluated it at. */
   private async tokenBalanceWithSlot(mint: string): Promise<{ total: bigint; slot: number }> {
+    // One mint-filtered read: the RPC resolves Token vs Token-2022 from the
+    // mint's owner, and it is far lighter on Helius's account index than
+    // listing every token account the wallet holds (which returned "account
+    // index service overloaded", error #238). Same accounts, same total.
+    try {
+      const accs = await this.connection.getParsedTokenAccountsByOwner(this.wallet.publicKey, { mint: new PublicKey(mint) });
+      let total = 0n;
+      for (const acc of accs.value) {
+        const info = acc.account.data.parsed.info as { tokenAmount: { amount: string } };
+        total += BigInt(info.tokenAmount.amount);
+      }
+      return { total, slot: accs.context.slot };
+    } catch (e) {
+      console.warn(`[live] mint-filtered balance read failed, full scan:`, (e as Error).message.split("\n")[0]);
+      return this.tokenBalanceFullScan(mint);
+    }
+  }
+
+  /** Fallback for tokenBalanceWithSlot: list every token account and sum this mint's. */
+  private async tokenBalanceFullScan(mint: string): Promise<{ total: bigint; slot: number }> {
     let total = 0n;
     let slot = 0;
     const TOKEN_PROGRAMS = [
