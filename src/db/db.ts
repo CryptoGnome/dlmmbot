@@ -350,6 +350,15 @@ function migrate(database: Database.Database): void {
   try {
     database.exec("ALTER TABLE positions ADD COLUMN stranded_at INTEGER");
   } catch { /* column already exists */ }
+  // Ledger truth (2026-11-21 audit): two wallet flows no position carried.
+  // rent_reclaimed_sol — the token-account rent an entry pays inside
+  // open_cost_sol comes back when the sweep closes the emptied account, long
+  // after close_return_sol was measured. profit_burn_sol — the 1% product fee
+  // leaves the wallet after a winning close. Without them the book summed to
+  // -0.357 SOL against a wallet that was +0.403 on chain.
+  for (const col of ["rent_reclaimed_sol REAL NOT NULL DEFAULT 0", "profit_burn_sol REAL NOT NULL DEFAULT 0"]) {
+    try { database.exec(`ALTER TABLE positions ADD COLUMN ${col}`); } catch { /* column already exists */ }
+  }
   // pnl_daily: day-only PK → (day, mode). A paper→live flip mid-day used to
   // overwrite the day's paper row, deleting it from the promotion scoreboard.
   {
@@ -416,6 +425,7 @@ CREATE INDEX IF NOT EXISTS idx_error_log_ts ON error_log(ts DESC);
     "ever_in_range", "open_cost_sol", "close_return_sol", "fell_deep",
     "fees_measured_sol", "recovered_sol", "fees_at_close_sol", "follow_chain_id",
     "withdrawn_sol", "stranded_sol", "stranded_at", "close_requested_at",
+    "rent_reclaimed_sol", "profit_burn_sol",
   ];
   const missing = required.filter((c) => !cols.has(c));
   if (missing.length)
@@ -426,6 +436,23 @@ CREATE INDEX IF NOT EXISTS idx_error_log_ts ON error_log(ts DESC);
   const missingDecision = ["sweeps", "last_ts", "score_max"].filter((c) => !decisionCols.has(c));
   if (missingDecision.length)
     throw new Error(`decisions table is missing migrated column(s): ${missingDecision.join(", ")} — migration failed, refusing to start`);
+  // Restate history once the columns exist. Both are idempotent (see their
+  // meta markers), so a crash mid-backfill resumes instead of double counting.
+  // A restatement must never be the reason a bot with open positions fails to
+  // boot: it is idempotent and runs again on the next start and after the next
+  // reclaim / accrual, so on any error log and carry on.
+  try {
+    const rent = backfillRentReclaims(database);
+    const burn = backfillProfitBurns(database);
+    if (rent.creditedSol > 0 || rent.unattributedSol > 0 || burn.debitedSol > 0 || burn.unattributedSol > 0)
+      console.log(
+        `[db] ledger restated: +${rent.creditedSol.toFixed(6)} SOL rent reclaims credited ` +
+        `(${rent.unattributedSol.toFixed(6)} unattributed), -${burn.debitedSol.toFixed(6)} SOL profit burn debited ` +
+        `(${burn.unattributedSol.toFixed(6)} unattributed)`
+      );
+  } catch (e) {
+    console.error("[db] ledger restatement failed — continuing; it will retry:", (e as Error).message.split("\n")[0]);
+  }
 }
 
 /** Open and migrate a DB at an arbitrary path (tests use :memory: or a temp file). */
@@ -520,6 +547,8 @@ export const REALIZED_PNL_SQL = `
             + COALESCE(fees_measured_sol, 0)
             + COALESCE(withdrawn_sol, 0)
             + COALESCE(recovered_sol, 0)
+            + COALESCE(rent_reclaimed_sol, 0)
+            - COALESCE(profit_burn_sol, 0)
             + ${STRANDED_CREDIT_SQL}
             - COALESCE(open_cost_sol, entry_sol + COALESCE(rent_paid_sol, 0))
        WHEN entry_sol > 0 AND exit_sol IS NOT NULL
@@ -529,8 +558,233 @@ export const REALIZED_PNL_SQL = `
                    ELSE COALESCE(fees_claimed_sol, 0) END
             + COALESCE(withdrawn_sol, 0)
             + COALESCE(recovered_sol, 0)
+            + COALESCE(rent_reclaimed_sol, 0)
+            - COALESCE(profit_burn_sol, 0)
             + ${STRANDED_CREDIT_SQL}
        ELSE NULL END`;
+
+// ---- ledger truth: flows that reach the wallet outside open/close ----
+
+/**
+ * Credit reclaimed token-account rent to the entry that PAID it.
+ *
+ * The rent sits inside that entry's open_cost_sol: it is the first live
+ * position in the mint opened since the account's previous reclaim (the sweep
+ * only closes an account while the mint is idle, so no position spans one).
+ * Crediting the newest row instead — what the sweep does for recovered_sol —
+ * would hand a re-entry a 0.002 SOL win it did not earn and leave the payer
+ * showing a loss it did not take.
+ *
+ * Both bounds are timestamps, so the answer does not depend on the order
+ * history is replayed in or on which rows already hold a credit, and a
+ * position opened after `atTs` can never be credited. When no entry falls
+ * inside the window — the account was re-created by tokens sent to the wallet,
+ * not by an entry — the rent is still a real wallet gain in that mint, so the
+ * newest earlier position takes it rather than the book drifting from the
+ * wallet. Returns the credited id, or null when the mint has no live position
+ * before `atTs`.
+ */
+export function creditRentReclaim(
+  mint: string, sol: number, atTs: number = now(), database: Database.Database = getDb(),
+): number | null {
+  if (!Number.isFinite(sol) || sol <= 0) return null;
+  // Event detail is written by JSON.stringify, so the mint appears as "mint":"<mint>".
+  const prev = (database.prepare(
+    "SELECT COALESCE(MAX(ts), 0) AS ts FROM events WHERE type = 'rent_reclaim' AND ts < ? AND detail_json LIKE ?"
+  ).get(atTs, `%"mint":"${mint}"%`) as { ts: number }).ts;
+  const row = (database.prepare(
+    "SELECT id FROM positions WHERE token_mint = ? AND mode = 'live' AND entry_ts > ? AND entry_ts <= ? ORDER BY entry_ts ASC, id ASC LIMIT 1"
+  ).get(mint, prev, atTs) ?? database.prepare(
+    "SELECT id FROM positions WHERE token_mint = ? AND mode = 'live' AND entry_ts <= ? ORDER BY entry_ts DESC, id DESC LIMIT 1"
+  ).get(mint, atTs)) as { id: number } | undefined;
+  if (!row) return null;
+  database.prepare("UPDATE positions SET rent_reclaimed_sol = rent_reclaimed_sol + ? WHERE id = ?").run(sol, row.id);
+  return row.id;
+}
+
+/**
+ * Attribute rent-reclaim events that predate the per-token detail. They name
+ * only the token ACCOUNTS they closed, and mapping an account back to its mint
+ * needs the wallet's public key (an ATA is derived from owner + mint), which
+ * the database layer does not have — so backfillRentReclaims can only count
+ * them as unattributed, and the live executor calls this with a resolver once
+ * it has the wallet. An event is credited only if every one of its accounts
+ * resolves; it is then rewritten with a token list, which is what makes a
+ * second call (and every later backfill) skip it.
+ */
+export function attributeLegacyRentReclaims(
+  mintOfAccount: (account: string) => string | null, database: Database.Database = getDb(),
+): { creditedSol: number; events: number } {
+  let creditedSol = 0, done = 0;
+  // Read and write under one write lock (see backfillRentReclaims).
+  database.transaction(() => {
+    const events = database.prepare(
+      `SELECT id, ts, sol_delta, detail_json FROM events
+        WHERE type = 'rent_reclaim' AND position_id IS NULL AND sol_delta > 0
+          AND id <= ? AND detail_json IS NOT NULL AND detail_json NOT LIKE '%"tokens"%'
+        ORDER BY ts ASC, id ASC`
+    ).all(metaNumber(database, "rent_reclaim_backfill_event_id")) as Array<{ id: number; ts: number; sol_delta: number; detail_json: string }>;
+    for (const e of events) {
+      let detail: { accounts?: unknown } & Record<string, unknown>;
+      try { detail = JSON.parse(e.detail_json) as typeof detail; } catch { continue; }
+      const accounts = Array.isArray(detail.accounts) ? detail.accounts.filter((a): a is string => typeof a === "string") : [];
+      const mints = accounts.map(mintOfAccount);
+      if (accounts.length === 0 || mints.some((m) => m === null)) continue;
+      const share = e.sol_delta / accounts.length;
+      const tokens = accounts.map((account, i) => ({ mint: mints[i]!, account, sol: share }));
+      let credited = 0;
+      for (const t of tokens) if (creditRentReclaim(t.mint, share, e.ts, database) !== null) credited += share;
+      database.prepare("UPDATE events SET detail_json = ? WHERE id = ?")
+        .run(JSON.stringify({ ...detail, tokens, legacyAttributed: true }), e.id);
+      creditedSol += credited;
+      done++;
+    }
+    if (creditedSol > 0)
+      setMeta(database, "rent_reclaim_unattributed_sol",
+        Math.max(0, metaNumber(database, "rent_reclaim_unattributed_sol") - creditedSol));
+  }).immediate();
+  return { creditedSol, events: done };
+}
+
+/**
+ * Record SOL moved into (+) or out of (−) the bot wallet from outside, and move
+ * the account baseline by the same amount so "account since start" keeps
+ * measuring trading, not funding. The baseline is captured once and nothing
+ * else ever adjusts it: before this, a 10.31 SOL top-up would have reported
+ * +43.9% profit. Returns the new baseline, or null when none exists yet (the
+ * first close captures the funded wallet, so there is nothing to correct).
+ * Ledger kinds `deposit`/`withdrawal` are informational — computeBankroll only
+ * reads `bank` and `release`.
+ */
+export function recordExternalFlow(
+  mode: "paper" | "live", deltaSol: number, note: string, database: Database.Database = getDb(),
+): number | null {
+  if (!Number.isFinite(deltaSol) || deltaSol === 0) throw new Error("external flow must be a non-zero SOL amount");
+  const key = `baseline_sol_${mode}`;
+  let next: number | null = null;
+  // Read-modify-write under one write lock: the running bot and this CLI are
+  // separate processes on the same file.
+  database.transaction(() => {
+    const row = database.prepare("SELECT value FROM meta WHERE key = ?").get(key) as { value: string } | undefined;
+    const baseline = row ? Number(row.value) : null;
+    if (baseline !== null && baseline + deltaSol < 0)
+      throw new Error(`a withdrawal of ${(-deltaSol).toFixed(6)} SOL exceeds the ${baseline.toFixed(6)} SOL baseline`);
+    database.prepare("INSERT INTO ledger (ts, kind, sol, note) VALUES (?, ?, ?, ?)")
+      .run(now(), deltaSol > 0 ? "deposit" : "withdrawal", Math.abs(deltaSol), note);
+    if (baseline !== null) {
+      next = baseline + deltaSol;
+      database.prepare("UPDATE meta SET value = ? WHERE key = ?").run(next.toFixed(9), key);
+    }
+  }).immediate();
+  return next;
+}
+
+function metaNumber(database: Database.Database, key: string): number {
+  const row = database.prepare("SELECT value FROM meta WHERE key = ?").get(key) as { value: string } | undefined;
+  const n = row ? Number(row.value) : 0;
+  return Number.isFinite(n) ? n : 0;
+}
+function setMeta(database: Database.Database, key: string, value: number): void {
+  database.prepare(
+    "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+  ).run(key, String(value));
+}
+
+/**
+ * Apply every `rent_reclaim` event not yet applied onto positions, oldest
+ * first. This is the ONLY writer of rent_reclaimed_sol: the live sweep inserts
+ * its event and calls this, so history and new reclaims share one code path
+ * and one high-water mark, and neither can be counted twice. A batch tx closes
+ * up to 12 accounts for one measured delta; events record each account's exact
+ * share in `tokens[].sol`, and older events without it are split evenly. Events
+ * older than the token list fall back to their position_id. Whatever cannot be
+ * attributed is accumulated in meta `rent_reclaim_unattributed_sol` instead of
+ * being dropped. The high-water mark makes a second run a no-op.
+ */
+export function backfillRentReclaims(database: Database.Database = getDb()): { creditedSol: number; unattributedSol: number } {
+  const MARK = "rent_reclaim_backfill_event_id";
+  let creditedSol = 0, unattributedSol = 0;
+  // The high-water mark is read INSIDE an immediate (write-locked) transaction.
+  // Every process that opens the DB runs this — the bot, and any `npm run
+  // status|deposit|sim` beside it — and with the mark read outside, two of them
+  // could both see an unapplied event and both credit it, permanently.
+  const run = database.transaction(() => {
+    const from = metaNumber(database, MARK);
+    let last = from;
+    const events = database.prepare(
+      `SELECT id, ts, position_id, sol_delta, detail_json FROM events
+        WHERE type = 'rent_reclaim' AND id > ? AND sol_delta IS NOT NULL AND sol_delta > 0
+        ORDER BY id ASC`
+    ).all(from) as Array<{ id: number; ts: number; position_id: number | null; sol_delta: number; detail_json: string | null }>;
+    for (const e of events) {
+      let tokens: Array<{ mint: string; sol?: number }> = [];
+      try {
+        const d = JSON.parse(e.detail_json ?? "{}") as { tokens?: Array<{ mint?: unknown; sol?: unknown }> };
+        tokens = (d.tokens ?? [])
+          .filter((t): t is { mint: string; sol?: number } => typeof t.mint === "string")
+          .map((t) => ({ mint: t.mint, sol: typeof t.sol === "number" ? t.sol : undefined }));
+      } catch { /* malformed detail: fall through to position_id */ }
+      if (tokens.length) {
+        // Exact per-account shares when the reclaim recorded them, else an even split.
+        const exact = tokens.every((t) => t.sol !== undefined);
+        for (const t of tokens) {
+          const share = exact ? t.sol! : e.sol_delta / tokens.length;
+          if (creditRentReclaim(t.mint, share, e.ts, database) !== null) creditedSol += share;
+          else unattributedSol += Math.max(0, share);
+        }
+      } else if (e.position_id !== null && database.prepare(
+        "UPDATE positions SET rent_reclaimed_sol = rent_reclaimed_sol + ? WHERE id = ? AND mode = 'live'"
+      ).run(e.sol_delta, e.position_id).changes === 1) {
+        creditedSol += e.sol_delta;
+      } else {
+        unattributedSol += e.sol_delta;
+      }
+      last = e.id;
+    }
+    if (last !== from) setMeta(database, MARK, last);
+    if (unattributedSol > 0)
+      setMeta(database, "rent_reclaim_unattributed_sol", metaNumber(database, "rent_reclaim_unattributed_sol") + unattributedSol);
+  });
+  run.immediate();
+  return { creditedSol, unattributedSol };
+}
+
+/**
+ * Debit every `profit_burn_accrue` ledger row not yet applied to the position
+ * its note names (`pos#<id> …`). The accrual is the fee; the later
+ * `profit_burn` row is the same SOL being spent, so only accruals count. Like
+ * the rent backfill this is the only writer of its column: accrueProfitBurn
+ * inserts the ledger row and calls it.
+ */
+export function backfillProfitBurns(database: Database.Database = getDb()): { debitedSol: number; unattributedSol: number } {
+  const MARK = "profit_burn_backfill_ledger_id";
+  let debitedSol = 0, unattributedSol = 0;
+  const run = database.transaction(() => { // mark read under the write lock — see backfillRentReclaims
+    const from = metaNumber(database, MARK);
+    let last = from;
+    const rows = database.prepare(
+      "SELECT id, sol, note FROM ledger WHERE kind = 'profit_burn_accrue' AND id > ? AND sol > 0 ORDER BY id ASC"
+    ).all(from) as Array<{ id: number; sol: number; note: string | null }>;
+    for (const r of rows) {
+      const m = /^pos#(\d+)\b/.exec(r.note ?? "");
+      const pos = m ? database.prepare("SELECT mode FROM positions WHERE id = ?").get(Number(m[1])) as { mode: string } | undefined : undefined;
+      // Paper never spends the fee (the pot is logged, not sent), so a paper
+      // position is not debited: doing so would shrink the paper wallet and
+      // restate the paper days the promotion streak is counted on.
+      if (pos?.mode === "paper") { last = r.id; continue; }
+      if (pos && database.prepare(
+        "UPDATE positions SET profit_burn_sol = profit_burn_sol + ? WHERE id = ?"
+      ).run(r.sol, Number(m![1])).changes === 1) debitedSol += r.sol;
+      else unattributedSol += r.sol;
+      last = r.id;
+    }
+    if (last !== from) setMeta(database, MARK, last);
+    if (unattributedSol > 0)
+      setMeta(database, "profit_burn_unattributed_sol", metaNumber(database, "profit_burn_unattributed_sol") + unattributedSol);
+  });
+  run.immediate();
+  return { debitedSol, unattributedSol };
+}
 
 // ---- blacklist helpers (STRATEGY.md §6) ----
 

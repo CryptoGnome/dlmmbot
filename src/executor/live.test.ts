@@ -223,3 +223,149 @@ describe("resolveOpenBins", () => {
     expect(resolveOpenBins(primary, -560)).toEqual(resolveOpenBins(primary, -560, "active"));
   });
 });
+
+import { landedOpenShape, openCostFromTxDeltas, splitRentReclaim } from "./executor.js";
+
+// Written before the fix (2026-11-21 audit). Ways a two-account open can go wrong:
+//   O1  account 1 lands, account 2 fails, and the landed SOL is left with no row
+//   O2  the recorded size is the PLANNED size, so stops and exposure read against capital that never left the wallet
+//   O3  the recorded bin range still spans the account that never opened
+//   O4  nothing landed, and a row is written anyway
+describe("landedOpenShape — a later position account failing must not orphan the first", () => {
+  const top = { min: -350, max: -300, share: 0.35 };
+  const bottom = { min: -400, max: -351, share: 0.65 };
+
+  it("O1/O2/O3: records only what landed, at its own share and bins", () => {
+    expect(landedOpenShape([top], 1.0)).toEqual({ sizeSol: 0.35, minBin: -350, maxBin: -300 });
+  });
+  it("a full open is the planned size over the full range", () => {
+    const s = landedOpenShape([top, bottom], 0.8)!;
+    expect(s.sizeSol).toBeCloseTo(0.8, 10);
+    expect([s.minBin, s.maxBin]).toEqual([-400, -300]);
+  });
+  it("O4: nothing landed is not a position", () => {
+    expect(landedOpenShape([], 1.0)).toBeNull();
+  });
+  it("never reports more than was planned if shares overshoot by rounding", () => {
+    expect(landedOpenShape([{ ...top, share: 0.6 }, { ...bottom, share: 0.6 }], 1)!.sizeSol).toBe(1);
+  });
+});
+
+//   R1  the shares do not sum to the tx delta, so the book drifts from the wallet
+//   R2  an unfetchable tx records zero for rent that did come back
+//   R3  a Token-2022 account (more rent) is credited the same as a plain one
+describe("splitRentReclaim", () => {
+  it("R1/R3: shares follow lamports and sum to the measured delta", () => {
+    const shares = splitRentReclaim([2_039_280, 2_074_080], 0.004108);
+    expect(shares[0]! + shares[1]!).toBeCloseTo(0.004108, 12);
+    expect(shares[1]!).toBeGreaterThan(shares[0]!);
+  });
+  it("R2: an unknown delta falls back to the lamports that were in the accounts", () => {
+    expect(splitRentReclaim([2_039_280], null)).toEqual([0.00203928]);
+  });
+  it("handles no accounts and zero-lamport accounts without dividing by zero", () => {
+    expect(splitRentReclaim([], 0.002)).toEqual([]);
+    expect(splitRentReclaim([0, 0], 0.002)).toEqual([0.001, 0.001]);
+  });
+});
+
+//   C1  one of two open txs is unreadable and the half that was read becomes the basis
+//   C2  a tx that paid the wallet (not an open) is taken as a negative cost
+describe("openCostFromTxDeltas — cost basis of an adopted position", () => {
+  it("sums every account's open tx", () => {
+    expect(openCostFromTxDeltas([-0.4, -0.352502])).toBeCloseTo(0.752502, 9);
+  });
+  it("C1: any unknown delta means unknown, never a partial basis", () => {
+    expect(openCostFromTxDeltas([-0.4, null])).toBeNull();
+    expect(openCostFromTxDeltas([])).toBeNull();
+  });
+  it("C2: a net inflow is not an open cost", () => {
+    expect(openCostFromTxDeltas([0.2])).toBeNull();
+  });
+});
+
+import { sumKnownFeesSol } from "./executor.js";
+
+// Written before the fix. events.tx_cost_sol was a constant per event type
+// (0.0005 per open/claim tx, 0.001 per close) — 1.57 SOL reported against 0.10
+// SOL actually paid. Ways the measured replacement can be wrong:
+//   F1  one tx's fee is unknown and the rest are reported as the whole cost
+//   F2  an event with no txs reports a cost
+describe("sumKnownFeesSol", () => {
+  const fees = new Map([["a", 5_000], ["b", 25_000]]);
+  it("sums the fee of every tx in lamports → SOL", () => {
+    expect(sumKnownFeesSol(["a", "b"], fees)).toBeCloseTo(0.00003, 12);
+  });
+  it("F1: any unknown fee means unknown, so the caller keeps its estimate", () => {
+    expect(sumKnownFeesSol(["a", "zzz"], fees)).toBeNull();
+  });
+  it("F2: no txs cost nothing", () => {
+    expect(sumKnownFeesSol([], fees)).toBe(0);
+  });
+});
+
+import { ataMintIndex } from "./live.js";
+
+// Written before the fix. Old rent-reclaim events name only token ACCOUNTS; the
+// index maps an account back to its mint. Ways it can be wrong:
+//   I1  a Token-2022 mint's account is missed (it derives a different address)
+//   I2  one malformed mint in the positions table throws and nothing is attributed
+describe("ataMintIndex", () => {
+  const owner = new PublicKey("9DTThTbggnp2P2ZGLFRfN1A3j5JUsXez1dRJak3TixB2");
+  const usdc = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+  it("I1: indexes both the classic and the Token-2022 account of every mint", () => {
+    const idx = ataMintIndex(owner, [usdc, SOL_MINT]);
+    expect(idx.size).toBe(4);
+    expect([...idx.values()].filter((m) => m === usdc)).toHaveLength(2);
+    expect(new Set(idx.keys()).size).toBe(4);
+  });
+  it("I2: skips a malformed mint instead of throwing", () => {
+    const idx = ataMintIndex(owner, ["not-a-mint", usdc]);
+    expect(idx.size).toBe(2);
+  });
+});
+
+import { chunkBins, strayChainAccounts } from "./executor.js";
+
+// Found in review, written before the fix. A two-account open sends the top
+// account first. If that tx hits bin slippage, open() re-anchors the range to
+// the new active bin — but the second account still used bins computed from the
+// ORIGINAL top, so the two accounts overlapped or left a gap by the shift and
+// the recorded min_bin_id was off by it.
+//   K1  the second account is not contiguous with the first after a re-anchor
+//   K2  the accounts together do not span exactly [curMin, curMax]
+describe("chunkBins — position accounts tile the CURRENT range", () => {
+  it("K1/K2: after the range re-anchors 7 bins lower, account 2 follows account 1", () => {
+    const curMax = -307, curMin = -407; // 101 bins, shifted down from [-400,-300]
+    const top = chunkBins(0, curMin, curMax);
+    const bottom = chunkBins(1, curMin, curMax);
+    expect(top).toEqual({ min: -375, max: -307 });
+    expect(bottom).toEqual({ min: -407, max: -376 });
+    expect(bottom.max).toBe(top.min - 1);
+  });
+  it("a range that fits one account is a single chunk", () => {
+    expect(chunkBins(0, -350, -300)).toEqual({ min: -350, max: -300 });
+  });
+});
+
+//   S1  an account the bot opened but never recorded (tx fate unknown, landed
+//       later) sits in a pool that already has an open row, so boot reconcile
+//       skipped the whole pool and it stayed unmanaged
+//   S2  an account belonging to a CLOSED row (its close never completed) is
+//       grafted onto a different open position
+//   S3  an empty shell is treated as a stray position
+describe("strayChainAccounts", () => {
+  const acct = (pubkey: string, hasLiquidity = true) => ({ pubkey, hasLiquidity });
+  it("S1: an untracked funded account in a pool with an open row is a stray", () => {
+    const r = strayChainAccounts([acct("a"), acct("x")], new Set(["a"]), new Set(["a"]));
+    expect(r).toEqual({ attach: ["x"], foreign: [] });
+  });
+  it("S2: an account some closed row still owns is reported, never attached", () => {
+    const r = strayChainAccounts([acct("a"), acct("old")], new Set(["a"]), new Set(["a", "old"]));
+    expect(r).toEqual({ attach: [], foreign: ["old"] });
+  });
+  it("S3: empty shells and tracked accounts are ignored", () => {
+    const r = strayChainAccounts([acct("a"), acct("shell", false)], new Set(["a"]), new Set(["a"]));
+    expect(r).toEqual({ attach: [], foreign: [] });
+  });
+});

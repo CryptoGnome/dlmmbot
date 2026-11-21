@@ -10,7 +10,7 @@ import { blacklist, describeError, getDb, now, pruneHistory, recordConfigSnapsho
 import { RESIDUAL_SWEEP_MIN_SOL } from "../executor/executor.js";
 import type { Executor } from "../executor/executor.js";
 import { LiveExecutor } from "../executor/live.js";
-import { executeProfitBurn, profitBurnSpendSol, accrueProfitBurn, readProfitBurnAccrued, writeProfitBurnAccrued, PROFIT_BURN } from "../executor/profitBurn.js";
+import { executeProfitBurn, profitBurnSpendSol, accrueProfitBurn, readProfitBurnAccrued, shouldFlushProfitBurn, writeProfitBurnAccrued, PROFIT_BURN } from "../executor/profitBurn.js";
 import { PaperExecutor } from "../executor/paper.js";
 import { rollupDaily } from "../pnl/rollup.js";
 import { fetchSummary } from "../vetting/rugcheck.js";
@@ -409,13 +409,17 @@ async function maybeProfitBurn(
   });
 }
 
-/** Burn the whole accrued pot (any size > 0). Used after closes and on manage ticks. */
+/**
+ * Burn the whole accrued pot once it is worth a transaction
+ * (PROFIT_BURN.min_flush_sol); a smaller pot stays accrued for the next call.
+ * Used after closes and on manage ticks.
+ */
 async function flushProfitBurn(
   exec: Executor,
   ctx?: { measuredPnlSol: number; positionId: number; symbol: string },
 ): Promise<void> {
   const accrued = readProfitBurnAccrued();
-  if (!(accrued > 0)) return;
+  if (!shouldFlushProfitBurn(accrued)) return;
 
   if (exec.mode !== "live" || !(exec instanceof LiveExecutor)) {
     getDb().prepare(
@@ -1556,7 +1560,7 @@ async function tryDisplacement(exec: Executor, candScore: number, candMint: stri
 
 /** Entry pipeline: scan -> vet -> size -> open, respecting portfolio limits. */
 export async function enterNewPositions(exec: Executor): Promise<void> {
-  const walletSol = await exec.walletSol();
+  let walletSol = await exec.walletSol();
   if (circuitBreakerTripped(walletSol)) {
     console.log("[risk] circuit breaker tripped — no new entries");
     if (!breakerAlerted) {
@@ -2017,6 +2021,21 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     // computeBankroll's deployed sum shrinks deployable for the NEXT candidate.
     // A single pre-sweep snapshot let several entries in one sweep collectively
     // overshoot deployable (paper silently; live via failed sends).
+    // What actually went on chain. A two-account open whose second account
+    // failed is recorded at its landed size (LiveExecutor.open), and everything
+    // below — the decision row, the alert, the tranche — must describe that.
+    const partialOpen = pos.entrySol < size * 0.999;
+    size = pos.entrySol;
+    // Re-read the wallet too: live equity is free balance + deployed, and the
+    // pre-fill balance still held the SOL that just went into the position, so
+    // equity was overstated by the whole fill for the rest of the sweep
+    // (logged 25.683 against a true 25.19 on 09-25). On a failed read keep the
+    // old figure — overstated as before, never blocking the entry path.
+    try {
+      walletSol = await exec.walletSol();
+    } catch (e) {
+      console.warn("[enter] wallet re-read after fill failed:", (e as Error).message.split("\n")[0]);
+    }
     bankroll = computeBankroll(walletSol);
 
     // Live-experiment cohort tags (2026-08-07): fee-gate path, mcap band, and
@@ -2070,7 +2089,9 @@ export async function enterNewPositions(exec: Executor): Promise<void> {
     const te = config().entry;
     // Never on a risk-cut entry: a young token or a whale overhang is exactly
     // the crash-through case a deeper pocket would be filled by.
-    if (te.tranche_enabled && score >= te.tranche_score_min && !isMicro && !riskCut) {
+    // ...nor under a partial open: the tranche pocket is planned below the
+    // primary's bottom bin, and a primary missing its lower account leaves a gap.
+    if (te.tranche_enabled && score >= te.tranche_score_min && !isMicro && !riskCut && !partialOpen) {
       const tSize = size * (te.tranche_size_pct / 100);
       const tFloor = minPositionSol(bankroll.walletSol);
       const slotsLeft = bankroll.effectiveSlots - openPositionCount();
@@ -2335,11 +2356,12 @@ export async function runLoop(): Promise<void> {
             const tag = r.positionId ? ` pos#${r.positionId}` : "";
             let restated = "";
             if (r.positionId) {
+              // The one formula, so this line can never disagree with the book.
               const p = getDb().prepare(
-                "SELECT open_cost_sol o, close_return_sol c, fees_measured_sol f, recovered_sol v, withdrawn_sol w FROM positions WHERE id = ?"
-              ).get(r.positionId) as { o: number | null; c: number | null; f: number; v: number; w: number } | undefined;
-              if (p?.o != null && p.c != null) {
-                restated = `\n${r.symbol} pos#${r.positionId} true PnL now ${(p.c + p.f + p.v + p.w - p.o >= 0 ? "+" : "")}${(p.c + p.f + p.v + p.w - p.o).toFixed(4)} SOL`;
+                `SELECT (${REALIZED_PNL_SQL}) AS pnl FROM positions WHERE id = ? AND open_cost_sol IS NOT NULL AND close_return_sol IS NOT NULL`
+              ).get(r.positionId) as { pnl: number | null } | undefined;
+              if (p?.pnl != null) {
+                restated = `\n${r.symbol} pos#${r.positionId} true PnL now ${p.pnl >= 0 ? "+" : ""}${p.pnl.toFixed(4)} SOL`;
               }
             }
             await alert("claim", `🧹 [sweep] sold stranded ${r.symbol}${tag} residue for ${r.soldSol.toFixed(4)} SOL${restated}`);

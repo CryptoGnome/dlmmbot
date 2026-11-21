@@ -150,6 +150,27 @@ describe("follow state machine", () => {
     expect(loadChain().state).toBe("done");
     expect(loadChain().end_reason).toBe("leg_P1_stop");
   });
+
+  // Written before the fix (2026-11-21 audit, chain #18: stored 0 against a
+  // leg worth -0.0190). A chain can end on its own — expiry, a cold pool, the
+  // loss budget — while a leg is still open. That leg's result is still the
+  // chain's, and its close must not reopen or re-end the chain.
+  it("a leg that closes after its chain already ended still counts toward chain PnL", () => {
+    const id = insertOpenPosition({ entrySol: 0.3, entryPrice: 1 });
+    const pos: Position = {
+      id, mode: "paper", poolAddress: "pool1", tokenMint: "mint1", symbol: "TST",
+      trancheOf: null, entryTs: now(), entryPrice: 1, entrySol: 0.3, minBinId: 1, maxBinId: 10,
+      state: "open", feesClaimedSol: 0, rentPaidSol: 0, profitLockFires: 0,
+      exitTs: null, exitSol: null, exitReason: null,
+    };
+    armFollowChain(pos, 1);
+    const chainId = loadChain().id as number;
+    getDb().prepare("UPDATE follow_chains SET state='done', end_reason='expired', legs=1, chain_pnl_sol=0.01 WHERE id=?").run(chainId);
+    onFollowLegClosed({ ...pos, followChainId: chainId }, "P1_stop", -0.019);
+    expect(loadChain().chain_pnl_sol).toBeCloseTo(0.01 - 0.019, 9);
+    expect(loadChain().state).toBe("done");
+    expect(loadChain().end_reason).toBe("expired");
+  });
 });
 
 describe("follow arming and dip timeout (2026-08-17)", () => {

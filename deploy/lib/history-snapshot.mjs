@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createRequire } from "node:module";
-import { REALIZED_PNL } from "./live-book-snapshot.mjs";
+import { PNL } from "./live-book-snapshot.mjs";
 import { resolveBotMode } from "./bot-mode.mjs";
 import { runtimePaths } from "./runtime-paths.mjs";
 
@@ -15,10 +15,14 @@ function openDb(root) {
   return new Database(runtimePaths(root).dbPath, { readonly: true, fileMustExist: true });
 }
 
+// Ranges start on a UTC day boundary. The equity chart is built from whole
+// pnl_daily rows while every other figure filtered on `exit_ts >= since`; with
+// `since` mid-day the chart counted the cutoff day's morning and the headline
+// did not (30d: 0.0226 vs 0.0143). One boundary for both.
 function rangeStart(range, now) {
-  if (range === "7d") return now - 7 * 86_400;
-  if (range === "30d") return now - 30 * 86_400;
-  return 0;
+  const days = range === "7d" ? 7 : range === "30d" ? 30 : 0;
+  if (!days) return 0;
+  return Math.floor((now - days * 86_400) / 86_400) * 86_400;
 }
 
 function round6(n) {
@@ -75,7 +79,7 @@ export function buildHistorySnapshot(root, range = "30d") {
     const exitDaily = db.prepare(
       `SELECT date(exit_ts,'unixepoch') AS day,
               COUNT(*) AS n,
-              ROUND(SUM(${REALIZED_PNL}), 6) AS pnl,
+              ROUND(SUM(${PNL}), 6) AS pnl,
               ROUND(SUM(entry_sol), 6) AS entry_sol
        FROM positions
        WHERE mode = ? AND exit_ts IS NOT NULL AND exit_ts >= ?
@@ -94,7 +98,7 @@ export function buildHistorySnapshot(root, range = "30d") {
     const exitByReason = db.prepare(
       `SELECT exit_reason AS reason,
               COUNT(*) AS n,
-              ROUND(SUM(${REALIZED_PNL}), 6) AS pnl,
+              ROUND(SUM(${PNL}), 6) AS pnl,
               ROUND(SUM(entry_sol), 6) AS entry_sol
        FROM positions
        WHERE mode = ? AND exit_ts IS NOT NULL AND exit_ts >= ?
@@ -112,7 +116,7 @@ export function buildHistorySnapshot(root, range = "30d") {
               exit_reason,
               datetime(exit_ts,'unixepoch') AS at,
               exit_ts,
-              ROUND((${REALIZED_PNL}), 6) AS pnl,
+              ROUND(${PNL}, 6) AS pnl,
               ROUND(entry_sol, 4) AS entry_sol,
               ROUND(COALESCE(rent_paid_sol, 0), 6) AS rent_paid_sol,
               ROUND(open_cost_sol, 6) AS open_cost_sol,
@@ -120,7 +124,10 @@ export function buildHistorySnapshot(root, range = "30d") {
               ROUND(COALESCE(fees_measured_sol, 0), 6) AS fees_measured_sol,
               ROUND(COALESCE(fees_claimed_sol, 0), 6) AS fees_claimed_sol,
               ROUND(COALESCE(recovered_sol, 0), 6) AS recovered_sol,
-              ROUND(COALESCE(stranded_sol, 0), 6) AS stranded_sol,
+              ROUND(CASE WHEN COALESCE(stranded_at, 0) > CAST(strftime('%s','now') AS INTEGER) - 1800
+                         THEN COALESCE(stranded_sol, 0) ELSE 0 END, 6) AS stranded_sol,
+              ROUND(COALESCE(rent_reclaimed_sol, 0), 6) AS rent_reclaimed_sol,
+              ROUND(COALESCE(profit_burn_sol, 0), 6) AS profit_burn_sol,
               ROUND(COALESCE(fees_at_close_sol, 0), 6) AS fees_at_close_sol,
               ROUND(exit_sol, 6) AS exit_sol
        FROM positions
@@ -226,7 +233,7 @@ export function buildHistorySnapshot(root, range = "30d") {
               entry_ts, exit_ts, entry_sol,
               follow_chain_id,
               ever_in_range,
-              (${REALIZED_PNL}) AS pnl,
+              ${PNL} AS pnl,
               -- Same rule as the ladder's Fees column, so the two views agree.
               -- COALESCE alone never reached fees_claimed_sol (fees_measured_sol
               -- is NOT NULL DEFAULT 0, so a legacy row read as zero fees), and
@@ -236,7 +243,8 @@ export function buildHistorySnapshot(root, range = "30d") {
                          ELSE COALESCE(fees_claimed_sol, 0) END
                     + COALESCE(fees_at_close_sol, 0), 6) AS fees_sol,
               ROUND(COALESCE(recovered_sol, 0), 6) AS recovered_sol,
-              ROUND(COALESCE(stranded_sol, 0), 6) AS stranded_sol,
+              ROUND(CASE WHEN COALESCE(stranded_at, 0) > CAST(strftime('%s','now') AS INTEGER) - 1800
+                         THEN COALESCE(stranded_sol, 0) ELSE 0 END, 6) AS stranded_sol,
               open_cost_sol, close_return_sol, exit_sol
        FROM positions
        WHERE mode = ? AND exit_ts IS NOT NULL AND exit_ts >= ?`

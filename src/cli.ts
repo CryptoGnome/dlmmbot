@@ -1,7 +1,7 @@
 import { writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { isLive, startConfigWatcher } from "./config.js";
-import { getDb, REALIZED_PNL_SQL } from "./db/db.js";
+import { getDb, REALIZED_PNL_SQL, recordExternalFlow } from "./db/db.js";
 import { runLoop } from "./manager/loop.js";
 import { scan } from "./scanner/scan.js";
 import { vetToken } from "./vetting/vet.js";
@@ -69,6 +69,12 @@ async function main(): Promise<void> {
       console.log(`open positions: ${open.length}`);
       console.table(open);
       console.log(`closed: ${closed.n}  realized PnL (measured): ${closed.pnl.toFixed(4)} SOL`);
+      // What the figure above already nets in, so it can be reconciled against
+      // the wallet: rent that came back after the close, and the 1% burn fee.
+      const flows = db.prepare(
+        "SELECT COALESCE(SUM(rent_reclaimed_sol), 0) AS rent, COALESCE(SUM(profit_burn_sol), 0) AS burn FROM positions WHERE exit_ts IS NOT NULL"
+      ).get() as { rent: number; burn: number };
+      console.log(`  incl. +${flows.rent.toFixed(4)} SOL token-account rent reclaimed, -${flows.burn.toFixed(4)} SOL profit-burn fee`);
       // Disclosure only — this is already inside realized above, via
       // fees_measured_sol on claims and close_return_sol on close-time fees.
       console.log(`  of which fee income: ${closed.fees.toFixed(4)} SOL`);
@@ -150,7 +156,7 @@ async function main(): Promise<void> {
       //   npm run release -- 0.05    -> release that much
       const db = getDb();
       const banked = (db.prepare(
-        "SELECT COALESCE(SUM(CASE kind WHEN 'bank' THEN sol ELSE -sol END), 0) AS b FROM ledger"
+        "SELECT COALESCE(SUM(CASE kind WHEN 'bank' THEN sol WHEN 'release' THEN -sol ELSE 0 END), 0) AS b FROM ledger"
       ).get() as { b: number }).b;
       if (banked <= 0) { console.log(`nothing banked (net ${banked.toFixed(6)} SOL) — nothing to release`); break; }
 
@@ -167,12 +173,34 @@ async function main(): Promise<void> {
       const res = db.prepare("INSERT INTO ledger (ts, kind, sol, note) VALUES (?, 'release', ?, ?)")
         .run(ts, amount, note);
       const after = (db.prepare(
-        "SELECT COALESCE(SUM(CASE kind WHEN 'bank' THEN sol ELSE -sol END), 0) AS b FROM ledger"
+        "SELECT COALESCE(SUM(CASE kind WHEN 'bank' THEN sol WHEN 'release' THEN -sol ELSE 0 END), 0) AS b FROM ledger"
       ).get() as { b: number }).b;
       console.log(
         `released ${amount.toFixed(6)} SOL (ledger row ${res.lastInsertRowid}, "${note}")\n` +
         `banked ${banked.toFixed(6)} -> ${after.toFixed(6)} SOL; that much returns to deployable on the next tick.\n` +
         `undo: DELETE FROM ledger WHERE id = ${res.lastInsertRowid};`
+      );
+      break;
+    }
+    case "deposit": {
+      // Tell the ledger about SOL moved into (+) or out of (−) the bot wallet
+      // from outside. Nothing detects this on its own, and without it the
+      // account-since-start figure counts a top-up as profit.
+      //   npm run deposit -- 10.31 "top-up from cold wallet"
+      //   npm run deposit -- -2.5 "withdrawal"       (negative = money out)
+      //   npm run deposit -- 10.31 "…" paper         (mode defaults to live)
+      const delta = Number(process.argv[3]);
+      const note = process.argv[4] ?? (delta > 0 ? "external deposit" : "external withdrawal");
+      const mode = process.argv[5] === "paper" ? "paper" : "live";
+      if (!Number.isFinite(delta) || delta === 0) {
+        console.error(`usage: npm run deposit -- <sol> ["note"] [live|paper]   (negative = withdrawal); got: ${process.argv[3]}`);
+        process.exit(1);
+      }
+      const next = recordExternalFlow(mode, delta, note);
+      console.log(
+        next === null
+          ? `recorded ${delta > 0 ? "deposit" : "withdrawal"} of ${Math.abs(delta).toFixed(6)} SOL (${mode}). No baseline exists yet — the first close will capture the funded wallet, so nothing needed adjusting.`
+          : `recorded ${delta > 0 ? "deposit" : "withdrawal"} of ${Math.abs(delta).toFixed(6)} SOL (${mode}); account baseline is now ${next.toFixed(6)} SOL.`
       );
       break;
     }
@@ -306,8 +334,61 @@ pos#${row.id} ${row.symbol}  close_return=${(row.close_return_sol ?? 0).toFixed(
       }
       break;
     }
+    case "repair-basis": {
+      // `npm run repair-basis -- <id…> [--apply]`. Dry-run unless --apply.
+      //
+      // A position adopted from chain before 2026-11-21 took its cost basis
+      // from the first mark, which includes fees already earned and whatever
+      // the price had done since the real open (pos#309: booked at 0.6292 SOL
+      // against 0.4709 actually paid — 0.158 SOL of real profit hidden). This
+      // re-reads the basis from the tx that created each of the position's
+      // accounts. Chain is the source; the old value is kept in the event so
+      // the repair is on record and a second run is a no-op.
+      const args = process.argv.slice(3);
+      const apply = args.includes("--apply");
+      const ids = args.filter((a) => !a.startsWith("--")).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+      if (!ids.length) { console.error("usage: npm run repair-basis -- <id> [more ids…] [--apply]"); process.exit(1); }
+      const { adoptedOpenCostSol } = await import("./manager/reconcile.js");
+      const { makeConnection } = await import("./rpc.js");
+      const { loadKeypair } = await import("./executor/wallet.js");
+      const { env } = await import("./config.js");
+      const { PublicKey } = await import("@solana/web3.js");
+      const conn = makeConnection({ commitment: "confirmed" });
+      const wallet = loadKeypair(env().walletPrivateKey, env().walletKeypairPath).publicKey;
+      const db = getDb();
+      for (const id of ids) {
+        const row = db.prepare(
+          `SELECT id, symbol, open_cost_sol, (${REALIZED_PNL_SQL}) AS pnl FROM positions WHERE id = ? AND mode = 'live'`
+        ).get(id) as { id: number; symbol: string; open_cost_sol: number | null; pnl: number | null } | undefined;
+        if (!row) { console.error(`pos#${id}: no such live position`); continue; }
+        const ev = db.prepare(
+          "SELECT id, detail_json FROM events WHERE position_id = ? AND type = 'open' ORDER BY id ASC LIMIT 1"
+        ).get(id) as { id: number; detail_json: string | null } | undefined;
+        const detail = ev?.detail_json ? (JSON.parse(ev.detail_json) as Record<string, unknown>) : {};
+        if (typeof detail.reconcile !== "string") { console.error(`pos#${id} ${row.symbol}: not an adopted position — its basis was measured at open`); continue; }
+        if (detail.basisRepaired) { console.log(`pos#${id} ${row.symbol}: already repaired — nothing to do`); continue; }
+        const accounts = (db.prepare("SELECT pubkey FROM position_accounts WHERE position_id = ?").all(id) as Array<{ pubkey: string }>)
+          .map((a) => new PublicKey(a.pubkey));
+        const measured = await adoptedOpenCostSol(conn, wallet, accounts);
+        if (measured === null) { console.error(`pos#${id} ${row.symbol}: open tx(s) not readable for all ${accounts.length} account(s) — leaving the basis alone`); continue; }
+        const old = row.open_cost_sol;
+        const delta = old === null ? null : old - measured;
+        console.log(
+          `pos#${id} ${row.symbol}: basis ${old === null ? "unknown" : old.toFixed(6)} → ${measured.toFixed(6)} SOL measured from ${accounts.length} open tx(s)` +
+          (delta === null || row.pnl === null ? "" : `; PnL ${row.pnl.toFixed(6)} → ${(row.pnl + delta).toFixed(6)} SOL`)
+        );
+        if (!apply) { console.log("  (dry run — pass --apply to write)"); continue; }
+        db.transaction(() => {
+          db.prepare("UPDATE positions SET open_cost_sol = ? WHERE id = ?").run(measured, id);
+          if (ev) db.prepare("UPDATE events SET detail_json = ? WHERE id = ?")
+            .run(JSON.stringify({ ...detail, basisRepaired: { from: old, to: measured, at: Math.floor(Date.now() / 1000) } }), ev.id);
+        })();
+        console.log("  WRITTEN (old basis kept in the open event — re-running is a no-op)");
+      }
+      break;
+    }
     default:
-      console.log("usage: npm run <scan|vet -- <mint>|run|status|halt|pause|release [-- <sol> [note]]|blacklist [-- clear <key>…]|repair-close -- <id…> [--apply]>");
+      console.log("usage: npm run <scan|vet -- <mint>|run|status|halt|pause|release [-- <sol> [note]]|deposit -- <sol> [note]|blacklist [-- clear <key>…]|repair-close -- <id…> [--apply]|repair-basis -- <id…> [--apply]>");
   }
 }
 

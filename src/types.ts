@@ -123,6 +123,6 @@ export interface Position {
 export type EventType =
   | "open" | "claim" | "rebalance" | "profit_lock" | "escape_hatch"
   | "safety_exit" | "stop_loss" | "rotation" | "take_profit" | "below_cut"
-  | "deposit" | "withdraw";
+  | "deposit" | "withdraw" | "sweep" | "rent_reclaim";
 
 export type DecisionAction = "entered" | "skipped" | "exited";

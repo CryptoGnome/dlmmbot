@@ -610,3 +610,32 @@ describe("flatCounterfactualSol — Gate 3 telemetry", () => {
     expect(positionSize(b, 59)).toBe(0);
   });
 });
+
+// 2026-11-21 audit. Way the bankroll can be wrong: every ledger kind that is
+// not 'bank' was subtracted from the banked balance, so each profit-burn row
+// (accrual AND spend) read as a release and inflated deployable — by 0.2058
+// SOL on the live book, on every sizing decision.
+describe("computeBankroll — only bank/release move the banked balance", () => {
+  beforeEach(() => useMemoryDb());
+  afterEach(() => resetTestDb());
+
+  it("profit-burn ledger rows do not change deployable", () => {
+    const before = computeBankroll(20);
+    const ins = getDb().prepare("INSERT INTO ledger (ts, kind, sol, note) VALUES (?, ?, ?, 'n')");
+    ins.run(now(), "profit_burn_accrue", 0.1);
+    ins.run(now(), "profit_burn", 0.1);
+    ins.run(now(), "profit_burn_paper", 0.1);
+    const after = computeBankroll(20);
+    expect(after.bankedSol).toBe(0);
+    expect(after.deployableSol).toBeCloseTo(before.deployableSol, 10);
+  });
+
+  it("bank and release still do", () => {
+    const base = computeBankroll(20).deployableSol;
+    const ins = getDb().prepare("INSERT INTO ledger (ts, kind, sol, note) VALUES (?, ?, ?, 'n')");
+    ins.run(now(), "bank", 0.5);
+    expect(computeBankroll(20).deployableSol).toBeCloseTo(base - 0.5, 10);
+    ins.run(now(), "release", 0.2);
+    expect(computeBankroll(20).bankedSol).toBeCloseTo(0.3, 10);
+  });
+});

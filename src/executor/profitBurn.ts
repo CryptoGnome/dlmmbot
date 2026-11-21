@@ -6,7 +6,7 @@ import {
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import { Connection, Keypair, PublicKey, TransactionInstruction } from "@solana/web3.js";
-import { getDb, now } from "../db/db.js";
+import { backfillProfitBurns, getDb, now } from "../db/db.js";
 import { buildSwapFromSolTx } from "./jupiter.js";
 
 const ACCRUE_KEY = "profit_burn_accrued_sol";
@@ -16,7 +16,17 @@ export const PROFIT_BURN = {
   mint: "BaDjVCpABEVCdt4LT7ivuzA4izBwJCqnDjrLa8XBtT38",
   profit_frac: 0.01,
   slippage_bps: 300,
+  // Smallest pot worth a transaction. The fee is still owed in full: a pot
+  // under this stays accrued and rides along with the next burn. Without it
+  // 177 of the first 484 burns were under 0.00005 SOL — a swap-and-burn tx
+  // each, paying a network fee about the size of the burn itself.
+  min_flush_sol: 0.001,
 } as const;
+
+/** Pure: is the accrued pot big enough to be worth sending? */
+export function shouldFlushProfitBurn(accruedSol: number): boolean {
+  return Number.isFinite(accruedSol) && accruedSol >= PROFIT_BURN.min_flush_sol;
+}
 
 /** Pure: SOL share of measured net profit. Null = no profit / disabled frac. */
 export function profitBurnSpendSol(measuredPnlSol: number, profitFrac: number): number | null {
@@ -40,13 +50,20 @@ export function writeProfitBurnAccrued(sol: number): void {
   ).run(ACCRUE_KEY, String(v));
 }
 
-/** Accrue this close's burn share; return new balance. */
+/**
+ * Accrue this close's burn share; return new balance. The note must start
+ * `pos#<id> ` — that is how the fee is debited to the position that earned it
+ * (positions.profit_burn_sol, part of REALIZED_PNL_SQL). The debit goes through
+ * backfillProfitBurns, the single writer of that column, so the startup
+ * restatement can never apply the same accrual a second time.
+ */
 export function accrueProfitBurn(spendSol: number, note: string): number {
   const next = readProfitBurnAccrued() + spendSol;
   writeProfitBurnAccrued(next);
   getDb().prepare(
     "INSERT INTO ledger (ts, kind, sol, note) VALUES (?, 'profit_burn_accrue', ?, ?)",
   ).run(now(), spendSol, note);
+  backfillProfitBurns();
   return next;
 }
 

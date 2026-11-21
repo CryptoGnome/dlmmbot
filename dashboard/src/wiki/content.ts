@@ -490,7 +490,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
           },
           {
             title: "Usage fee (GNME)",
-            text: "1% of measured profit on live winning closes → buy+burn GNME. Hardcoded — not in Settings. Full write-up: dlmmbot.com/setup/fees",
+            text: "1% of measured profit on live winning closes → buy+burn GNME. Hardcoded — not in Settings. Reported PnL is already net of it. Small shares pool until 0.001 SOL before burning. Full write-up: dlmmbot.com/setup/fees",
             icon: "zap",
           },
         ],
@@ -648,6 +648,8 @@ export const WIKI_SECTIONS: WikiSection[] = [
         type: "ul",
         items: [
           "Per position: wallet SOL out → back + fees + profit-lock withdrawals − costs (REALIZED_PNL). Close rows show Move (deposit/IL) vs Fees separately.",
+          "It is the wallet's number: token-account rent that comes back after a close is credited to the entry that paid it, and the 1% usage fee is subtracted from the close that earned it. Both sit inside Move. Past days are restated when a late sweep or rent refund changes an old position, so the equity chart and the totals always add up to the same figure.",
+          "All-time % is profit over the capital you funded the account with — not over cumulative turnover. After a deposit or withdrawal run `npm run deposit -- <sol>` (negative for money out), or the top-up is counted as profit.",
           "A close row splits into additive parts: Move + Fees + Recovered + Pending = PnL. Move is what came back through the close itself (IL and tx costs), Fees is income, Recovered is SOL the sweep fetched back afterwards, Pending is residue it hasn't sold yet. Each is a different route the money took, so they add up — never double-count Recovered on top of Move.",
           "Unknown outcomes stay unknown: force-closed or orphan-repaired rows have no exit value, so they're excluded from realized PnL (and from the breaker/Kelly) instead of counting as fake full losses.",
           "Under-filled closes aren't phantom losses: if the exit swap leaves tokens in the wallet, they're carried at their quoted value until the sweep sells them (usually minutes), so the breaker and Kelly don't react to a loss that never happened. If the sweep can't sell within 30 minutes it stops counting and the loss shows in full.",

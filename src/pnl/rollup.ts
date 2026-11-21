@@ -28,6 +28,60 @@ async function solUsd(): Promise<number | null> {
   return cachedSolUsd.price;
 }
 
+/**
+ * Rewrite stored totals that are DERIVED from positions, wherever they no
+ * longer match. A position's PnL keeps moving after its close day — the sweep
+ * sells a residue, token-account rent is reclaimed, a strand credit expires —
+ * and a formula fix restates all of history at once. rollupDaily only ever
+ * upserts TODAY, so past pnl_daily rows drifted (08-07/08-08 kept an old
+ * formula's numbers and the all-time equity chart ended 0.11 SOL off the
+ * book), and follow_chains.chain_pnl_sol was accumulated at leg close and
+ * never revisited, missing legs that closed after their chain ended.
+ *
+ * Only rows that already exist are touched: a day with no row is a day the bot
+ * was not tracking, and the paper→live streak depends on that gap staying a
+ * gap. unrealized_sol, costs_sol and sol_usd are point-in-time and left alone.
+ * Writes only what changed, so the steady state is two reads and no writes.
+ */
+export function restateDerivedPnl(mode: "paper" | "live"): { days: number; chains: number } {
+  const db = getDb();
+  const derived = new Map((db.prepare(
+    `SELECT date(exit_ts, 'unixepoch') AS day,
+            COALESCE(SUM(${REALIZED_PNL_SQL}), 0) AS r,
+            COALESCE(SUM(fees_measured_sol + fees_at_close_sol), 0) AS f
+       FROM positions WHERE mode = ? AND exit_ts IS NOT NULL GROUP BY day`
+  ).all(mode) as Array<{ day: string; r: number; f: number }>).map((d) => [d.day, d]));
+  const stored = db.prepare(
+    "SELECT day, realized_sol, fees_sol FROM pnl_daily WHERE mode = ?"
+  ).all(mode) as Array<{ day: string; realized_sol: number; fees_sol: number }>;
+  const upd = db.prepare("UPDATE pnl_daily SET realized_sol = ?, fees_sol = ? WHERE day = ? AND mode = ?");
+  const EPS = 1e-9;
+  let days = 0, chains = 0;
+  db.transaction(() => {
+    for (const row of stored) {
+      const d = derived.get(row.day);
+      const r = d?.r ?? 0, f = d?.f ?? 0;
+      if (Math.abs(r - row.realized_sol) > EPS || Math.abs(f - row.fees_sol) > EPS) {
+        upd.run(r, f, row.day, mode);
+        days++;
+      }
+    }
+    chains = db.prepare(
+      `UPDATE follow_chains SET chain_pnl_sol = COALESCE((
+           SELECT SUM(${REALIZED_PNL_SQL}) FROM positions
+            WHERE follow_chain_id = follow_chains.id AND exit_ts IS NOT NULL), 0)
+        WHERE mode = ?
+          AND ABS(chain_pnl_sol - COALESCE((
+           SELECT SUM(${REALIZED_PNL_SQL}) FROM positions
+            WHERE follow_chain_id = follow_chains.id AND exit_ts IS NOT NULL), 0)) > ${EPS}`
+    ).run(mode).changes;
+  })();
+  return { days, chains };
+}
+
+const RESTATE_INTERVAL_MS = 10 * 60_000;
+let lastRestate = 0;
+
 /** Upsert today's pnl_daily row. unrealizedSol = sum of open-position marks minus entries. */
 export async function rollupDaily(mode: "paper" | "live", unrealizedSol: number): Promise<void> {
   const db = getDb();
@@ -66,6 +120,18 @@ export async function rollupDaily(mode: "paper" | "live", unrealizedSol: number)
        unrealized_sol = excluded.unrealized_sol, fees_sol = excluded.fees_sol,
        costs_sol = excluded.costs_sol, sol_usd = excluded.sol_usd`
   ).run(day, mode, realized, unrealizedSol, fees, costs, usd);
+
+  // First tick after boot, then every 10 minutes — the sweep cadence, which is
+  // what moves past PnL. Never let a restatement failure fail the tick.
+  if (Date.now() - lastRestate > RESTATE_INTERVAL_MS) {
+    lastRestate = Date.now();
+    try {
+      const r = restateDerivedPnl(mode);
+      if (r.days || r.chains) console.log(`[pnl] restated ${r.days} daily row(s), ${r.chains} follow chain(s) from positions`);
+    } catch (e) {
+      console.error("[pnl] restate failed:", (e as Error).message.split("\n")[0]);
+    }
+  }
 }
 
 export interface PromotionStatus {

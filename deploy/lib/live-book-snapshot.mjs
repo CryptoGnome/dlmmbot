@@ -70,10 +70,14 @@ export function resolveWalletPubkey() {
   return null;
 }
 
-// Mirrors REALIZED_PNL_SQL in src/db/db.ts — keep the stranded-credit term in
-// sync. Tokens left in the wallet by an under-filled close are an asset until
-// the residual sweep sells them; the credit expires after 30 min so a residue
-// that can never be sold shows up as the loss it is.
+// REALIZED_PNL_SQL from src/db/db.ts, term for term. This file runs under plain
+// node and cannot import the TypeScript module, so the text is duplicated and
+// src/db/accounting.test.ts fails the build when the two differ. It drifted
+// once already: this copy lost withdrawn_sol and the cost-basis guard, and read
+// a missing exit_sol as 0 — a force-closed row displayed as a 100% loss.
+// Tokens left in the wallet by an under-filled close are an asset until the
+// residual sweep sells them; the credit expires after 30 min so a residue that
+// can never be sold shows up as the loss it is.
 const STRANDED_CREDIT = `
   CASE WHEN COALESCE(stranded_sol, 0) > 0
         AND COALESCE(stranded_at, 0) > CAST(strftime('%s', 'now') AS INTEGER) - 1800
@@ -81,19 +85,31 @@ const STRANDED_CREDIT = `
 
 export const REALIZED_PNL = `
   CASE WHEN close_return_sol IS NOT NULL
+        AND (open_cost_sol IS NOT NULL OR entry_sol > 0)
        THEN close_return_sol
             + COALESCE(fees_measured_sol, 0)
+            + COALESCE(withdrawn_sol, 0)
             + COALESCE(recovered_sol, 0)
+            + COALESCE(rent_reclaimed_sol, 0)
+            - COALESCE(profit_burn_sol, 0)
             + ${STRANDED_CREDIT}
             - COALESCE(open_cost_sol, entry_sol + COALESCE(rent_paid_sol, 0))
-       WHEN entry_sol > 0
-       THEN COALESCE(exit_sol, 0) - entry_sol
+       WHEN entry_sol > 0 AND exit_sol IS NOT NULL
+       THEN exit_sol - entry_sol
             + CASE WHEN COALESCE(fees_measured_sol, 0) > 0
                    THEN fees_measured_sol
                    ELSE COALESCE(fees_claimed_sol, 0) END
+            + COALESCE(withdrawn_sol, 0)
             + COALESCE(recovered_sol, 0)
+            + COALESCE(rent_reclaimed_sol, 0)
+            - COALESCE(profit_burn_sol, 0)
             + ${STRANDED_CREDIT}
-       ELSE 0 END`;
+       ELSE NULL END`;
+
+// A row whose PnL is unknown (NULL above) contributes 0 to a displayed sum and
+// is neither a win nor a loss. Use this in queries; REALIZED_PNL stays the
+// canonical text so the parity test can compare it.
+export const PNL = `(COALESCE((${REALIZED_PNL}), 0))`;
 
 /** Map closed token-account addresses → { mint, symbol } for rent_reclaim rows. */
 function buildReclaimAtaIndex(db) {
@@ -658,8 +674,8 @@ export function buildLiveBookSnapshot(root) {
       const byReason = db.prepare(
         `SELECT exit_reason,
                 COUNT(*) n,
-                ROUND(SUM(${REALIZED_PNL}), 6) pnl,
-                ROUND(AVG(${REALIZED_PNL}), 6) avg_pnl,
+                ROUND(SUM(${PNL}), 6) pnl,
+                ROUND(AVG(${PNL}), 6) avg_pnl,
                 ROUND(SUM(entry_sol), 6) entry_sol
          FROM positions
          WHERE mode = ? AND exit_ts IS NOT NULL AND exit_ts > ?
@@ -672,13 +688,27 @@ export function buildLiveBookSnapshot(root) {
     };
 
     const allLiveRow = db.prepare(
-      `SELECT COUNT(*) n, ROUND(SUM(${REALIZED_PNL}), 6) pnl, ROUND(SUM(entry_sol), 6) entry_sol
+      `SELECT COUNT(*) n, ROUND(SUM(${PNL}), 6) pnl, ROUND(SUM(entry_sol), 6) entry_sol
        FROM positions WHERE mode = ? AND exit_ts IS NOT NULL`
     ).get(bookMode);
+    // All-time % is return on the capital the account was funded with (the
+    // baseline the bot measures "account since start" against). It used to be
+    // profit over cumulative turnover — every SOL counted again on each
+    // re-deployment — which read -0.06% on a book that was -1.46% of bankroll.
+    // Turnover stays the fallback until a baseline exists (before the first close).
+    let baselineSol = null;
+    try {
+      const b = db.prepare("SELECT value FROM meta WHERE key = ?").get(`baseline_sol_${bookMode}`);
+      const n = b ? Number(b.value) : NaN;
+      if (Number.isFinite(n) && n > 0) baselineSol = n;
+    } catch { /* meta table missing on a brand-new DB */ }
+    const allDenom = baselineSol ?? allLiveRow.entry_sol;
     const allLive = {
       ...allLiveRow,
-      pct: allLiveRow.entry_sol > 0
-        ? Math.round((allLiveRow.pnl / allLiveRow.entry_sol) * 1e6) / 1e6
+      baseline_sol: baselineSol,
+      pct_basis: baselineSol ? "baseline" : "turnover",
+      pct: allDenom > 0
+        ? Math.round((allLiveRow.pnl / allDenom) * 1e6) / 1e6
         : null,
     };
 
@@ -688,7 +718,7 @@ export function buildLiveBookSnapshot(root) {
     // kellyStats() — but note it does NOT apply that function's majors
     // exclusion, so this readout still runs slightly ahead of the real f*.
     const kellyRows = db.prepare(
-      `SELECT (${REALIZED_PNL}) / entry_sol AS ret
+      `SELECT ${PNL} / entry_sol AS ret
        FROM positions
        WHERE mode = ? AND exit_ts IS NOT NULL AND entry_sol > 0 AND follow_chain_id IS NULL
        ORDER BY exit_ts DESC LIMIT ?`
@@ -743,13 +773,16 @@ export function buildLiveBookSnapshot(root) {
        WHERE mode = ? AND exit_reason IN ('P0_safety','P1_stop') AND exit_ts IS NOT NULL
          AND exit_ts > ?
          AND entry_sol > 0
-         AND (${REALIZED_PNL}) / entry_sol <= ?
+         AND ${PNL} / entry_sol <= ?
        ORDER BY exit_ts DESC`
     ).all(bookMode, clusterSince, -(clusterLossPct / 100));
 
     let cluster = { tripped: false, count: hard.length, remainingMin: 0, recent: hard.slice(0, 5) };
     if (hard.length >= clusterExits) {
-      const tripTs = hard[clusterExits - 1].exit_ts;
+      // Newest exit, exactly as clusterBrakeTripped (src/risk/limits.ts) does.
+      // Anchoring on the Nth-newest showed "clear" while the bot was still
+      // pausing entries whenever the exits were spread wider than the pause.
+      const tripTs = hard[0].exit_ts;
       const elapsed = now - tripTs;
       const pauseS = clusterPauseH * 3600;
       if (elapsed < pauseS) {
@@ -820,7 +853,7 @@ export function buildLiveBookSnapshot(root) {
 
     const p3Missed = db.prepare(
       `SELECT id, symbol, token_mint AS mint, datetime(exit_ts,'unixepoch') at,
-              ROUND((${REALIZED_PNL}),4) pnl,
+              ROUND(${PNL},4) pnl,
               ROUND(entry_sol, 4) entry_sol,
               ROUND((exit_ts - entry_ts)/60.0,1) hold_min
        FROM positions
@@ -973,7 +1006,7 @@ export function buildLiveBookSnapshot(root) {
     for (const r of db.prepare(
       `SELECT exit_ts AS ts, datetime(exit_ts,'unixepoch') at, id, symbol, token_mint AS mint, pool,
               exit_reason AS gate, ROUND(entry_sol,4) entry_sol,
-              ROUND((${REALIZED_PNL}),6) pnl, ROUND((exit_ts-entry_ts)/60.0,1) hold_min,
+              ROUND(${PNL},6) pnl, ROUND((exit_ts-entry_ts)/60.0,1) hold_min,
               ROUND(COALESCE(fees_measured_sol, 0) + COALESCE(fees_at_close_sol, 0), 6) fee_total,
               tranche_of,
               (

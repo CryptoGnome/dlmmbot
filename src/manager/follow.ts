@@ -129,7 +129,7 @@ export function armFollowChain(pos: Position, exitPrice: number, vol30mUsd?: num
  */
 export function onFollowLegClosed(pos: Position, reason: string, pnlSol: number): void {
   const chain = getDb().prepare(
-    "SELECT * FROM follow_chains WHERE id = ? AND state != 'done'"
+    "SELECT * FROM follow_chains WHERE id = ?"
   ).get(pos.followChainId) as ChainRow | undefined;
   if (!chain) return;
   const f = config().follow;
@@ -137,6 +137,11 @@ export function onFollowLegClosed(pos: Position, reason: string, pnlSol: number)
   getDb().prepare("UPDATE follow_chains SET chain_pnl_sol = ?, updated_ts = ? WHERE id = ?")
     .run(pnl, now(), chain.id);
   chain.chain_pnl_sol = pnl;
+  // A chain can end on its own (expiry, cold pool, loss budget) while a leg is
+  // still open. That leg's result is still the chain's — count it, and leave
+  // the chain ended as it was. restateDerivedPnl later trues the total up to
+  // the legs' restated PnL (sweeps, rent, the burn fee).
+  if ((chain.state as string) === "done") return;
   if (reason !== "P3_above") return endChain(chain, `leg_${reason}`);
   if (chain.legs >= f.max_legs) return endChain(chain, "max_legs");
   if (pnl <= -f.chain_loss_budget_sol) return endChain(chain, "loss_budget");

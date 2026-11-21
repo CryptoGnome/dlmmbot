@@ -22,7 +22,7 @@ Starts the bot: the tick loop that scans, vets, enters, manages, and exits. Hold
 The at-a-glance report, safe to run any time (read-only):
 
 - Open positions table: id, symbol, entry SOL/price, state, claimed fees, opened time.
-- Closed totals: count, **measured** realized PnL in SOL, and how much of that was fee income.
+- Closed totals: count, **measured** realized PnL in SOL, how much of that was fee income, and what it already nets in: token-account rent reclaimed after closes (+) and the 1% usage fee (−).
 - The **paper→live promotion scoreboard**: consecutive profitable days vs the required 7, per-day realized and unrealized-delta lines, and `ELIGIBLE` when the gate is met.
 
 ## Stopping things
@@ -43,9 +43,17 @@ Lists every blacklist entry (token mints and creator addresses, with expiry or `
 
 Recovery tool for a DB row stuck `open` with **nothing behind it on chain** (the manager refuses to guess about such rows on its own). In live mode it checks the chain first and **refuses** if any tracked position account still exists — it cannot be used to write off a real position. The row's exit values are left NULL on purpose: the outcome is unknown, so it contributes 0 to realized PnL rather than a fabricated number. The command prints the exact undo SQL.
 
+### `npm run repair-basis -- <id…> [--apply]`
+
+For a position the bot **adopted from chain** (symbol `ADOPTED`) before 2026-11-21: its cost basis was taken from the first mark instead of what the wallet actually paid, so its realized PnL is off by the difference. This re-reads the basis from the transaction that created each of the position's accounts and prints old → measured. Dry run unless `--apply`; the old value is kept in the position's open event and a second run is a no-op. Newly adopted positions get the measured basis automatically.
+
 ### `npm run release [-- <sol> [note]]`
 
 Returns **banked** SOL (skimmed by profit locks / the retired house-money rule) to the deployable bankroll, through the ledger with a note — not a hand-written DB poke. No argument (or `all`) releases everything banked; a number releases that much. Prints the before/after banked totals and the undo statement.
+
+### `npm run deposit -- <sol> ["note"] [live|paper]`
+
+Tells the ledger about SOL you moved **into** (positive) or **out of** (negative) the bot wallet. The bot cannot tell a top-up from profit: without this, "account since start" and the dashboard's all-time % count your deposit as a gain. The command writes a `deposit` / `withdrawal` ledger row and moves the account baseline by the same amount. If no baseline exists yet (no position has closed), it only records the row — the first close captures the funded wallet.
 
 ## Research & diagnosis
 

@@ -75,7 +75,7 @@ export function computeBankroll(walletSol: number): Bankroll {
   const db = getDb();
 
   const banked = (db.prepare(
-    "SELECT COALESCE(SUM(CASE kind WHEN 'bank' THEN sol ELSE -sol END), 0) AS b FROM ledger"
+    "SELECT COALESCE(SUM(CASE kind WHEN 'bank' THEN sol WHEN 'release' THEN -sol ELSE 0 END), 0) AS b FROM ledger"
   ).get() as { b: number }).b;
 
   const deployed = (db.prepare(

@@ -3,7 +3,7 @@ import {
   SendTransactionError,
 } from "@solana/web3.js";
 import type { ParsedTransactionWithMeta } from "@solana/web3.js";
-import { createCloseAccountInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
+import { createCloseAccountInstruction, getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import bs58 from "bs58";
 import BN from "bn.js";
 import { createRequire } from "node:module";
@@ -11,11 +11,11 @@ import type * as DLMMTypes from "@meteora-ag/dlmm";
 import type { LbPosition } from "@meteora-ag/dlmm";
 import { config, env, isLive, SOL_MINT } from "../config.js";
 import { makeConnection } from "../rpc.js";
-import { getDb, logError, now, upsertTokenMeta } from "../db/db.js";
+import { attributeLegacyRentReclaims, backfillRentReclaims, getDb, logError, now, upsertTokenMeta } from "../db/db.js";
 import { alert } from "../alerts.js";
 import { fetchPool } from "../scanner/meteora.js";
 import type { ExitReason, Position } from "../types.js";
-import { classifyLeftover, RESIDUAL_SWEEP_MIN_SOL } from "./executor.js";
+import { BINS_PER_ACCOUNT, chunkBins, classifyLeftover, landedOpenShape, RESIDUAL_SWEEP_MIN_SOL, splitRentReclaim, sumKnownFeesSol } from "./executor.js";
 import type { Executor, OpenParams, PositionMark } from "./executor.js";
 import { quoteToSolLamports, swapToSolEscalating } from "./jupiter.js";
 
@@ -91,7 +91,6 @@ const getPriceOfBinByBinId = dlmmMod.getPriceOfBinByBinId;
 //    good ledger accuracy; exact fill audit belongs to the tx history.
 // ============================================================================
 
-const BINS_PER_ACCOUNT = 69;
 // Rebuilds on ExceededBinSlippageTolerance — resending the same tx never helps
 // (the active-bin check is baked into the instruction at build time).
 export const OPEN_SLIPPAGE_REBUILDS = 2;
@@ -156,6 +155,24 @@ export function resolveOpenBins(
     );
   }
   return { minBin, maxBin };
+}
+
+/**
+ * Token-account address → mint, for every mint the wallet may have held an
+ * associated token account in. Both token programs, because a Token-2022 mint
+ * derives a different address. Pure derivation, no RPC. Used to attribute
+ * rent-reclaim events that recorded only the accounts they closed.
+ */
+export function ataMintIndex(owner: PublicKey, mints: string[]): Map<string, string> {
+  const index = new Map<string, string>();
+  for (const mint of mints) {
+    try {
+      const mintKey = new PublicKey(mint);
+      for (const programId of [TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID])
+        index.set(getAssociatedTokenAddressSync(mintKey, owner, false, programId).toBase58(), mint);
+    } catch { /* malformed mint in an old row: nothing to attribute to it */ }
+  }
+  return index;
 }
 
 /** Native SOL + wSOL ATA change for our wallet in one tx (Jupiter/zap often credit wSOL). */
@@ -257,6 +274,34 @@ export class LiveExecutor implements Executor {
     // because the loop never gets to run it) and RPC_URL_FALLBACK failover.
     this.connection = makeConnection({ commitment: "confirmed" });
     console.log(`[live] executor armed — wallet ${this.wallet.publicKey.toBase58()}`);
+    this.attributeLegacyRentReclaims();
+  }
+
+  /**
+   * One-off catch-up for rent-reclaim events older than the per-token detail
+   * (see attributeLegacyRentReclaims in db.ts): only here is the wallet known,
+   * which is what turns a closed account address back into a mint. Skipped
+   * without deriving anything once no such event is left. Never throws.
+   */
+  private attributeLegacyRentReclaims(): void {
+    try {
+      const db = getDb();
+      const pending = (db.prepare(
+        `SELECT COUNT(*) AS c FROM events WHERE type = 'rent_reclaim' AND position_id IS NULL AND sol_delta > 0
+           AND detail_json IS NOT NULL AND detail_json NOT LIKE '%"tokens"%'`
+      ).get() as { c: number }).c;
+      if (pending === 0) return;
+      const mints = (db.prepare(
+        "SELECT DISTINCT token_mint FROM positions"
+      ).all() as Array<{ token_mint: string }>).map((r) => r.token_mint);
+      const index = ataMintIndex(this.wallet.publicKey, mints);
+      const r = attributeLegacyRentReclaims((account) => index.get(account) ?? null);
+      console.log(
+        `[live] attributed ${r.events}/${pending} legacy rent-reclaim event(s): +${r.creditedSol.toFixed(6)} SOL credited to positions`
+      );
+    } catch (e) {
+      console.error("[live] legacy rent-reclaim attribution failed:", (e as Error).message.split("\n")[0]);
+    }
   }
 
   /**
@@ -295,6 +340,34 @@ export class LiveExecutor implements Executor {
    * null = a tx never became fetchable, so callers record unknown, not a wrong
    * number (chrome pos#5: an RPC race once logged a false 0 delta).
    */
+  /**
+   * Does this account exist on chain? Used when a tx's fate is unknown: a few
+   * spaced reads, because the RPC that could not confirm the tx is the same one
+   * being asked. False means "not seen", not "provably absent".
+   */
+  private async accountExists(pubkey: PublicKey): Promise<boolean> {
+    for (let i = 0; i < 4; i++) {
+      if (i > 0) await new Promise((r) => setTimeout(r, 2500));
+      try {
+        if ((await this.connection.getAccountInfo(pubkey, "confirmed")) !== null) return true;
+      } catch { /* RPC still blind — try again */ }
+    }
+    return false;
+  }
+
+  /** Fee each tx paid, remembered as walletDelta fetches it (see txCostSol). */
+  private readonly feeLamportsBySig = new Map<string, number>();
+
+  /**
+   * events.tx_cost_sol for the txs behind one event: the fees actually paid
+   * when walletDelta fetched every one of them, else the old per-event
+   * estimate. The estimates alone summed to 1.57 SOL of "costs" on a book that
+   * had paid 0.10.
+   */
+  private txCostSol(sigs: string[], estimateSol: number): number {
+    return sumKnownFeesSol(sigs, this.feeLamportsBySig) ?? estimateSol;
+  }
+
   private async walletDelta(signatures: string[]): Promise<number | null> {
     if (signatures.length === 0) return 0;
     let lamports = 0;
@@ -314,6 +387,8 @@ export class LiveExecutor implements Executor {
       // as pre/postBalances, so Jupiter's versioned txs index correctly.
       // Include wSOL ATA delta: residual sweeps / zap often land value as wSOL
       // with ~0 native change (Niles #63 recorded recovered≈0 on a +0.60 wSOL sell).
+      if (this.feeLamportsBySig.size > 2000) this.feeLamportsBySig.clear(); // bounded; a miss only means "use the estimate"
+      this.feeLamportsBySig.set(sig, tx.meta.fee);
       const d = wealthDeltaLamports(tx.meta, tx.transaction.message.accountKeys, this.wallet.publicKey);
       if (d === null) {
         console.error(`[live] walletDelta: wallet absent from tx ${sig} — recording unknown`);
@@ -767,18 +842,27 @@ export class LiveExecutor implements Executor {
       chunks.push({ min: maxBin - end, max: maxBin - start, share });
     }
 
-    const accountRows: Array<{ pubkey: string; min: number; max: number }> = [];
+    const accountRows: Array<{ pubkey: string; min: number; max: number; share: number }> = [];
     const sigs: string[] = [];
+    // Set when a LATER account fails after an earlier one landed. The landed
+    // part is real SOL on chain and must get a row — see landedOpenShape.
+    let partialError: string | null = null;
     // Width preserved across rebuilds; top always re-anchors to live active bin.
     let curMin = minBin;
     let curMax = maxBin;
     let curPrice = liveEntryPrice;
+    // Position accounts whose tx fate could not be resolved and that were not
+    // (yet) visible on chain — named in the operator alert below.
+    const uncertain: string[] = [];
     for (let ci = 0; ci < chunks.length; ci++) {
-      let chunk = chunks[ci]!;
+      // Bins from the range as it stands NOW: if an earlier account re-anchored
+      // the range on a slippage rebuild, bins computed from the original top
+      // would overlap it or leave a gap by the size of the shift.
+      let chunk = { ...chunkBins(ci, curMin, curMax), share: chunks[ci]!.share };
       let opened = false;
       let lastDetail: ReturnType<typeof txErrorDetail> | null = null;
       for (let attempt = 0; attempt <= OPEN_SLIPPAGE_REBUILDS; attempt++) {
-        if (attempt > 0) {
+        if (attempt > 0) try {
           await pool.refetchStates();
           // Only re-anchor when nothing is on chain yet. A later chunk failing
           // after an earlier one landed must keep the same bin window.
@@ -796,10 +880,7 @@ export class LiveExecutor implements Executor {
             const widthBins = curMax - curMin;
             curMax = fresh.binId;
             curMin = curMax - widthBins;
-            const total = curMax - curMin + 1;
-            const start = ci * BINS_PER_ACCOUNT;
-            const end = Math.min(start + BINS_PER_ACCOUNT - 1, total - 1);
-            chunk = { min: curMax - end, max: curMax - start, share: chunk.share };
+            chunk = { ...chunkBins(ci, curMin, curMax), share: chunk.share };
             curPrice = Number(pool.fromPricePerLamport(Number(fresh.price)));
             console.warn(
               `[live] rebuild open after ${lastDetail?.code ?? "slippage"} — ` +
@@ -811,6 +892,13 @@ export class LiveExecutor implements Executor {
               `keeping bins=[${chunk.min},${chunk.max}]`
             );
           }
+        } catch (e) {
+          // The rebuild's own RPC reads can fail (429, timeout). With nothing on
+          // chain that is just a failed open; with an account already landed it
+          // must end as a recorded partial, never as an exception that drops it.
+          if (accountRows.length === 0) throw e;
+          lastDetail = txErrorDetail(e);
+          break;
         }
         const positionKp = Keypair.generate();
         try {
@@ -824,21 +912,70 @@ export class LiveExecutor implements Executor {
           });
           const sig = await this.send(tx, [positionKp]);
           sigs.push(sig);
-          accountRows.push({ pubkey: positionKp.publicKey.toBase58(), min: chunk.min, max: chunk.max });
+          accountRows.push({ pubkey: positionKp.publicKey.toBase58(), min: chunk.min, max: chunk.max, share: chunk.share });
           console.log(`[live] opened position account ${positionKp.publicKey.toBase58()} bins [${chunk.min},${chunk.max}] tx ${sig}`);
           opened = true;
           break;
         } catch (e) {
           lastDetail = txErrorDetail(e);
+          // "tx fate unknown": the RPC went blind after the broadcast, so this
+          // account may be on chain. Look for it before deciding it failed —
+          // an account that exists is a funded position and gets recorded.
+          const maybeSig = (e as { maybeSig?: string }).maybeSig;
+          if (maybeSig) {
+            if (await this.accountExists(positionKp.publicKey)) {
+              sigs.push(maybeSig);
+              accountRows.push({ pubkey: positionKp.publicKey.toBase58(), min: chunk.min, max: chunk.max, share: chunk.share });
+              console.warn(`[live] position account ${positionKp.publicKey.toBase58()} landed despite an unknown tx fate (${maybeSig}) — recorded`);
+              opened = true;
+              break;
+            }
+            uncertain.push(positionKp.publicKey.toBase58());
+          }
           if (shouldRebuildOpenOnSlippage(lastDetail.code, attempt)) continue;
-          throw Object.assign(new Error(lastDetail.summary), { logs: lastDetail.logs, code: lastDetail.code });
+          // An account we could not see may still land. Say so before giving up:
+          // boot reconcile adopts or attaches it, but only at the next restart.
+          if (uncertain.length && accountRows.length === 0)
+            await alert("watchdog",
+              `${params.symbol}: open failed with an UNKNOWN tx fate — position account ${uncertain.join(", ")} may still land. ` +
+              `It is not tracked; if it appears on chain, restart the bot so reconcile adopts it.`).catch(() => {});
+          // Nothing on chain yet: a clean failure, the caller records it and moves on.
+          if (accountRows.length === 0)
+            throw Object.assign(new Error(lastDetail.summary), { logs: lastDetail.logs, code: lastDetail.code });
+          break;
         }
       }
-      if (!opened) throw new Error(lastDetail?.summary ?? "open failed");
+      if (!opened) {
+        if (accountRows.length === 0) throw new Error(lastDetail?.summary ?? "open failed");
+        partialError = lastDetail?.summary ?? "open failed";
+        break;
+      }
     }
     minBin = curMin;
     maxBin = curMax;
     liveEntryPrice = curPrice;
+    // Throwing here used to abandon the account(s) that DID land: no row, so no
+    // marks, no stop, no exit — 0.47 SOL for 7.5 h (CatGPT 09-07) and 0.75 SOL
+    // for 33 h (biketyson 09-15) until a restart adopted them at the wrong
+    // basis. Record what is on chain as the smaller position it is.
+    let sizeSol = params.sizeSol;
+    if (partialError !== null) {
+      const landed = landedOpenShape(accountRows, params.sizeSol)!;
+      sizeSol = landed.sizeSol;
+      minBin = landed.minBin;
+      maxBin = landed.maxBin;
+      console.warn(
+        `[live] PARTIAL OPEN ${params.symbol}: ${accountRows.length}/${chunks.length} position account(s) landed ` +
+        `(${sizeSol.toFixed(4)} of ${params.sizeSol.toFixed(4)} SOL, bins [${minBin},${maxBin}]) — ` +
+        `managing the landed part; the rest failed: ${partialError}`
+      );
+      await alert("watchdog",
+        `${params.symbol}: PARTIAL OPEN — ${accountRows.length} of ${chunks.length} position accounts landed ` +
+        `(${sizeSol.toFixed(4)} of ${params.sizeSol.toFixed(4)} SOL). The landed part is recorded and managed. Reason: ${partialError}` +
+        (uncertain.length
+          ? `\nAccount ${uncertain.join(", ")} had an unknown tx fate and was not visible on chain; if it lands it is attached at the next restart.`
+          : "")).catch(() => {});
+    }
 
     // Actual wallet debit for this open (size + all rents + tx fees) — the
     // truth for per-position PnL, unlike the estBinRentSol estimate. Summed
@@ -855,7 +992,7 @@ export class LiveExecutor implements Executor {
        VALUES ('live', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)`
     ).run(
       params.poolAddress, params.tokenMint, params.symbol, params.trancheOf ?? null,
-      now(), liveEntryPrice, params.sizeSol, minBin, maxBin, params.range.estBinRentSol, openCostSol
+      now(), liveEntryPrice, sizeSol, minBin, maxBin, params.range.estBinRentSol, openCostSol
     );
     const id = Number(res.lastInsertRowid);
     for (const a of accountRows)
@@ -880,13 +1017,18 @@ export class LiveExecutor implements Executor {
     }
     db.prepare(
       "INSERT INTO events (position_id, ts, type, tx_sig, sol_delta, tx_cost_sol, detail_json) VALUES (?, ?, 'open', ?, ?, ?, ?)"
-    ).run(id, now(), sigs[0] ?? null, openCostSol === null ? null : -openCostSol, 0.0005 * sigs.length,
-      JSON.stringify({ sigs, openCostSol, sizeSol: params.sizeSol, minBin, maxBin, bins: openBins }));
+    ).run(id, now(), sigs[0] ?? null, openCostSol === null ? null : -openCostSol, this.txCostSol(sigs, 0.0005 * sigs.length),
+      JSON.stringify({
+        sigs, openCostSol, sizeSol, minBin, maxBin, bins: openBins,
+        ...(partialError !== null
+          ? { partial: { plannedSizeSol: params.sizeSol, accountsLanded: accountRows.length, accountsPlanned: chunks.length, error: partialError } }
+          : {}),
+      }));
 
     return {
       id, mode: "live", poolAddress: params.poolAddress, tokenMint: params.tokenMint,
       symbol: params.symbol, trancheOf: params.trancheOf ?? null, entryTs: now(),
-      entryPrice: liveEntryPrice, entrySol: params.sizeSol, minBinId: minBin,
+      entryPrice: liveEntryPrice, entrySol: sizeSol, minBinId: minBin,
       maxBinId: maxBin, state: "open", feesClaimedSol: 0,
       rentPaidSol: params.range.estBinRentSol, profitLockFires: 0,
       exitTs: null, exitSol: null, exitReason: null,
@@ -955,7 +1097,7 @@ export class LiveExecutor implements Executor {
     db.prepare(
       "INSERT INTO events (position_id, ts, type, tx_sig, sol_delta, tx_cost_sol, detail_json) VALUES (?, ?, 'claim', ?, ?, ?, ?)"
     ).run(
-      position.id, now(), sigs[0] ?? null, feesSol, 0.0005 * txs.length,
+      position.id, now(), sigs[0] ?? null, feesSol, this.txCostSol(sigs, 0.0005 * txs.length),
       JSON.stringify({ sigs, markedSol: feesSol, measuredSol: measured, feeXRaw: feeXRaw.toString(), bins: claimBins })
     );
     // measured ?? feesSol, not ?? 0: a null walletDelta means the measurement
@@ -965,7 +1107,7 @@ export class LiveExecutor implements Executor {
     db.prepare(
       "UPDATE positions SET fees_claimed_sol = fees_claimed_sol + ?, fees_measured_sol = fees_measured_sol + ? WHERE id = ?"
     ).run(feesSol, measured ?? feesSol, position.id);
-    return { claimedSol: feesSol, txCostSol: 0.0005 * txs.length };
+    return { claimedSol: feesSol, txCostSol: this.txCostSol(sigs, 0.0005 * txs.length) };
   }
 
   async withdraw(position: Position, bps: number): Promise<{ withdrawnSol: number; txCostSol: number }> {
@@ -1007,13 +1149,13 @@ export class LiveExecutor implements Executor {
     const measured = sigs.length ? await this.walletDelta(sigs) : null;
     const db = getDb();
     db.prepare("INSERT INTO events (position_id, ts, type, sol_delta, tx_cost_sol, detail_json) VALUES (?, ?, 'profit_lock', ?, ?, ?)")
-      .run(position.id, now(), withdrawn, 0.001, JSON.stringify({ bps, xToSwapRaw: xToSwap.toString(), measuredSol: measured, sigs }));
+      .run(position.id, now(), withdrawn, this.txCostSol(sigs, 0.001), JSON.stringify({ bps, xToSwapRaw: xToSwap.toString(), measuredSol: measured, sigs }));
     // withdrawn_sol: the locked SOL is realized PnL the moment it lands in the
     // wallet; REALIZED_PNL_SQL adds it back at close against the unshrunk
     // open_cost_sol basis. Without it a locked winner read as a loss.
     db.prepare("UPDATE positions SET entry_sol = entry_sol * (1 - ? / 10000.0), profit_lock_fires = profit_lock_fires + 1, withdrawn_sol = withdrawn_sol + ? WHERE id = ?")
       .run(bps, Math.max(0, measured ?? withdrawn), position.id);
-    return { withdrawnSol: measured ?? withdrawn, txCostSol: 0.001 };
+    return { withdrawnSol: measured ?? withdrawn, txCostSol: this.txCostSol(sigs, 0.001) };
   }
 
   async escapeRebalance(_position: Position, _slippageBps: number): Promise<{ ok: boolean }> {
@@ -1308,7 +1450,7 @@ export class LiveExecutor implements Executor {
       "INSERT INTO events (position_id, ts, type, tx_sig, sol_delta, tx_cost_sol, detail_json) VALUES (?, ?, ?, ?, ?, ?, ?)"
     ).run(
       position.id, now(), reason === "P0_safety" ? "safety_exit" : "withdraw",
-      sigs[0] ?? null, before.valueSol, 0.001,
+      sigs[0] ?? null, before.valueSol, this.txCostSol(sigs, 0.001),
       JSON.stringify({
         sigs, closeReturnSol, markedExitSol: before.valueSol, swapped: xToSwap > 0n,
         leftoverTokenSol,
@@ -1328,7 +1470,7 @@ export class LiveExecutor implements Executor {
     // Hygiene, after all accounting is written: zap-path proceeds land as wSOL
     // (wealth-neutral for the delta above, invisible to walletSol/bankroll).
     await this.unwrapWsol();
-    return { exitSol: before.valueSol, txCostSol: 0.001 };
+    return { exitSol: before.valueSol, txCostSol: this.txCostSol(sigs, 0.001) };
   }
 
   async walletSol(): Promise<number> {
@@ -1368,7 +1510,7 @@ export class LiveExecutor implements Executor {
         .map((r) => r.token_mint)
     );
     const recovered: Array<{ mint: string; symbol: string; soldSol: number; positionId: number | null }> = [];
-    const closable: Array<{ pubkey: PublicKey; programId: PublicKey; mint: string; symbol: string }> = [];
+    const closable: Array<{ pubkey: PublicKey; programId: PublicKey; mint: string; symbol: string; lamports: number }> = [];
     await this.unwrapWsol(); // wSOL is a residual too — see unwrapWsol
 
     const TOKEN_PROGRAMS = [
@@ -1394,7 +1536,7 @@ export class LiveExecutor implements Executor {
         if (info.tokenAmount.amount === "0") {
           if (this.mintIsIdle(info.mint)) {
             const { symbol } = symFor(info.mint);
-            closable.push({ pubkey: acc.pubkey, programId, mint: info.mint, symbol });
+            closable.push({ pubkey: acc.pubkey, programId, mint: info.mint, symbol, lamports: acc.account.lamports });
           }
           continue;
         }
@@ -1412,6 +1554,13 @@ export class LiveExecutor implements Executor {
             db.prepare(
               "UPDATE positions SET recovered_sol = recovered_sol + ?, stranded_sol = 0, stranded_at = NULL WHERE id = ?"
             ).run(soldSol, owner.id);
+            // recovered_sol used to change with nothing on record: no event, no
+            // signature, so a sweep credit could only be audited by scanning
+            // the wallet's whole history for an unreferenced swap.
+            db.prepare(
+              "INSERT INTO events (position_id, ts, type, tx_sig, sol_delta, tx_cost_sol, detail_json) VALUES (?, ?, 'sweep', ?, ?, ?, ?)"
+            ).run(owner.id, now(), res.signature, soldSol, this.txCostSol([res.signature], 0.0005),
+              JSON.stringify({ mint: info.mint, soldRaw: raw.toString(), recoveredSol: soldSol }));
           }
           recovered.push({ mint: info.mint, symbol, soldSol, positionId: owner?.id ?? null });
         } catch (e) {
@@ -1439,7 +1588,7 @@ export class LiveExecutor implements Executor {
 
   /** Reclaim rent from emptied token accounts. Best-effort: never throws. */
   private async closeEmptyAccounts(
-    accounts: Array<{ pubkey: PublicKey; programId: PublicKey; mint: string; symbol: string }>,
+    accounts: Array<{ pubkey: PublicKey; programId: PublicKey; mint: string; symbol: string; lamports: number }>,
   ): Promise<void> {
     const BATCH = 12; // close ix are tiny, but leave room for the priority-fee ix
     for (let i = 0; i < accounts.length; i += BATCH) {
@@ -1450,7 +1599,13 @@ export class LiveExecutor implements Executor {
       try {
         const sig = await this.send(tx);
         const delta = await this.walletDelta([sig]);
-        const tokens = batch.map((a) => ({ mint: a.mint, symbol: a.symbol, account: a.pubkey.toBase58() }));
+        // Each account's share of the measured delta, so the rent returns to
+        // the position whose open_cost_sol paid it (creditRentReclaim). The
+        // event is the record; backfillRentReclaims is the one writer that
+        // applies it, here and for history, so it can never be applied twice.
+        const shares = splitRentReclaim(batch.map((a) => a.lamports), delta);
+        const tokens = batch.map((a, i) => ({ mint: a.mint, symbol: a.symbol, account: a.pubkey.toBase58(), sol: shares[i]! }));
+        const reclaimedSol = delta ?? shares.reduce((x, y) => x + y, 0);
         const posId = batch.length === 1
           ? (getDb().prepare(
               "SELECT id FROM positions WHERE token_mint = ? ORDER BY id DESC LIMIT 1"
@@ -1458,12 +1613,14 @@ export class LiveExecutor implements Executor {
           : null;
         getDb().prepare(
           "INSERT INTO events (position_id, ts, type, tx_sig, sol_delta, detail_json) VALUES (?, ?, 'rent_reclaim', ?, ?, ?)"
-        ).run(posId, now(), sig, delta ?? 0, JSON.stringify({
+        ).run(posId, now(), sig, reclaimedSol, JSON.stringify({
           accounts: tokens.map((t) => t.account),
           tokens,
+          measured: delta !== null,
         }));
+        backfillRentReclaims();
         const syms = [...new Set(tokens.map((t) => t.symbol))].join(",");
-        console.log(`[live] 🧹 reclaimed rent ${syms} (${batch.length} acct) — +${(delta ?? 0).toFixed(5)} SOL (tx ${sig})`);
+        console.log(`[live] 🧹 reclaimed rent ${syms} (${batch.length} acct) — +${reclaimedSol.toFixed(5)} SOL (tx ${sig})`);
       } catch (e) {
         console.error("[live] rent reclaim failed:", (e as Error).message.split("\n")[0]);
       }
