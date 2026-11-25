@@ -212,6 +212,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
         type: "ul",
         items: [
           "Mint/freeze still on, nasty Token-2022 hooks, whale-concentrated supply.",
+          "Insider clusters: the share of supply RugCheck's insider networks hold right now (not what they once received). If RugCheck reports none, the largest group of two or more top holders funded by the same wallet. A single funded wallet is not a cluster.",
           "Creator already rugged once → permanent ban.",
           "RugCheck “Danger” is a veto only — never a green light by itself.",
           "Brand-new tokens wait out the instant-rug window (45 min) — that one is a safety gate. There is no upper age limit by default: a revived old meme with real volume is a valid pool, and the fee/volume gates already prove it's alive. Flip on \"Too old\" in Settings to cap mint age again.",

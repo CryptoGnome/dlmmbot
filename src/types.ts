@@ -50,7 +50,16 @@ export interface VetResult {
     singleHolderPct: number | null;
     top10Pct: number | null;
     holderCount: number | null;
+    /**
+     * Gate value. "rugcheck": supply % RugCheck's insider networks hold now.
+     * "rpc": largest group of top holders sharing a first funder.
+     */
     insiderClusterPct: number | null;
+    insiderSource?: "rugcheck" | "rpc";
+    /** RugCheck only, recorded beside the gate value so the three can be compared on outcomes. */
+    insiderGrossPct?: number;    // ever received by the networks (the gate value until 2026-11-25)
+    insiderLargestPct?: number;  // held now by the single largest network
+    insiderNetworks?: number;
     creatorAddress: string | null;
     creatorRugCount: number | null;
     rugcheckScoreNormalised: number | null;
@@ -69,6 +78,8 @@ export interface VetResult {
     jupBotHoldersPct?: number | null;
     jupDevMints?: number | null;
     jupTopHoldersPct?: number | null;
+    jupBundlerHoldingPct?: number | null;    // supply % wallets that bought in bundles hold now
+    jupBundlerHoldingPctAth?: number | null; // the most they ever held
     jupOrganicVolShare24h?: number | null; // organic / total 24h volume, 0-1
     jupLiquidityUsd?: number | null;       // token-wide liquidity, all pools (whale-overhang denominator)
   };

@@ -14,6 +14,8 @@ export interface JupAssetSnapshot {
   holderCount: number | null;
   topHoldersPct: number | null;  // top holders' supply share (may include pool accounts)
   botHoldersPct: number | null;
+  bundlerHoldingPct: number | null;     // supply % wallets that bought in bundles hold now
+  bundlerHoldingPctAth: number | null;  // the most they ever held
   devMints: number | null;       // tokens this deployer has minted (serial-launcher signal)
   devMigrations: number | null;
   buyVol24h: number | null;
@@ -88,6 +90,7 @@ async function fetchAsset(mint: string): Promise<JupAssetSnapshot | null> {
     // Display-only hit is still useful even when organicScore is missing.
     if (organicScore === null && !symbol && !name && !icon) return null;
     const audit = (typeof a.audit === "object" && a.audit !== null ? a.audit : {}) as Record<string, unknown>;
+    const bundlers = (typeof audit.bundlerStats === "object" && audit.bundlerStats !== null ? audit.bundlerStats : {}) as Record<string, unknown>;
     const s24 = (typeof a.stats24h === "object" && a.stats24h !== null ? a.stats24h : {}) as Record<string, unknown>;
 
     return {
@@ -96,6 +99,8 @@ async function fetchAsset(mint: string): Promise<JupAssetSnapshot | null> {
       holderCount: num(a.holderCount),
       topHoldersPct: num(audit.topHoldersPercentage),
       botHoldersPct: num(audit.botHoldersPercentage),
+      bundlerHoldingPct: num(bundlers.holdingPct),
+      bundlerHoldingPctAth: num(bundlers.holdingPctATH),
       devMints: num(audit.devMints),
       devMigrations: num(audit.devMigrations),
       buyVol24h: num(s24.buyVolume),

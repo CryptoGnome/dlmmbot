@@ -20,6 +20,7 @@
     "e2e:skips": "tsx src/e2e/skipEpisodes.ts",
     "e2e:protection": "tsx src/e2e/entryProtection.ts",
     "e2e:ledger": "tsx src/e2e/ledgerTruth.ts",
+    "e2e:clusters": "tsx src/e2e/insiderClusters.ts",
     "halt": "tsx src/cli.ts halt",
     "pause": "tsx src/cli.ts pause",
     "blacklist": "tsx src/cli.ts blacklist",

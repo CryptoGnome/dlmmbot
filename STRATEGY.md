@@ -58,7 +58,7 @@ Computed fresh at entry time from RPC + RugCheck free API:
 - Mint authority revoked, freeze authority revoked.
 - Token program: SPL Token, or Token-2022 with **no** extensions beyond metadata (no transfer fee/hooks).
 - Single holder ≤ `[15%]` of supply, top-10 holders ≤ `[40%]` — both excluding labeled pool vaults, lockers, burn.
-- Insider/funding clusters ≤ `[10%]` of supply (same-funder wallet clustering + launch-slot snipers).
+- Insider clusters ≤ `[10%]` of supply: the share RugCheck's insider networks hold **now**. Until 2026-11-25 this summed what the networks had ever *received*, which never falls when they sell and grows as RugCheck links more wallets (across 55 repeat vets more than 3 days apart the number rose 64% of the time and fell 4%). When RugCheck reports no networks, an RPC scan takes over: the largest group of **two or more** top-12 holders that share a first funder. One funded wallet is not a cluster, and a scan that cannot reach most holders' first transactions records "unknown", not 0. Each vet stores the source (`insiderSource`) and, beside the gate value, the old gross figure, the single largest network and Jupiter's bundler share, so they can be compared on outcomes. `npm run e2e:clusters` checks the score against live tokens.
 - Creator has **zero** tokens in our DB or RugCheck's `creatorTokens` that rugged. One strike = permanent creator blacklist.
 - RugCheck `score_normalised` < `[41]` (their "Danger" line) — used as a veto only, never as approval.
 - Token age ≥ `[45 min]` — survive the instant-rug window; the video author got burned skipping this. This one is a **safety** gate and stays on.

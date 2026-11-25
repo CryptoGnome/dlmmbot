@@ -16,7 +16,7 @@ export interface RugcheckReport extends RugcheckSummary {
   creatorTokens: Array<{ mint: string; createdAt?: string }> | null;
   rugged: boolean;
   graphInsidersDetected: number;
-  insiderNetworks: Array<{ id: string; type: "transfer" | "trade"; size: number; tokenAmount: number }> | null;
+  insiderNetworks: Array<{ id: string; type: "transfer" | "trade"; size: number; tokenAmount: number; currentHolding?: number }> | null;
   totalHolders: number;
   totalLPProviders: number;
   totalMarketLiquidity: number;
@@ -94,16 +94,44 @@ export function creatorRugCount(report: RugcheckReport): number {
   return Math.max(1, Math.round(risk.score / 7200));
 }
 
+export interface InsiderNetworkStats {
+  /** Supply % the networks hold now (`currentHolding`) — the gate value. */
+  heldPct: number;
+  /**
+   * Supply % they ever received (`tokenAmount`) — the gate value until
+   * 2026-11-25. It never falls when a network sells and it grows as RugCheck
+   * links more wallets: across 55 repeat vets more than 3 days apart it rose
+   * 64% of the time and fell 4%, by 4 points on average. Kept for comparison.
+   */
+  grossPct: number;
+  /** Supply % held now by the single largest network. */
+  largestPct: number;
+  networks: number;
+}
+
 /**
- * Supply share held by detected insider networks, in percent.
+ * Insider networks as supply shares, in percent.
  * null = unknowable (no network data, or supply unknown) — callers fall back to
  * the RPC funding-cluster scan. Returning 0 on unknown supply used to suppress
  * that fallback (audit #9).
  */
-export function insiderNetworkPct(report: RugcheckReport, totalSupplyRaw: number | null): number | null {
+export function insiderNetworkStats(report: RugcheckReport, totalSupplyRaw: number | null): InsiderNetworkStats | null {
   if (!report.insiderNetworks) return null;
-  if (report.insiderNetworks.length === 0) return 0; // affirmatively reported: none
+  if (report.insiderNetworks.length === 0) return { heldPct: 0, grossPct: 0, largestPct: 0, networks: 0 }; // affirmatively reported: none
   if (!totalSupplyRaw) return null; // networks exist but supply unknown — can't compute a %
-  const insiderRaw = report.insiderNetworks.reduce((s, n) => s + (n.tokenAmount ?? 0), 0);
-  return (insiderRaw / totalSupplyRaw) * 100;
+  let held = 0, gross = 0, largest = 0;
+  for (const n of report.insiderNetworks) {
+    // A report without currentHolding must not read as "holds nothing".
+    const now = n.currentHolding ?? n.tokenAmount ?? 0;
+    held += now;
+    gross += n.tokenAmount ?? 0;
+    if (now > largest) largest = now;
+  }
+  const pct = (raw: number) => (raw / totalSupplyRaw) * 100;
+  return { heldPct: pct(held), grossPct: pct(gross), largestPct: pct(largest), networks: report.insiderNetworks.length };
+}
+
+/** Supply share the insider networks hold now, in percent. null as above. */
+export function insiderNetworkPct(report: RugcheckReport, totalSupplyRaw: number | null): number | null {
+  return insiderNetworkStats(report, totalSupplyRaw)?.heldPct ?? null;
 }

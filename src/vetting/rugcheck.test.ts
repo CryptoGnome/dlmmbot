@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
-  _resetRugcheckStateForTests, creatorRugCount, fetchReport, insiderNetworkPct,
+  _resetRugcheckStateForTests, creatorRugCount, fetchReport, insiderNetworkPct, insiderNetworkStats,
   type RugcheckReport,
 } from "./rugcheck.js";
 
@@ -47,6 +47,25 @@ describe("rugcheck parsers", () => {
       ],
     });
     expect(insiderNetworkPct(r, 1000)).toBeCloseTo(15, 5);
+  });
+
+  // Failure modes, written before the fix (live reports, 2026-11-25):
+  //  R1 a network that already sold still counts at the amount it once received
+  //  R2 a report without currentHolding reads as 0% held instead of falling back
+  //  R3 the largest single network is lost inside the sum of unrelated ones
+  it("insiderNetworkStats: held now, not once received; largest network kept apart", () => {
+    const r = report({
+      insiderNetworks: [
+        { id: "sold", type: "transfer", size: 4, tokenAmount: 100, currentHolding: 20 },
+        { id: "old-shape", type: "transfer", size: 9, tokenAmount: 50 },
+      ],
+    });
+    const s = insiderNetworkStats(r, 1000)!;
+    expect(s.heldPct).toBeCloseTo(7, 5);
+    expect(s.grossPct).toBeCloseTo(15, 5);
+    expect(s.largestPct).toBeCloseTo(5, 5);
+    expect(s.networks).toBe(2);
+    expect(insiderNetworkPct(r, 1000)).toBeCloseTo(7, 5);
   });
 
   it("insiderNetworkPct is null (not 0) when supply is unknown — fallback must run", () => {

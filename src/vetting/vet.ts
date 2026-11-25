@@ -2,7 +2,7 @@ import { config } from "../config.js";
 import { blacklist, getDb, isBlacklisted, now } from "../db/db.js";
 import type { GateFailure, VetResult } from "../types.js";
 import { fetchTokenFacts, type OnchainTokenFacts } from "./onchain.js";
-import { creatorRugCount, fetchReport, insiderNetworkPct } from "./rugcheck.js";
+import { creatorRugCount, fetchReport, insiderNetworkStats } from "./rugcheck.js";
 import { jupAsset } from "./jupdata.js";
 import { tokenSecurity, tokenTraderTags } from "../scanner/gmgn.js";
 import { concentrationFromShares, holdersExcludingAmms } from "./holders.js";
@@ -136,11 +136,15 @@ export async function vetToken(mint: string, poolCreatedAtMs: number | null): Pr
     // Only trust RugCheck insider % when networks were actually reported;
     // empty/zero with no networks falls through to our RPC cluster scan.
     if ((report.insiderNetworks?.length ?? 0) > 0) {
-      const insiderPct = insiderNetworkPct(report, oc.supplyRaw);
-      if (insiderPct !== null) {
-        facts.insiderClusterPct = insiderPct;
-        if (v.insider_gate_enabled !== false && insiderPct > v.insider_cluster_max_pct)
-          fail("insider_clusters", insiderPct.toFixed(1), v.insider_cluster_max_pct);
+      const ins = insiderNetworkStats(report, oc.supplyRaw);
+      if (ins !== null) {
+        facts.insiderClusterPct = ins.heldPct;
+        facts.insiderSource = "rugcheck";
+        facts.insiderGrossPct = ins.grossPct;
+        facts.insiderLargestPct = ins.largestPct;
+        facts.insiderNetworks = ins.networks;
+        if (v.insider_gate_enabled !== false && ins.heldPct > v.insider_cluster_max_pct)
+          fail("insider_clusters", ins.heldPct.toFixed(1), v.insider_cluster_max_pct);
       }
     }
   } else {
@@ -181,6 +185,7 @@ export async function vetToken(mint: string, poolCreatedAtMs: number | null): Pr
     const clusterPct = await detectInsiderClusterPct(rpcShares);
       if (clusterPct !== null) {
         facts.insiderClusterPct = clusterPct;
+        facts.insiderSource = "rpc";
         if (v.insider_gate_enabled !== false && clusterPct > v.insider_cluster_max_pct)
           fail("insider_clusters", clusterPct.toFixed(1), v.insider_cluster_max_pct);
       }
@@ -220,6 +225,8 @@ export async function vetToken(mint: string, poolCreatedAtMs: number | null): Pr
   facts.jupBotHoldersPct = jup?.botHoldersPct ?? null;
   facts.jupDevMints = jup?.devMints ?? null;
   facts.jupTopHoldersPct = jup?.topHoldersPct ?? null;
+  facts.jupBundlerHoldingPct = jup?.bundlerHoldingPct ?? null;
+  facts.jupBundlerHoldingPctAth = jup?.bundlerHoldingPctAth ?? null;
   facts.jupOrganicVolShare24h = null;
   facts.jupLiquidityUsd = jup?.liquidityUsd ?? null;
   if (jup) {

@@ -1,25 +1,47 @@
-import { PublicKey, type ParsedTransactionWithMeta } from "@solana/web3.js";
+import { PublicKey, type Connection, type ParsedTransactionWithMeta } from "@solana/web3.js";
 import { connection } from "./onchain.js";
 import type { HolderShare } from "./knownAccounts.js";
 
 const TOTAL_TIMEOUT_MS = 10_000;
 const MAX_HOLDERS = 12;
-const MAX_SIGS_PER_WALLET = 12;
+// A wallet's funder is whoever paid for its first transactions. One page of
+// signatures reaches the start of any wallet young enough to be a side wallet;
+// a longer history has no findable first funder, so that wallet joins no
+// cluster. Until 2026-11-25 this read the 12 most RECENT transactions, a window
+// of minutes on an active wallet, and named whoever last sent it SOL.
+const HISTORY_PAGE = 1000;
+const FIRST_TXS = 3;
 const LAUNCH_WINDOW_SLOTS = 5;
 
-/** Group holdings by shared funder; return largest cluster as % of supply. */
+/**
+ * Largest group of two or more holders linked by funding, as % of supply.
+ * Each link joins a wallet to its funder, so co-funded wallets, a funder that
+ * also holds, and a funding chain between holders all land in one group. One
+ * funded wallet is not a cluster (single_holder gates a lone whale): counting
+ * it made this score equal the largest holder's share on most tokens.
+ */
 export function maxFundingClusterPct(
   holdings: Array<{ wallet: string; pct: number }>,
   funderOf: ReadonlyMap<string, string>,
 ): number {
-  const byFunder = new Map<string, number>();
+  const parent = new Map<string, string>();
+  const root = (x: string): string => {
+    while (parent.has(x)) x = parent.get(x)!;
+    return x;
+  };
+  for (const [wallet, funder] of funderOf) {
+    const a = root(wallet), b = root(funder);
+    if (a !== b) parent.set(a, b);
+  }
+  const groups = new Map<string, { pct: number; wallets: number }>();
   for (const h of holdings) {
-    const funder = funderOf.get(h.wallet);
-    if (!funder || funder === h.wallet) continue;
-    byFunder.set(funder, (byFunder.get(funder) ?? 0) + h.pct);
+    const g = groups.get(root(h.wallet)) ?? { pct: 0, wallets: 0 };
+    g.pct += h.pct;
+    g.wallets++;
+    groups.set(root(h.wallet), g);
   }
   let max = 0;
-  for (const pct of byFunder.values()) if (pct > max) max = pct;
+  for (const g of groups.values()) if (g.wallets >= 2 && g.pct > max) max = g.pct;
   return max;
 }
 
@@ -64,8 +86,9 @@ export function funderFromParsedTxs(
 ): string | null {
   for (const tx of txs) {
     if (!tx?.transaction?.message?.accountKeys) continue;
+    // String(): pubkey is a PublicKey from web3.js and a plain string from raw RPC.
     const keys = tx.transaction.message.accountKeys.map((k) =>
-      typeof k === "string" ? k : k.pubkey.toBase58(),
+      typeof k === "string" ? k : String(k.pubkey),
     );
     const instructions = tx.transaction.message.instructions;
     for (const ix of instructions) {
@@ -83,8 +106,12 @@ export function funderFromParsedTxs(
     if (idx < 0) continue;
     const delta = (meta.postBalances[idx] ?? 0) - (meta.preBalances[idx] ?? 0);
     if (delta <= 0) continue;
+    // A token account that lost lamports is a pool's wSOL vault paying a seller, not a funder.
+    const tokenAccounts = new Set(
+      [...(meta.preTokenBalances ?? []), ...(meta.postTokenBalances ?? [])].map((b) => b.accountIndex),
+    );
     for (let i = 0; i < keys.length; i++) {
-      if (i === idx) continue;
+      if (i === idx || tokenAccounts.has(i)) continue;
       const d = (meta.postBalances[i] ?? 0) - (meta.preBalances[i] ?? 0);
       if (d < 0 && Math.abs(d) >= delta * 0.9) return keys[i]!;
     }
@@ -93,8 +120,27 @@ export function funderFromParsedTxs(
 }
 
 /**
- * Best-effort insider/funding cluster %. Null = degrade (timeout / thin data).
- * Budget-capped: top holders only, short sig windows, overall timeout.
+ * Raw getTransaction batch. web3.js 1.x rejects version-1 transactions in its
+ * response schema, and one of them fails a whole getParsedTransactions batch:
+ * on 2026-11-25 that silently dropped 16 of 24 probed holders. jsonParsed has
+ * the same message/meta shape in every version.
+ */
+export async function parsedTxs(c: Connection, signatures: string[]): Promise<Array<ParsedTransactionWithMeta | null>> {
+  const batch = (c as unknown as {
+    _rpcBatchRequest(reqs: Array<{ methodName: string; args: unknown[] }>): Promise<Array<{ result?: ParsedTransactionWithMeta | null }>>;
+  })._rpcBatchRequest(signatures.map((s) => ({
+    methodName: "getTransaction",
+    args: [s, { encoding: "jsonParsed", maxSupportedTransactionVersion: 1, commitment: "confirmed" }],
+  })));
+  return (await batch).map((r) => r.result ?? null);
+}
+
+/**
+ * Best-effort funding-cluster %. Null = unknown: a timeout, or most holders
+ * out of reach (lookup failed, or a history longer than one page, which is
+ * every top holder on a token held by trading bots) — never a clean 0 from a
+ * blind scan.
+ * Budget-capped: top holders only, first transactions only, overall timeout.
  */
 export async function detectInsiderClusterPct(
   holdings: HolderShare[],
@@ -105,6 +151,7 @@ export async function detectInsiderClusterPct(
 
   const work = (async () => {
     const funderOf = new Map<string, string>();
+    let read = 0;
     // Resolve funders sequentially in small batches to stay under RPC limits.
     for (let i = 0; i < top.length; i += 4) {
       const batch = top.slice(i, i + 4);
@@ -112,20 +159,19 @@ export async function detectInsiderClusterPct(
         try {
           const sigs = await c.getSignaturesForAddress(
             new PublicKey(h.owner),
-            { limit: MAX_SIGS_PER_WALLET },
+            { limit: HISTORY_PAGE },
           );
-          if (!sigs.length) return;
-          // Oldest-first among the recent window — funding usually precedes buys.
-          const ordered = [...sigs].reverse();
-          const txs = await c.getParsedTransactions(
-            ordered.map((s) => s.signature),
-            { maxSupportedTransactionVersion: 0 },
-          );
-          const funder = funderFromParsedTxs(h.owner, txs);
-          if (funder) funderOf.set(h.owner, funder);
+          if (sigs.length > 0 && sigs.length < HISTORY_PAGE) {
+            // Newest-first page that reached the wallet's start: its tail is the first transactions.
+            const first = sigs.slice(-FIRST_TXS).reverse().map((s) => s.signature);
+            const funder = funderFromParsedTxs(h.owner, await parsedTxs(c, first));
+            if (funder) funderOf.set(h.owner, funder);
+            read++;
+          }
         } catch { /* degrade per-wallet */ }
       }));
     }
+    if (read * 2 < top.length) return null;
 
     const fundingPct = maxFundingClusterPct(
       top.map((h) => ({ wallet: h.owner, pct: h.pct })),
@@ -137,8 +183,5 @@ export async function detectInsiderClusterPct(
     return insiderClusterPct(fundingPct, 0);
   })();
 
-  const result = await raceTimeout(work, TOTAL_TIMEOUT_MS);
-  if (result === null) return null;
-  // No signal ≠ clean: only gate when we found a non-zero cluster.
-  return result;
+  return raceTimeout(work, TOTAL_TIMEOUT_MS);
 }

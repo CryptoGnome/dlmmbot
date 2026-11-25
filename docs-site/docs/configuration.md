@@ -83,7 +83,7 @@ Thresholds:
 |---|---|---|
 | `single_holder_max_pct` | `15` | Max % of supply for any single holder |
 | `top10_max_pct` | `40` | Max % for top-10 holders combined |
-| `insider_cluster_max_pct` | `10` | Max % held by insider/funding clusters |
+| `insider_cluster_max_pct` | `10` | Max % of supply RugCheck's insider networks hold now (fallback: largest group of top holders sharing a first funder) |
 | `rugcheck_veto_normalised` | `41` | RugCheck "Danger" veto line |
 | `age_min_minutes` | `45` | Survive the instant-rug window |
 | `age_max_days` | `14` | Meme-mode age ceiling — only applies when `age_max_enabled = true` |

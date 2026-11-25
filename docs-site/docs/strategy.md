@@ -47,7 +47,7 @@ Computed **fresh at entry time** from RPC + the RugCheck free API:
 - Mint authority revoked, freeze authority revoked.
 - Token program: SPL Token, or Token-2022 with **no** extensions beyond metadata (no transfer fees or hooks).
 - Single holder ≤ **15%** of supply; top-10 holders ≤ **40%** — both excluding labeled pool vaults, lockers, and burn addresses.
-- Insider/funding clusters ≤ **10%** of supply (same-funder wallet clustering + launch-slot snipers).
+- Insider clusters ≤ **10%** of supply: the share RugCheck's insider networks hold now. When RugCheck reports none, the largest group of two or more top holders that share a first funder.
 - Creator has **zero** rugged tokens in our DB or RugCheck's `creatorTokens`. One strike = permanent creator blacklist.
 - RugCheck `score_normalised` < **41** (their "Danger" line) — used as a **veto only**, never as approval.
 - Token age ≥ **45 min** — survive the instant-rug window. A **safety** gate; leave it on. Age is the mint's age via RugCheck, not the pool's.

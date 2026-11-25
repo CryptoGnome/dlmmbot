@@ -55,6 +55,55 @@ describe("clusters pure math", () => {
     ], funderOf)).toBe(11);
   });
 
+  // Failure modes of the RPC funding scan, written before the fix. A live
+  // probe on 2026-11-25 scored BASKET 6.89% when no two holders shared a
+  // funder: 6.89% was simply its largest holder.
+  //  C1 one funded wallet is reported as a "cluster"
+  //  C2 a funder that is itself a top holder is left out of its own cluster
+  //  C3 a funding chain between holders (A funds B funds C) splits in two
+  //  C4 two unrelated clusters are added together
+  //  C5 a pool vault that paid a seller is read as that wallet's funder
+  //  C6 raw-RPC transactions (pubkey as a string) throw and drop the wallet
+  it("C1: a single funded wallet is not a cluster", () => {
+    expect(maxFundingClusterPct([{ wallet: "w1", pct: 9 }], new Map([["w1", "F"]]))).toBe(0);
+  });
+
+  it("C2: a funder that is also a holder counts in its own cluster", () => {
+    expect(maxFundingClusterPct([
+      { wallet: "F", pct: 4 }, { wallet: "w1", pct: 3 }, { wallet: "w2", pct: 2 },
+    ], new Map([["w1", "F"], ["w2", "F"]]))).toBe(9);
+  });
+
+  it("C3: a funding chain between holders is one cluster", () => {
+    expect(maxFundingClusterPct([
+      { wallet: "A", pct: 5 }, { wallet: "B", pct: 3 }, { wallet: "C", pct: 2 },
+    ], new Map([["B", "A"], ["C", "B"]]))).toBe(10);
+  });
+
+  it("C4: unrelated clusters are not added together", () => {
+    expect(maxFundingClusterPct([
+      { wallet: "w1", pct: 3 }, { wallet: "w2", pct: 2 }, { wallet: "w3", pct: 4 }, { wallet: "w4", pct: 4 },
+    ], new Map([["w1", "F"], ["w2", "F"], ["w3", "G"], ["w4", "G"]]))).toBe(8);
+  });
+
+  const diffTx = (keys: unknown[], tokenAccountIndexes: number[]) => ({
+    transaction: { message: { accountKeys: keys, instructions: [] } },
+    meta: {
+      preBalances: [5e9, 1e9], postBalances: [4e9, 2e9],
+      preTokenBalances: tokenAccountIndexes.map((accountIndex) => ({ accountIndex })),
+      postTokenBalances: [],
+    },
+  }) as unknown as ParsedTransactionWithMeta;
+
+  it("C5: a token account that paid the wallet (a pool vault on a sell) is not a funder", () => {
+    expect(funderFromParsedTxs("Wallet", [diffTx(["Vault", "Wallet"], [0])])).toBeNull();
+    expect(funderFromParsedTxs("Wallet", [diffTx(["Payer", "Wallet"], [])])).toBe("Payer");
+  });
+
+  it("C6: raw-RPC account keys (pubkey as a string) are read, not thrown on", () => {
+    expect(funderFromParsedTxs("Wallet", [diffTx([{ pubkey: "Payer" }, { pubkey: "Wallet" }], [])])).toBe("Payer");
+  });
+
   it("launchSniperPct sums wallets in launch window", () => {
     expect(launchSniperPct([
       { wallet: "s1", pct: 4, slot: 100 },

@@ -111,7 +111,8 @@ gmgn_security_enabled = true     # block honeypot / sell-tax from GMGN
 gmgn_trader_tags_enabled = false   # weight-5 traders call — off by default (rate-limit headroom)
 single_holder_max_pct = 15
 top10_max_pct = 40
-insider_cluster_max_pct = 10
+insider_cluster_max_pct = 10     # % of supply RugCheck's insider networks hold now; with no networks
+                                 # reported, the largest group of 2+ top holders sharing a first funder
 rugcheck_veto_normalised = 41
 age_min_minutes = 45
 age_max_days = 14                # only applies when age_max_enabled = true
