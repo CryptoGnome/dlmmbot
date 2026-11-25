@@ -23,7 +23,7 @@ npm run sim:backfill     # fetch post-exit price paths (GeckoTerminal) so `sim -
 npm run sim:skips        # fetch post-SKIP price paths so a scanner gate can be judged on what it rejected
 npm run e2e:skips        # E2E: real scanner sweeps → throwaway DB → every skip-row reader; writes report.json
 npm run e2e:ledger -- --db <copy of farmer.db> --wallet <pubkey>   # E2E: real migration + restatement + dashboard builders on a ledger copy; every total must agree
-npm run e2e:clusters -- [mint ...]   # E2E: real vet on live tokens, cluster score re-derived from raw RugCheck/RPC; needs RPC_URL; writes report.json
+npm run e2e:clusters -- [mint ...]   # E2E: real vet on live tokens, cluster score and holder shares re-derived from raw RugCheck/RPC; needs RPC_URL; writes report.json
 npm run deposit -- <sol> ["note"]   # record an external deposit (+) / withdrawal (−) so the account baseline moves with it
 npm run run              # start the bot loop (see "One instance only" below)
 npm run status           # open/closed positions, PnL, paper→live promotion scoreboard

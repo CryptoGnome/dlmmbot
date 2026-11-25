@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { PublicKey, SystemProgram } from "@solana/web3.js";
 import { vetToken } from "./vet.js";
 import { fetchReport, type RugcheckReport } from "./rugcheck.js";
 import { fetchTokenFacts } from "./onchain.js";
@@ -92,6 +93,22 @@ describe("vetToken fail-closed gates", () => {
     const r = await vetToken(MINT, THREE_H_AGO);
     expect(gatesOf(r)).not.toContain("holder_data_unavailable");
     expect(r.verdict).toBe("pass");
+  });
+
+  it("H1/H6: a labeled pool is not the largest holder, and a whale behind it still fails", async () => {
+    const owner = PublicKey.findProgramAddressSync([Buffer.from("pool")], SystemProgram.programId)[0].toBase58();
+    const pool = { address: "PoolTa", owner, pct: 60, insider: false };
+    const knownAccounts = { [owner]: { name: "Pump Fun AMM", type: "AMM" } };
+    reportMock.mockResolvedValue(rugReport({ knownAccounts, topHolders: [pool, { address: "H1", owner: "H1", pct: 5, insider: false }] }));
+    const ok = await vetToken(MINT, THREE_H_AGO);
+    expect(ok.verdict).toBe("pass");
+    expect(ok.facts.singleHolderPct).toBe(5);
+    expect(ok.facts.top10Pct).toBe(5);
+
+    reportMock.mockResolvedValue(rugReport({ knownAccounts, topHolders: [pool, { address: "W", owner: "W", pct: 20, insider: false }] }));
+    const whale = await vetToken("Tok2222222222222222222222222222222222222", THREE_H_AGO);
+    expect(gatesOf(whale)).toContain("single_holder");
+    expect(whale.facts.singleHolderPct).toBe(20);
   });
 
   it("respects the holder_gate_enabled master switch", async () => {

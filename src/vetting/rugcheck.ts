@@ -1,3 +1,4 @@
+import { PublicKey } from "@solana/web3.js";
 import { config } from "../config.js";
 
 // Free RugCheck API client (verified live 2026-08-07). Used as a VETO signal
@@ -22,6 +23,8 @@ export interface RugcheckReport extends RugcheckSummary {
   totalMarketLiquidity: number;
   launchpad: { name: string; platform: string } | null;
   topHolders: Array<{ address: string; owner: string; pct: number; insider: boolean }> | null;
+  /** RugCheck's labels, keyed by owner or token account: type "AMM" | "LOCKER" | "CREATOR" | "CLOB". */
+  knownAccounts?: Record<string, { name: string; type: string }> | null;
   markets: Array<{ marketType: string; lp?: { lpLockedPct: number; lpLockedUSD: number } }> | null;
   detectedAt: string | null;
 }
@@ -92,6 +95,25 @@ export function creatorRugCount(report: RugcheckReport): number {
   if (!risk) return 0;
   // Observed scores: 7200 / 19200 / 120000 — scales with rug count; treat any as >=1.
   return Math.max(1, Math.round(risk.score / 7200));
+}
+
+/**
+ * Top holders that are wallets. `topHolders` includes pools and lockers: on
+ * 2026-11-25 all 8 live reports checked had one as the largest "holder" (DCTY
+ * was rejected six times at 31.7%, its Pump AMM pool; its largest wallet held
+ * 2.5%). An account is dropped only when RugCheck labels it a pool or locker
+ * AND its owner is a program address, which no one holds a key to — so a wrong
+ * label on a keypair wallet cannot hide a whale. Everything else stays.
+ */
+export function walletHolders(report: RugcheckReport): NonNullable<RugcheckReport["topHolders"]> {
+  const known = report.knownAccounts ?? {};
+  const labeled = (key: string) => known[key]?.type === "AMM" || known[key]?.type === "LOCKER";
+  const programAddress = (owner: string) => {
+    try { return !PublicKey.isOnCurve(owner); } catch { return false; }
+  };
+  return (report.topHolders ?? []).filter(
+    (h) => !((labeled(h.owner) || labeled(h.address)) && programAddress(h.owner)),
+  );
 }
 
 export interface InsiderNetworkStats {

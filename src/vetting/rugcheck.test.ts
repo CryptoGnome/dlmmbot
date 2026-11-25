@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
 import {
-  _resetRugcheckStateForTests, creatorRugCount, fetchReport, insiderNetworkPct, insiderNetworkStats,
+  _resetRugcheckStateForTests, creatorRugCount, fetchReport, insiderNetworkPct, insiderNetworkStats, walletHolders,
   type RugcheckReport,
 } from "./rugcheck.js";
 
@@ -47,6 +48,39 @@ describe("rugcheck parsers", () => {
       ],
     });
     expect(insiderNetworkPct(r, 1000)).toBeCloseTo(15, 5);
+  });
+
+  // Failure modes of the holder gates, written before the fix. In live reports
+  // on 2026-11-25 all 8 tokens checked had a pool or locker as the largest
+  // "holder" (DCTY: 31.7% was the Pump AMM pool; its largest wallet held 2.5%).
+  //  H1 a labeled AMM pool is read as the largest holder
+  //  H2 a labeled locker is read as a holder
+  //  H3 a label keyed by the token account, not its owner, is missed
+  //  H4 a wallet with no label, or a label that is not a pool or locker (the
+  //     creator), is dropped — that would hide a whale
+  //  H5 a report without knownAccounts throws
+  //  H6 a real whale passes because a pool was stripped (vet.gates.test.ts)
+  //  H7 a wrong or spoofed pool label on an ordinary keypair wallet hides a
+  //     whale. All 16 labeled pools/lockers in those reports were program
+  //     addresses (off the ed25519 curve), which no one holds a key to.
+  it("walletHolders drops labeled pools and lockers, by owner or token account, and nothing else", () => {
+    const h = (address: string, owner: string, pct: number) => ({ address, owner, pct, insider: false });
+    const pda = (seed: string) => PublicKey.findProgramAddressSync([Buffer.from(seed)], SystemProgram.programId)[0].toBase58();
+    const pool = pda("pool"), lockOwner = pda("lock"), mislabeled = Keypair.generate().publicKey.toBase58();
+    const r = report({
+      topHolders: [
+        h("ta1", pool, 60), h("LockTa", lockOwner, 7), h("ta3", "Dev", 5), h("ta4", "Whale", 4), h("ta5", mislabeled, 3),
+      ],
+      knownAccounts: {
+        [pool]: { name: "Pump Fun AMM", type: "AMM" },
+        LockTa: { name: "Streamflow Vault", type: "LOCKER" },
+        Dev: { name: "Creator", type: "CREATOR" },
+        [mislabeled]: { name: "Pump Fun AMM", type: "AMM" },
+      },
+    });
+    expect(walletHolders(r).map((x) => x.owner)).toEqual(["Dev", "Whale", mislabeled]);
+    expect(walletHolders(report({ topHolders: [h("ta", "W", 9)] })).map((x) => x.owner)).toEqual(["W"]);
+    expect(walletHolders(report({}))).toEqual([]);
   });
 
   // Failure modes, written before the fix (live reports, 2026-11-25):

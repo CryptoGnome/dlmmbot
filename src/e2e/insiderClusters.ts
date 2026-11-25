@@ -1,5 +1,5 @@
 /**
- * E2E: insider-cluster score — `npm run e2e:clusters -- [mint ...] [--n 3] [--out <dir>] [--keep]`
+ * E2E: insider-cluster score and holder shares — `npm run e2e:clusters -- [mint ...] [--n 3] [--out <dir>] [--keep]`
  *
  * Runs the REAL vet (RPC + RugCheck + Jupiter) on live tokens into a throwaway
  * DB, then re-derives the cluster score from the raw sources and checks the
@@ -21,6 +21,10 @@
  *  F6 a version-1 transaction drops the wallet it belongs to
  *  F7 the new facts are not persisted with the vet
  *  F8 Jupiter reports a bundler share and the vet drops it
+ *  F9 a pool or locker RugCheck labels is counted as a holder, so the
+ *     "largest holder" is the token's own liquidity pool
+ *  F10 an account dropped as a pool or locker is really a wallet: its on-chain
+ *     owner is not the program address RugCheck reported
  */
 import Database from "better-sqlite3";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -96,6 +100,28 @@ for (const mint of mints) {
         && f.insiderLargestPct !== undefined && f.insiderLargestPct <= (f.insiderClusterPct ?? 0) + 1e-9,
       { largest: f.insiderLargestPct, gross: f.insiderGrossPct, networks: f.insiderNetworks });
   }
+  // Holder shares, re-derived from the raw report: labeled pools/lockers at a program address are not holders.
+  const known = report?.knownAccounts ?? {};
+  const notWallet = (key: string) => known[key]?.type === "AMM" || known[key]?.type === "LOCKER";
+  const raw = report?.topHolders ?? [];
+  const labelOf = (h: { owner: string; address: string }) => known[notWallet(h.owner) ? h.owner : h.address]!.name;
+  const dropped = raw.filter((h) => (notWallet(h.owner) || notWallet(h.address)) && !PublicKey.isOnCurve(h.owner));
+  const wallets = raw.filter((h) => !dropped.includes(h));
+  const shares10 = (hs: typeof raw) => ({ single: Math.max(...hs.map((h) => h.pct)), top10: hs.slice(0, 10).reduce((s, h) => s + h.pct, 0) });
+  if (wallets.length) {
+    const want = shares10(wallets);
+    check("F9", mint, "holder shares leave out labeled pools and lockers",
+      f.singleHolderPct !== null && near(f.singleHolderPct, want.single) && f.top10Pct !== null && near(f.top10Pct, want.top10),
+      { fact: { single: f.singleHolderPct, top10: f.top10Pct }, wallets: want, withPools: shares10(raw),
+        dropped: dropped.map((h) => `${h.pct.toFixed(2)}% ${labelOf(h)}`) });
+  }
+  if (dropped.length) {
+    const infos = await Promise.all(dropped.map((h) => c.getParsedAccountInfo(new PublicKey(h.address))));
+    const onChain = infos.map((i) => (i.value?.data as { parsed?: { info?: { owner?: string } } } | undefined)?.parsed?.info?.owner ?? null);
+    check("F10", mint, "every dropped account is owned on chain by the program address RugCheck reported",
+      onChain.every((o, i) => o === dropped[i]!.owner), dropped.map((h, i) => ({ account: h.address, reported: h.owner, onChain: onChain[i] })));
+  }
+
   check("F3", mint, "a score always names its source", f.insiderClusterPct === null || f.insiderSource !== undefined,
     { pct: f.insiderClusterPct, source: f.insiderSource });
 
@@ -161,7 +187,11 @@ for (const mint of mints) {
     },
     rpcScan: { pct: rpcPct, ms, holders: shares.length },
     jupBundler: { holdingPct: f.jupBundlerHoldingPct ?? null, holdingPctAth: f.jupBundlerHoldingPctAth ?? null },
-    singleHolderPct: f.singleHolderPct, top10Pct: f.top10Pct, tokenAgeMinutes: f.tokenAgeMinutes,
+    holders: {
+      singlePct: f.singleHolderPct, top10Pct: f.top10Pct, withPools: raw.length ? shares10(raw) : null,
+      dropped: dropped.map((h) => ({ pct: h.pct, label: labelOf(h) })),
+    },
+    tokenAgeMinutes: f.tokenAgeMinutes,
   });
 }
 

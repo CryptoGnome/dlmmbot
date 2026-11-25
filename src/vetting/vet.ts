@@ -2,7 +2,7 @@ import { config } from "../config.js";
 import { blacklist, getDb, isBlacklisted, now } from "../db/db.js";
 import type { GateFailure, VetResult } from "../types.js";
 import { fetchTokenFacts, type OnchainTokenFacts } from "./onchain.js";
-import { creatorRugCount, fetchReport, insiderNetworkStats } from "./rugcheck.js";
+import { creatorRugCount, fetchReport, insiderNetworkStats, walletHolders } from "./rugcheck.js";
 import { jupAsset } from "./jupdata.js";
 import { tokenSecurity, tokenTraderTags } from "../scanner/gmgn.js";
 import { concentrationFromShares, holdersExcludingAmms } from "./holders.js";
@@ -122,8 +122,7 @@ export async function vetToken(mint: string, poolCreatedAtMs: number | null): Pr
 
     facts.creatorRugCount = creatorRugCount(report);
 
-    // RugCheck topHolders already excludes labeled AMMs.
-    const holders = report.topHolders ?? [];
+    const holders = walletHolders(report);
     if (holders.length) {
       const single = Math.max(...holders.map((h) => h.pct));
       const top10 = holders.slice(0, 10).reduce((s, h) => s + h.pct, 0);

@@ -211,7 +211,7 @@ export const WIKI_SECTIONS: WikiSection[] = [
       {
         type: "ul",
         items: [
-          "Mint/freeze still on, nasty Token-2022 hooks, whale-concentrated supply.",
+          "Mint/freeze still on, nasty Token-2022 hooks, whale-concentrated supply. Liquidity pools and lockers are not counted as holders.",
           "Insider clusters: the share of supply RugCheck's insider networks hold right now (not what they once received). If RugCheck reports none, the largest group of two or more top holders funded by the same wallet. A single funded wallet is not a cluster.",
           "Creator already rugged once → permanent ban.",
           "RugCheck “Danger” is a veto only — never a green light by itself.",
